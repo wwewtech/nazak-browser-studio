@@ -74,7 +74,7 @@ class ProxiesView(QWidget):
         l_table.setContentsMargins(16, 14, 16, 14)
         
         h_tbl_head = QHBoxLayout()
-        lbl_t1 = QLabel("Таблица сетевой диагностики и Google Reachability", card_table)
+        lbl_t1 = QLabel("Таблица сетевой диагностики и доступности Google", card_table)
         lbl_t1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_tbl_head.addWidget(lbl_t1)
         h_tbl_head.addStretch()
@@ -113,17 +113,17 @@ class ProxiesView(QWidget):
         for row, p in enumerate(profiles):
             self.table.setItem(row, 0, QTableWidgetItem(p.name))
             
-            proxy_str = p.proxy.raw or f"{p.proxy.host}:{p.proxy.port}" if p.proxy.host else "Direct"
+            proxy_str = p.proxy.raw or f"{p.proxy.host}:{p.proxy.port}" if p.proxy.host else "Прямое"
             self.table.setItem(row, 1, QTableWidgetItem(proxy_str))
 
             if p.last_health_check:
                 h = p.last_health_check
-                self.table.setItem(row, 2, QTableWidgetItem(f"{h.ping_ms or 1} ms"))
+                self.table.setItem(row, 2, QTableWidgetItem(f"{h.ping_ms or 1} мс"))
                 
                 country_part = f" • {h.country}" if h.country else ""
                 self.table.setItem(row, 3, QTableWidgetItem(f"{h.ip or '-'}{country_part}"))
                 
-                g_status = "Google OK" if h.status == HealthStatus.HEALTHY else "DEAD"
+                g_status = "Google OK" if h.status == HealthStatus.HEALTHY else "НЕДОСТУПЕН"
                 self.table.setItem(row, 4, QTableWidgetItem(g_status))
                 
                 yt_status = "Доступен" if h.google.youtube else "Блок"

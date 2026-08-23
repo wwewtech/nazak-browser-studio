@@ -227,15 +227,15 @@ function renderProfiles() {
     const statusLabel = isRunning ? "● Запущен" : (p.status === "error" ? "✕ Ошибка" : (p.status === "starting" ? "▲ Запуск..." : "○ Остановлен"));
     const isSelected = selectedProfileIds.has(p.id);
     const proxyType = p.proxy.type ? p.proxy.type.toUpperCase() : "DIRECT";
-    let proxyText = "Прямое подключение (Direct)";
+    let proxyText = "Прямое подключение";
     if (p.proxy.type !== "direct" && p.proxy.host) proxyText = `${proxyType}://${p.proxy.host}:${p.proxy.port}`;
     const hc = p.last_health_check;
-    const pingText = hc && hc.ping_ms ? `${hc.ping_ms} ms` : null;
+    const pingText = hc && hc.ping_ms ? `${hc.ping_ms} мс` : null;
     const ipText = hc && hc.ip ? hc.ip : null;
     const geoText = hc && hc.country ? `${hc.country}${hc.city ? ", " + hc.city : ""}` : null;
-    let gBadges = `<span class="health-badge unknown">G: ?</span><span class="health-badge unknown">Auth: ?</span><span class="health-badge unknown">Ads: ?</span><span class="health-badge unknown">YT: ?</span>`;
+    let gBadges = `<span class="health-badge unknown">G: ?</span><span class="health-badge unknown">Вход: ?</span><span class="health-badge unknown">Ads: ?</span><span class="health-badge unknown">YT: ?</span>`;
     if (hc && hc.google) {
-      gBadges = `<span class="health-badge ${hc.google.google_main ? "ok" : "fail"}">${hc.google.google_main ? "✓ Search" : "✕ Search"}</span><span class="health-badge ${hc.google.google_accounts ? "ok" : "fail"}">${hc.google.google_accounts ? "✓ Auth" : "✕ Auth"}</span><span class="health-badge ${hc.google.google_ads ? "ok" : "fail"}">${hc.google.google_ads ? "✓ Ads" : "✕ Ads"}</span><span class="health-badge ${hc.google.youtube ? "ok" : "fail"}">${hc.google.youtube ? "✓ YT" : "✕ YT"}</span>`;
+      gBadges = `<span class="health-badge ${hc.google.google_main ? "ok" : "fail"}">${hc.google.google_main ? "✓ Поиск" : "✕ Поиск"}</span><span class="health-badge ${hc.google.google_accounts ? "ok" : "fail"}">${hc.google.google_accounts ? "✓ Вход" : "✕ Вход"}</span><span class="health-badge ${hc.google.google_ads ? "ok" : "fail"}">${hc.google.google_ads ? "✓ Реклама" : "✕ Реклама"}</span><span class="health-badge ${hc.google.youtube ? "ok" : "fail"}">${hc.google.youtube ? "✓ Ютуб" : "✕ Ютуб"}</span>`;
     }
     return `
       <div class="profile-card ${isRunning ? "running" : ""}" id="card-${p.id}">
@@ -245,7 +245,7 @@ function renderProfiles() {
             <div class="profile-identity">
               <div class="profile-name-row">
                 <span class="profile-name">${escapeHtml(p.name)}</span>
-                <span class="group-tag">${escapeHtml(p.group || "General")}</span>
+                <span class="group-tag">${escapeHtml(p.group || "Общие")}</span>
               </div>
               <div class="profile-notes">${escapeHtml(p.google.notes || (p.google.tags ? p.google.tags.join(", ") : ""))}</div>
             </div>
@@ -262,7 +262,7 @@ function renderProfiles() {
           </div>
           ${ipText ? `<div class="detail-row"><span class="detail-label">IP & GEO:</span><span class="detail-value" style="color: var(--accent-sky);">${escapeHtml(ipText)} ${geoText ? `(${escapeHtml(geoText)})` : ""}</span></div>` : ""}
           <div class="detail-row"><span class="detail-label">GOOGLE:</span><div class="google-health-row">${gBadges}</div></div>
-          <div class="detail-row"><span class="detail-label">ОТПЕЧАТОК:</span><span class="detail-value" style="color: var(--accent-emerald);"><span>${p.fingerprint.hardware_concurrency} Cores / ${p.fingerprint.device_memory}GB</span><span style="color: var(--text-muted);">| ${p.fingerprint.screen_width}x${p.fingerprint.screen_height}</span></span></div>
+          <div class="detail-row"><span class="detail-label">ОТПЕЧАТОК:</span><span class="detail-value" style="color: var(--accent-emerald);"><span>${p.fingerprint.hardware_concurrency} ядер / ${p.fingerprint.device_memory} ГБ</span><span style="color: var(--text-muted);">| ${p.fingerprint.screen_width}x${p.fingerprint.screen_height}</span></span></div>
         </div>
         <div class="card-actions">
           <div class="launch-group">

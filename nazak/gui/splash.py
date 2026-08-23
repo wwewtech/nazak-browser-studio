@@ -97,12 +97,12 @@ class NazakSplashScreen(QSplashScreen):
         p.setPen(QColor(255, 255, 255))
         p.drawText(QRectF(0, 172, w, 32), Qt.AlignmentFlag.AlignCenter, "NAZAK")
 
-        # 4. Refined Subtitle
+        # 4. Refined Russian Subtitle
         font_sub = QFont("Segoe UI Variable Text", 10, QFont.Weight.DemiBold)
         font_sub.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
         p.setFont(font_sub)
         p.setPen(QColor(113, 113, 122))
-        p.drawText(QRectF(0, 206, w, 20), Qt.AlignmentFlag.AlignCenter, "BROWSER STUDIO")
+        p.drawText(QRectF(0, 206, w, 20), Qt.AlignmentFlag.AlignCenter, "АНТИДЕТЕКТ СТУДИЯ")
 
         # 5. Version String in Bottom-Right
         font_ver = QFont("JetBrains Mono", 8, QFont.Weight.Normal)

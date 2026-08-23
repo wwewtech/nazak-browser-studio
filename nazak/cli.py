@@ -105,12 +105,12 @@ def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
 
     for p in profiles:
         running = bl.is_profile_running(p.id)
-        status = "[bold green]RUNNING[/bold green]" if running else "[dim]STOPPED[/dim]"
-        proxy_str = p.proxy.to_display_string() if not p.proxy.is_direct() else "Direct"
+        status = "[bold green]АКТИВЕН[/bold green]" if running else "[dim]ОСТАНОВЛЕН[/dim]"
+        proxy_str = p.proxy.to_display_string() if not p.proxy.is_direct() else "Прямое"
         
         hc = p.last_health_check
-        ping_str = f"{hc.ping_ms} ms" if hc and hc.ping_ms else "-"
-        g_status = "[green]✓ Ready[/green]" if (hc and hc.google and hc.google.all_ok) else "[dim]Not Checked[/dim]"
+        ping_str = f"{hc.ping_ms} мс" if hc and hc.ping_ms else "-"
+        g_status = "[green]✓ Готов[/green]" if (hc and hc.google and hc.google.all_ok) else "[dim]Не проверен[/dim]"
 
         table.add_row(p.id, p.name, p.group, status, proxy_str, ping_str, g_status)
 

@@ -127,7 +127,7 @@ class ProfileEditDialog(QDialog):
         grid_fp.addWidget(lbl_c, 1, 0)
         self.combo_cores = ComboBox(card_fp)
         for c in [6, 8, 12, 14, 16, 24, 32]:
-            self.combo_cores.addItem(f"{c} Cores", userData=c)
+            self.combo_cores.addItem(f"{c} ядер", userData=c)
         grid_fp.addWidget(self.combo_cores, 1, 1)
 
         # RAM
@@ -136,7 +136,7 @@ class ProfileEditDialog(QDialog):
         grid_fp.addWidget(lbl_r, 2, 0)
         self.combo_ram = ComboBox(card_fp)
         for r in [8, 16, 32, 64]:
-            self.combo_ram.addItem(f"{r} GB", userData=r)
+            self.combo_ram.addItem(f"{r} ГБ", userData=r)
         grid_fp.addWidget(self.combo_ram, 2, 1)
 
         # Screen
@@ -158,7 +158,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_canvas = SwitchButton(card_sw)
         self.switch_canvas.setChecked(True)
-        lbl_sw1 = QLabel("Canvas 2D", card_sw)
+        lbl_sw1 = QLabel("Шум Canvas", card_sw)
         lbl_sw1.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw1)
         h_switches.addWidget(self.switch_canvas)
@@ -166,7 +166,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_audio = SwitchButton(card_sw)
         self.switch_audio.setChecked(True)
-        lbl_sw2 = QLabel("Audio Noise", card_sw)
+        lbl_sw2 = QLabel("Шум WebAudio", card_sw)
         lbl_sw2.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw2)
         h_switches.addWidget(self.switch_audio)
@@ -174,7 +174,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_port_scan = SwitchButton(card_sw)
         self.switch_port_scan.setChecked(True)
-        lbl_sw3 = QLabel("Anti-Port Scan", card_sw)
+        lbl_sw3 = QLabel("Антискан портов", card_sw)
         lbl_sw3.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw3)
         h_switches.addWidget(self.switch_port_scan)
@@ -195,7 +195,6 @@ class ProfileEditDialog(QDialog):
         btn_layout.addWidget(self.btn_cancel)
 
         self.btn_save = PrimaryPushButton(FluentIcon.ACCEPT, "Сохранить", self)
-        
         self.btn_save.clicked.connect(self.on_save)
         btn_layout.addWidget(self.btn_save)
 
@@ -211,10 +210,10 @@ class ProfileEditDialog(QDialog):
         idx = self.combo_gpu.findText(fp.webgl_unmasked_renderer)
         if idx >= 0:
             self.combo_gpu.setCurrentIndex(idx)
-        idx = self.combo_cores.findText(f"{fp.hardware_concurrency} Cores")
+        idx = self.combo_cores.findText(f"{fp.hardware_concurrency} ядер")
         if idx >= 0:
             self.combo_cores.setCurrentIndex(idx)
-        idx = self.combo_ram.findText(f"{fp.device_memory} GB")
+        idx = self.combo_ram.findText(f"{fp.device_memory} ГБ")
         if idx >= 0:
             self.combo_ram.setCurrentIndex(idx)
         idx = self.combo_screen.findText(f"{fp.screen_width} × {fp.screen_height}")
@@ -230,10 +229,10 @@ class ProfileEditDialog(QDialog):
         idx_gpu = self.combo_gpu.findText(new_fp.webgl_unmasked_renderer)
         if idx_gpu >= 0:
             self.combo_gpu.setCurrentIndex(idx_gpu)
-        idx_cores = self.combo_cores.findText(f"{new_fp.hardware_concurrency} Cores")
+        idx_cores = self.combo_cores.findText(f"{new_fp.hardware_concurrency} ядер")
         if idx_cores >= 0:
             self.combo_cores.setCurrentIndex(idx_cores)
-        idx_ram = self.combo_ram.findText(f"{new_fp.device_memory} GB")
+        idx_ram = self.combo_ram.findText(f"{new_fp.device_memory} ГБ")
         if idx_ram >= 0:
             self.combo_ram.setCurrentIndex(idx_ram)
         idx_screen = self.combo_screen.findText(f"{new_fp.screen_width} × {new_fp.screen_height}")

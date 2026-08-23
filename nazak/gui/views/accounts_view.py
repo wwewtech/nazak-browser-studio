@@ -47,7 +47,7 @@ class AccountsView(QWidget):
         titles_layout = QVBoxLayout()
         titles_layout.setSpacing(4)
 
-        self.title_label = SubtitleLabel("Импорт и активация аккаунтов • Provisioning Engine", self)
+        self.title_label = SubtitleLabel("Импорт и подготовка аккаунтов", self)
         self.title_label.setStyleSheet("font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 22px; font-weight: 700; color: #ffffff;")
         
         self.desc_label = CaptionLabel("Пакетный импорт Gmail (Login:Pass:2FA:Recovery), создание отпечатков железа и авто-активация", self)

@@ -62,7 +62,7 @@ class ProfileCard(SimpleCardWidget):
         ram = fp.device_memory if fp else 32
         w = fp.screen_width if fp else 1920
         h = fp.screen_height if fp else 1080
-        hw_text = f"GPU: {gpu_short}  •  {cores} Cores  •  {ram} GB  •  {w}×{h}"
+        hw_text = f"GPU: {gpu_short}  •  {cores} ядер  •  {ram} ГБ  •  {w}×{h}"
         
         lbl_hw = QLabel(hw_text, self)
         lbl_hw.setStyleSheet(
@@ -74,7 +74,7 @@ class ProfileCard(SimpleCardWidget):
 
         # 3. Network & Proxy Diagnostic Chip
         proxy = self.profile.proxy
-        proxy_str = f"{proxy.host}:{proxy.port}" if proxy.host else "Direct Connection"
+        proxy_str = f"{proxy.host}:{proxy.port}" if proxy.host else "Прямое подключение"
         
         diag_str = "Не проверен"
         diag_color = "#71717a"
@@ -82,17 +82,17 @@ class ProfileCard(SimpleCardWidget):
             h = self.profile.last_health_check
             if h.status == HealthStatus.HEALTHY:
                 city_part = f" • {h.city}" if h.city else ""
-                diag_str = f"Google OK{city_part} • {h.ping_ms or 1} ms"
+                diag_str = f"Google OK{city_part} • {h.ping_ms or 1} мс"
                 diag_color = "#34d399"
             elif h.status == HealthStatus.DEAD:
                 diag_str = "Прокси недоступен"
                 diag_color = "#f87171"
             else:
-                diag_str = f"Online • {h.city or 'Ready'}"
+                diag_str = f"Онлайн • {h.city or 'Готов'}"
                 diag_color = "#fbbf24"
 
         h_net = QHBoxLayout()
-        lbl_proxy = QLabel(f"Proxy: {proxy_str}", self)
+        lbl_proxy = QLabel(f"Прокси: {proxy_str}", self)
         lbl_proxy.setStyleSheet("color: #a1a1aa; font-size: 11px; font-weight: 500;")
         h_net.addWidget(lbl_proxy)
         h_net.addStretch()
@@ -108,11 +108,9 @@ class ProfileCard(SimpleCardWidget):
 
         if self.is_running:
             self.btn_action = PushButton(FluentIcon.PAUSE, "Стоп", self)
-            
             self.btn_action.clicked.connect(lambda: self.stop_clicked.emit(self.profile.id))
         else:
             self.btn_action = PrimaryPushButton(FluentIcon.PLAY, "Запуск", self)
-            
             self.btn_action.clicked.connect(lambda: self.launch_clicked.emit(self.profile.id))
         h_actions.addWidget(self.btn_action)
 
@@ -145,10 +143,10 @@ class ProfileCard(SimpleCardWidget):
 
     def _get_status_text(self) -> str:
         if self.is_running:
-            return f"RUNNING • PID {self.profile.pid or ''}"
+            return f"АКТИВЕН • PID {self.profile.pid or ''}"
         elif self.profile.status == ProfileStatus.ERROR:
-            return "ERROR"
-        return "STOPPED"
+            return "ОШИБКА"
+        return "ОСТАНОВЛЕН"
 
     def _get_status_style(self) -> str:
         if self.is_running:
@@ -230,7 +228,7 @@ class ProfilesView(QWidget):
         self.card_reach = SimpleCardWidget(self)
         l3 = QVBoxLayout(self.card_reach)
         l3.setContentsMargins(14, 12, 14, 12)
-        lbl_t3 = QLabel("Google Reachability", self.card_reach)
+        lbl_t3 = QLabel("Доступность Google", self.card_reach)
         lbl_t3.setStyleSheet("color: #a1a1aa; font-size: 11px; font-weight: 600; text-transform: uppercase;")
         self.lbl_metric_reach = QLabel("100%", self.card_reach)
         self.lbl_metric_reach.setStyleSheet("color: #38bdf8; font-size: 26px; font-weight: 700;")

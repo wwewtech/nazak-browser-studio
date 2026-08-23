@@ -30,7 +30,7 @@ class WarmupView(QWidget):
         # 1. Header with Top Actions
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        lbl_title = QLabel("Автопрогрев Google Аккаунтов • Warmup Engine", self)
+        lbl_title = QLabel("Автопрогрев Google Аккаунтов", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
         
         lbl_desc = QLabel("Генерация органических поисковых сессий, набор истории и Cookie Trust Score перед запуском рекламы", self)
@@ -42,12 +42,10 @@ class WarmupView(QWidget):
         h_head.addStretch()
 
         btn_stop = PushButton(FluentIcon.CANCEL, "Прервать", self)
-        
         btn_stop.clicked.connect(self.on_stop_warmup)
         h_head.addWidget(btn_stop)
 
         self.btn_launch = PrimaryPushButton(FluentIcon.PLAY, "Запустить прогрев", self)
-        
         self.btn_launch.clicked.connect(self.on_launch_warmup)
         h_head.addWidget(self.btn_launch)
         main_layout.addLayout(h_head)
@@ -135,20 +133,20 @@ class WarmupView(QWidget):
         l_tel = QVBoxLayout(card_telemetry)
         l_tel.setContentsMargins(16, 14, 16, 14)
         
-        lbl_w3 = QLabel("Параметры доверия • Google Trust Score Metrics", card_telemetry)
+        lbl_w3 = QLabel("Метрики доверия и параметров прогрева", card_telemetry)
         lbl_w3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_tel.addWidget(lbl_w3)
 
         h_chips = QHBoxLayout()
-        lbl_c1 = QLabel("Human Delay: 4.5s – 12.0s", card_telemetry)
+        lbl_c1 = QLabel("Задержка действий: 4.5с – 12.0с", card_telemetry)
         lbl_c1.setStyleSheet("background: #22222a; color: #a1a1aa; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
         h_chips.addWidget(lbl_c1)
 
-        lbl_c2 = QLabel("Cookie Persistence: Active", card_telemetry)
+        lbl_c2 = QLabel("Сохранение куки: Включено", card_telemetry)
         lbl_c2.setStyleSheet("background: #22222a; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
         h_chips.addWidget(lbl_c2)
 
-        lbl_c3 = QLabel("Trust Score Boost: +18 pts", card_telemetry)
+        lbl_c3 = QLabel("Прирост Trust Score: +18 баллов", card_telemetry)
         lbl_c3.setStyleSheet("background: #22222a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
         h_chips.addWidget(lbl_c3)
         h_chips.addStretch()

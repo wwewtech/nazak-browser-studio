@@ -46,8 +46,8 @@ class SettingsView(QWidget):
         h_theme.addWidget(lbl_th)
         
         self.combo_theme = ComboBox(card_theme)
-        self.combo_theme.addItem("Тёмная • Dark Obsidian", userData=Theme.DARK)
-        self.combo_theme.addItem("Светлая • Light Clean", userData=Theme.LIGHT)
+        self.combo_theme.addItem("Тёмная обсидиановая", userData=Theme.DARK)
+        self.combo_theme.addItem("Светлая", userData=Theme.LIGHT)
         self.combo_theme.currentIndexChanged.connect(self.on_theme_changed)
         h_theme.addWidget(self.combo_theme)
         h_theme.addStretch()
@@ -90,7 +90,7 @@ class SettingsView(QWidget):
         lbl_a1.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
         l_about.addWidget(lbl_a1)
         
-        lbl_a2 = QLabel("Автономный Multi-Profile Anti-Detect Browser, Google Ads Manager & YouTube Shorts Auto-Uploader", card_about)
+        lbl_a2 = QLabel("Автономный антидетект-браузер с мультипрофилями, менеджер Google-аккаунтов и автопостер YouTube Shorts", card_about)
         lbl_a2.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         l_about.addWidget(lbl_a2)
         main_layout.addWidget(card_about)

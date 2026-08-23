@@ -33,7 +33,7 @@ class AutopostView(QWidget):
         # 1. Header with Top Action Button
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        lbl_title = QLabel("Автопостинг YouTube Shorts • Stealth Uploader", self)
+        lbl_title = QLabel("Автопостинг YouTube Shorts", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
         
         lbl_desc = QLabel("Автономная уникализация видео через FFmpeg, генерация спинтакс-заголовков и публикация Shorts через CDP", self)
