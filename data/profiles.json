@@ -1,0 +1,3515 @@
+[
+  {
+    "id": "prof_01",
+    "name": "01 • Google Ads USA — RTX 4090 Workstation",
+    "group": "Google Ads",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 2560,
+      "screen_height": 1440,
+      "screen_avail_width": 2560,
+      "screen_avail_height": 1400,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 64,
+      "hardware_concurrency": 24,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/New_York",
+      "timezone_offset": 300,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 4090",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 1)",
+          "device_id": "c514e54e0dd54b2c879b3b1119693324",
+          "group_id": "76a4004515ee412f959ffefaf2f9eb3b"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 1)",
+          "device_id": "7a8b6433926740bfaae63c3802e20011",
+          "group_id": "3f26831576b446fcb16189bf5364ffb7"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 1",
+          "device_id": "c5d81ab1858b49e1bd400aa7ac10803f",
+          "group_id": "36c1d21882524614a9ce2056401f14ff"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 107777,
+      "audio_noise": true,
+      "audio_noise_seed": 1e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Google Ads",
+        "USA",
+        "Tier 1",
+        "Flagship"
+      ],
+      "notes": "Primary Google Ads Flagship Desktop."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 1091.6,
+          "google_main": 1099.5,
+          "google_accounts": 2036.8,
+          "google_ads": 2758.0
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T22:59:59.656574+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.017927+00:00",
+    "updated_at": "2026-08-23T18:18:10.784270+00:00"
+  },
+  {
+    "id": "prof_02",
+    "name": "02 - Modified Name",
+    "group": "Google Ads",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1080,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1040,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Los_Angeles",
+      "timezone_offset": 480,
+      "webgl_vendor": "Google Inc. (AMD)",
+      "webgl_renderer": "ANGLE (AMD, AMD Radeon 780M Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Advanced Micro Devices, Inc.",
+      "webgl_unmasked_renderer": "AMD Radeon 780M Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 2)",
+          "device_id": "7cf6d931e0584a21aa68f6e2b17ae51c",
+          "group_id": "b5c74c87d30543f3897352f2adf5f195"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 2)",
+          "device_id": "12acb1623f034838ad203112b82527b6",
+          "group_id": "c70fb555cffa47fbb4d3491e9240dfdb"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 2",
+          "device_id": "32864a8b244b4c20b13cf4d33ed2f0a8",
+          "group_id": "aadeaf1453774cc0a0a9fc38026c5aa3"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 115554,
+      "audio_noise": true,
+      "audio_noise_seed": 2e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_ads",
+      "custom_url": null,
+      "tags": [
+        "Google Ads",
+        "USA",
+        "Laptop"
+      ],
+      "notes": "Targeted ad spend manager."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 1092.6,
+          "google_main": 1093.6,
+          "google_accounts": 2068.6,
+          "google_ads": 2836.7
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:00.663592+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018000+00:00",
+    "updated_at": "2026-08-23T18:18:10.788880+00:00"
+  },
+  {
+    "id": "prof_03",
+    "name": "03 • Google Ads UK — Ryzen 9 4K Rig",
+    "group": "Google Ads",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3840,
+      "screen_height": 2160,
+      "screen_avail_width": 3840,
+      "screen_avail_height": 2120,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 32,
+      "hardware_concurrency": 32,
+      "max_touch_points": 0,
+      "language": "en-GB,en;q=0.9",
+      "languages": [
+        "en-GB",
+        "en"
+      ],
+      "timezone": "Europe/London",
+      "timezone_offset": 0,
+      "webgl_vendor": "Google Inc. (AMD)",
+      "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 7900 XTX Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Advanced Micro Devices, Inc.",
+      "webgl_unmasked_renderer": "AMD Radeon RX 7900 XTX",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 3)",
+          "device_id": "202b40c9b9394b00aa3d9ab5afe203e4",
+          "group_id": "98bf560de994463a803cefe875dff091"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 3)",
+          "device_id": "81fb6b1461eb4b82b5ac6b485d5c99d0",
+          "group_id": "e652e8e3150f4b838022bd63739396cd"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 3",
+          "device_id": "ec0e0f64467f4ac4b593145ea5e42ddc",
+          "group_id": "ab9fe3fcfad2491c940f768eb0526427"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 123331,
+      "audio_noise": true,
+      "audio_noise_seed": 3e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_ads",
+      "custom_url": null,
+      "tags": [
+        "Google Ads",
+        "UK",
+        "Tier 1",
+        "4K"
+      ],
+      "notes": "UK campaigns and billing master."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "google_main": 866.5,
+          "youtube": 1053.6,
+          "google_accounts": 2072.2,
+          "google_ads": 2626.2
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:01.526987+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018042+00:00",
+    "updated_at": "2026-08-22T23:00:15.792385+00:00"
+  },
+  {
+    "id": "prof_04",
+    "name": "04 • Google Ads Germany — Core i7 RTX 4070 Ti",
+    "group": "Google Ads",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1080,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1040,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "de-DE,de;q=0.9,en;q=0.8",
+      "languages": [
+        "de-DE",
+        "de",
+        "en"
+      ],
+      "timezone": "Europe/Berlin",
+      "timezone_offset": -60,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 4070 Ti",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 4)",
+          "device_id": "99a8989cea66445498c209258c828a5e",
+          "group_id": "f3b2f832503f46058e8694009f0be4a9"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 4)",
+          "device_id": "0caaa4a7287c4cd6845720c64cbd77ed",
+          "group_id": "167428cb86d643ec8eccb06a48ec14f2"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 4",
+          "device_id": "6053cf48771e4e6e9ed164ca7495f903",
+          "group_id": "7f96a628adb84060a146ff680103fa9a"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 131108,
+      "audio_noise": true,
+      "audio_noise_seed": 4e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Google Ads",
+        "DE",
+        "Europe"
+      ],
+      "notes": "DACH region ad campaigns."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 1005.5,
+          "google_main": 1087.9,
+          "google_accounts": 2129.8,
+          "google_ads": 2803.4
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:02.339683+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018077+00:00",
+    "updated_at": "2026-08-22T23:00:15.972185+00:00"
+  },
+  {
+    "id": "prof_05",
+    "name": "05 • Google Warmup — Office Intel UHD 770",
+    "group": "Warmup",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1536,
+      "screen_height": 864,
+      "screen_avail_width": 1536,
+      "screen_avail_height": 824,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Chicago",
+      "timezone_offset": 360,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) UHD Graphics 770",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 5)",
+          "device_id": "0ff2a66f9fd44951b9c456d0c2c9e4b2",
+          "group_id": "f65df6e5af6c429b94515e8db86080b0"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 5)",
+          "device_id": "2ebf5e5e482e497997acc5c32c964552",
+          "group_id": "bbee40dc9c6a482cbb9724ee7fc7189a"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 5",
+          "device_id": "db4c0a1611454442afec9d648330f897",
+          "group_id": "008d13ba451640568435867ef5d78e56"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 138885,
+      "audio_noise": true,
+      "audio_noise_seed": 4.9999999999999996e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_search",
+      "custom_url": null,
+      "tags": [
+        "Warmup",
+        "Organic",
+        "Farming"
+      ],
+      "notes": "Search history & cookie accumulation."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 962.9,
+          "google_main": 1100.0,
+          "google_accounts": 2083.3,
+          "google_ads": 3831.2
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:03.217839+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018109+00:00",
+    "updated_at": "2026-08-22T23:00:17.000878+00:00"
+  },
+  {
+    "id": "prof_06",
+    "name": "06 • Google Warmup — Ultrabook Intel Arc",
+    "group": "Warmup",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1200,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1160,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "en-CA,en;q=0.9",
+      "languages": [
+        "en-CA",
+        "en"
+      ],
+      "timezone": "America/Toronto",
+      "timezone_offset": 300,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 6)",
+          "device_id": "1911da9e5c2a4da48d7ed46060c651db",
+          "group_id": "7d3b73f0a3da46839f237f1e1aa30f2e"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 6)",
+          "device_id": "46f15cd043e84383935b135cfaf314fe",
+          "group_id": "67ce63098a914250bee6c545f04d1f9d"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 6",
+          "device_id": "95dc153e6c744bfbb2d59fcc1d1774f5",
+          "group_id": "4950799e36a6490d8954ad1aa48766e9"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 146662,
+      "audio_noise": true,
+      "audio_noise_seed": 6e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_search",
+      "custom_url": null,
+      "tags": [
+        "Warmup",
+        "Organic",
+        "Farming"
+      ],
+      "notes": "Search history & trust score building."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 954.5,
+          "google_main": 1005.8,
+          "google_accounts": 1996.6,
+          "google_ads": 2630.2
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:04.083592+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018139+00:00",
+    "updated_at": "2026-08-22T23:00:15.798255+00:00"
+  },
+  {
+    "id": "prof_07",
+    "name": "07 • YouTube Studio — MacBook Pro M3 Max",
+    "group": "YouTube",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "MacIntel",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3024,
+      "screen_height": 1964,
+      "screen_avail_width": 3024,
+      "screen_avail_height": 1924,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 64,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Chicago",
+      "timezone_offset": 360,
+      "webgl_vendor": "Google Inc. (Apple)",
+      "webgl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Version 15.0)",
+      "webgl_unmasked_vendor": "Apple Inc.",
+      "webgl_unmasked_renderer": "Apple M3 Max GPU",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 7)",
+          "device_id": "45fbefbc48344cc19e1ac72e1b8c5f84",
+          "group_id": "52245c7a143e4ed189ded02c4239328e"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 7)",
+          "device_id": "c5fd9f2913fa4a06aec2de10020f8fa3",
+          "group_id": "591a83b9a943468ea32d8edd324b5c2c"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 7",
+          "device_id": "22a04b196d5f49c39a74af260990e413",
+          "group_id": "b703fd8fb82b4a319acd545af61b735b"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 154439,
+      "audio_noise": true,
+      "audio_noise_seed": 7e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "youtube_studio",
+      "custom_url": null,
+      "tags": [
+        "YouTube",
+        "Studio",
+        "MacBook"
+      ],
+      "notes": "YouTube channel management master."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "google_main": 841.3,
+          "youtube": 862.5,
+          "google_accounts": 2006.5,
+          "google_ads": 2655.9
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:04.993184+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018168+00:00",
+    "updated_at": "2026-08-22T23:00:15.823389+00:00"
+  },
+  {
+    "id": "prof_08",
+    "name": "08 • YouTube Studio — Mac Studio M2 Pro",
+    "group": "YouTube",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "MacIntel",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 2560,
+      "screen_height": 1600,
+      "screen_avail_width": 2560,
+      "screen_avail_height": 1560,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-AU,en;q=0.9",
+      "languages": [
+        "en-AU",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (Apple)",
+      "webgl_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Version 14.5)",
+      "webgl_unmasked_vendor": "Apple Inc.",
+      "webgl_unmasked_renderer": "Apple M2 Pro GPU",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 8)",
+          "device_id": "1ddebc6451274e0b8e0cfd23043d2a83",
+          "group_id": "5d6a33643ac84b5f8b307faa3376cf13"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 8)",
+          "device_id": "bfabebecb25d4ec99cf65ebf6802e4f5",
+          "group_id": "5aeea4796f5f4df3add9a0fed04fbef0"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 8",
+          "device_id": "f0a14f2ac58e46c6b0b950f4f988d43b",
+          "group_id": "2283cb7da7944f43beb14698f0a8957c"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 162216,
+      "audio_noise": true,
+      "audio_noise_seed": 8e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "youtube_studio",
+      "custom_url": null,
+      "tags": [
+        "YouTube",
+        "Studio",
+        "Creator"
+      ],
+      "notes": "Secondary creator channel."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "youtube": 897.8,
+          "google_main": 1047.6,
+          "google_accounts": 1930.8,
+          "google_ads": 2670.1
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:05.780333+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018197+00:00",
+    "updated_at": "2026-08-22T23:00:15.836217+00:00"
+  },
+  {
+    "id": "prof_09",
+    "name": "09 • Organic Traffic — Gaming Rig RTX 3080",
+    "group": "Organic",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1080,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1040,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "fr-FR,fr;q=0.9,en;q=0.8",
+      "languages": [
+        "fr-FR",
+        "fr",
+        "en"
+      ],
+      "timezone": "Europe/Paris",
+      "timezone_offset": -60,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 3080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 9)",
+          "device_id": "a16980b051644b7799c67b6351d30353",
+          "group_id": "36da78bea61145a18bea24595def86f6"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 9)",
+          "device_id": "ed69b945f15a457a95eff9d5866ddd62",
+          "group_id": "159c75777ff84191b44d7bd1255b267c"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 9",
+          "device_id": "226bec612593487a9c66ae3b0d35818b",
+          "group_id": "4c79a0bd0e884406a5ff8e06b3b3cc55"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 169993,
+      "audio_noise": true,
+      "audio_noise_seed": 9e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_search",
+      "custom_url": null,
+      "tags": [
+        "Organic",
+        "Search",
+        "SEO"
+      ],
+      "notes": "Organic traffic & CTR automation."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "google_main": 968.3,
+          "youtube": 1009.4,
+          "google_accounts": 1872.5,
+          "google_ads": 2815.8
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:06.571164+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018244+00:00",
+    "updated_at": "2026-08-22T23:00:15.982652+00:00"
+  },
+  {
+    "id": "prof_10",
+    "name": "10 • Arbitrage Backup — Compact Node",
+    "group": "Arbitrage",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1366,
+      "screen_height": 768,
+      "screen_avail_width": 1366,
+      "screen_avail_height": 728,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 8,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/New_York",
+      "timezone_offset": 300,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics 730 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) UHD Graphics 730",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (Realtek Audio HD 10)",
+          "device_id": "684ec7b564fb40af9f5569900b1656e6",
+          "group_id": "9169d7dda77048a5ae3c23095b52221c"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek Audio HD 10)",
+          "device_id": "d2b62fa1501b4429a951c71525cb5ce8",
+          "group_id": "4caee0c70c5b44b181b9e8f358f66e66"
+        },
+        {
+          "kind": "videoinput",
+          "label": "Integrated HD Camera 10",
+          "device_id": "d60c9fd4aa4f4961b070fdc01b22d80a",
+          "group_id": "9b8916436a7e4a13af9113a8086dcdbb"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 177770,
+      "audio_noise": true,
+      "audio_noise_seed": 9.999999999999999e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Arbitrage",
+        "Backup",
+        "Multi-Acc"
+      ],
+      "notes": "Backup node for quick launch."
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": {
+      "status": "healthy",
+      "ping_ms": 1.0,
+      "ip": "192.166.82.43",
+      "country": "United States",
+      "country_code": "US",
+      "city": "Salt Lake City",
+      "region": "Utah",
+      "isp": "CloudBlast LLC",
+      "asn": "AS207847 CloudBlast LLC",
+      "timezone_name": "America/Denver",
+      "latitude": 40.7592,
+      "longitude": -111.8875,
+      "google": {
+        "google_main": true,
+        "google_accounts": true,
+        "google_ads": true,
+        "youtube": true,
+        "latencies_ms": {
+          "google_main": 1040.7,
+          "youtube": 1044.6,
+          "google_accounts": 1978.2,
+          "google_ads": 2793.7
+        },
+        "all_ok": true
+      },
+      "data_isolation_ok": true,
+      "webrtc_protected": true,
+      "error_message": null,
+      "checked_at": "2026-08-22T23:00:07.528532+00:00"
+    },
+    "created_at": "2026-08-22T19:20:39.018276+00:00",
+    "updated_at": "2026-08-22T23:00:15.962716+00:00"
+  },
+  {
+    "id": "prof_10390633",
+    "name": "Profile 28 — 2.2.2.2",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "2.2.2.2",
+      "port": 8080,
+      "username": "user",
+      "password": "pass",
+      "raw": "2.2.2.2:8080:user:pass",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3840,
+      "screen_height": 2160,
+      "screen_avail_width": 3840,
+      "screen_avail_height": 2120,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 32,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Asia/Tokyo",
+      "timezone_offset": -540,
+      "webgl_vendor": "Google Inc. (AMD)",
+      "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Advanced Micro Devices, Inc.",
+      "webgl_unmasked_renderer": "AMD Radeon RX 6700 XT",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "3148f9e6c8874152bd41652828051844",
+          "group_id": "1113bd3d98f940368f5ef9db166d003b"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "2f51670df50444e1888a62f12066b52a",
+          "group_id": "cc036851c1a4402aa61d768e4aa7e0bf"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "7194fddad45047ff99885f15eaa7059a",
+          "group_id": "f1fc2b255c6a4d03803be98433c3439d"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 834120,
+      "audio_noise": true,
+      "audio_noise_seed": 2.2783776624700187e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": Infinity,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-22T23:02:04.268735+00:00",
+    "updated_at": "2026-08-22T23:02:04.268750+00:00"
+  },
+  {
+    "id": "prof_0784edaf",
+    "name": "Profile 44 — 2.2.2.2",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "2.2.2.2",
+      "port": 8080,
+      "username": "user",
+      "password": "pass",
+      "raw": "2.2.2.2:8080:user:pass",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1680,
+      "screen_height": 1050,
+      "screen_avail_width": 1680,
+      "screen_avail_height": 1010,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 64,
+      "hardware_concurrency": 24,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 4080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "349769fc11414e19b310269a02c93e7e",
+          "group_id": "0e67ab93218d4ae9bf5128ae12742b9e"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "c0ea50d7021d4b48b1adba3dbb8ea2f5",
+          "group_id": "8ca90e87f6824b10bba36afdae98e4c3"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "f595f784e5224bbea09eb76042b4afe4",
+          "group_id": "8882f7db274046079540e03502a03169"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 90447,
+      "audio_noise": true,
+      "audio_noise_seed": 7.92064587307619e-07,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-22T23:34:03.442119+00:00",
+    "updated_at": "2026-08-22T23:34:03.442128+00:00"
+  },
+  {
+    "id": "prof_04a69d51",
+    "name": "Profile 47 — 1.1.1.1",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.1.1.1",
+      "port": 8080,
+      "username": null,
+      "password": null,
+      "raw": "1.1.1.1:8080",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 2560,
+      "screen_height": 1440,
+      "screen_avail_width": 2560,
+      "screen_avail_height": 1400,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.25,
+      "device_memory": 32,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Asia/Tokyo",
+      "timezone_offset": -540,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "c12fefaeb6af4094ae13fd3056586e65",
+          "group_id": "bcc6f02c5c7a4de3ba9521a6445ce1db"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "9ad6bdb7f1ec43498a645f29ad84b889",
+          "group_id": "c90406a4ed1c4ee2be54d9f233955d91"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "41a850457ce541a1bb159c77e41a6915",
+          "group_id": "5294f7b193dd40baba24d403d8b56f3f"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 189566,
+      "audio_noise": true,
+      "audio_noise_seed": 2.772047914504979e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T00:37:39.186717+00:00",
+    "updated_at": "2026-08-23T00:37:39.186732+00:00"
+  },
+  {
+    "id": "prof_acc_1787461235_9",
+    "name": "mlikhonkhan78 — RTX 3080",
+    "group": "DarkStore Gmail",
+    "proxy": {
+      "type": "direct",
+      "host": null,
+      "port": null,
+      "username": null,
+      "password": null,
+      "raw": "direct",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1680,
+      "screen_height": 1050,
+      "screen_avail_width": 1680,
+      "screen_avail_height": 1010,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Europe/Berlin",
+      "timezone_offset": -60,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 3080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "8855401d34ad4fde97d8a0b0c45b5b16",
+          "group_id": "6b96972ea5e641a3bb418200e778a402"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "616eefdc550c4eb69a14b24edbbc54e5",
+          "group_id": "1e1decbc654c4562aa59c4fb7c344025"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "ce820d3ef8a64122b3d1ac72547005f5",
+          "group_id": "2c159ff0bde94b90b2512f96609fe13e"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 85037,
+      "audio_noise": true,
+      "audio_noise_seed": 2.300388874005339e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": "mlikhonkhan78@gmail.com",
+      "auto_open_page": "youtube_studio",
+      "custom_url": null,
+      "tags": [
+        "Imported",
+        "2FA",
+        "browser_stealth"
+      ],
+      "notes": "{\"account_email\": \"mlikhonkhan78@gmail.com\", \"account_password\": \"********\", \"totp_secret\": \"DEMO_TOTP_SECRET_BASE32\", \"recovery_email\": \"(year:https://shorturl.at/SpV5E)\", \"posting_mode\": \"browser_stealth\", \"auth_status\": \"authenticated\", \"imported_at\": 1787461235.717715, \"oauth_tokens\": {}, \"last_upload_time\": 1787462269.2086706}"
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T05:00:35.717746+00:00",
+    "updated_at": "2026-08-23T05:00:35.717761+00:00"
+  },
+  {
+    "id": "prof_3afd6d5e",
+    "name": "Profile 15 (1.2.3.4)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.2.3.4",
+      "port": 8080,
+      "username": "u1",
+      "password": "p1",
+      "raw": "1.2.3.4:8080:u1:p1",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1680,
+      "screen_height": 1050,
+      "screen_avail_width": 1680,
+      "screen_avail_height": 1010,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 4080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "e467edb338c74039abeeaa7fb2052def",
+          "group_id": "7f268bf933b140cca9d330394aa9f2f7"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "1f5b794d92ea43609b0911f46ca74a88",
+          "group_id": "7ce6d60e4ca74feeb7b82ea03597813d"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "ed9da15c8ba34557a25ea6a948045bba",
+          "group_id": "9dbe13877ccf4383977b6084d395912d"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 828818,
+      "audio_noise": true,
+      "audio_noise_seed": 3.6012447986280237e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T05:02:28.198119+00:00",
+    "updated_at": "2026-08-23T05:02:28.198129+00:00"
+  },
+  {
+    "id": "prof_d68c71d9",
+    "name": "Profile 16 (5.6.7.8)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "5.6.7.8",
+      "port": 9000,
+      "username": "u2",
+      "password": "p2",
+      "raw": "5.6.7.8:9000:u2:p2",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3840,
+      "screen_height": 2160,
+      "screen_avail_width": 3840,
+      "screen_avail_height": 2120,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 16,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Asia/Tokyo",
+      "timezone_offset": -540,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "4f47aac149b54d1eb013e7fc9ac5660d",
+          "group_id": "cb5fe204d3e1413c95b25547ab345152"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "1b8db21959764d9da040faeaa1151381",
+          "group_id": "69c0a84313a64a58bf5dd0a72aa44572"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "340a95eac1f44c8a88c55697b86e5596",
+          "group_id": "8b73f293560d4ffc963b4437dc5222db"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 320904,
+      "audio_noise": true,
+      "audio_noise_seed": 2.3426060704193466e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T05:02:28.202217+00:00",
+    "updated_at": "2026-08-23T05:02:28.202229+00:00"
+  },
+  {
+    "id": "prof_49ac45ff",
+    "name": "Profile 17 (1.1.1.1)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.1.1.1",
+      "port": 8080,
+      "username": null,
+      "password": null,
+      "raw": "1.1.1.1:8080",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1440,
+      "screen_height": 900,
+      "screen_avail_width": 1440,
+      "screen_avail_height": 860,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 14,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "33d083ea91d045bb8566b7c05a888f3f",
+          "group_id": "91c60e599fde44c99f9c9b4bb987231e"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "692e5241938c47d9bf2aeb840cf57155",
+          "group_id": "d8682ec8904d465d9a56efe0068ed315"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "a810591849854d6eb8ffd43f75d403d6",
+          "group_id": "8999d4791bf2468db685259abd171d8e"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 516991,
+      "audio_noise": true,
+      "audio_noise_seed": 2.9616027958718652e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T05:02:50.219779+00:00",
+    "updated_at": "2026-08-23T05:02:50.219788+00:00"
+  },
+  {
+    "id": "prof_8942b7b7",
+    "name": "Profile 18 (2.2.2.2)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "2.2.2.2",
+      "port": 8080,
+      "username": "user",
+      "password": "pass",
+      "raw": "2.2.2.2:8080:user:pass",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "130"
+        },
+        {
+          "brand": "Chromium",
+          "version": "130"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1440,
+      "screen_height": 900,
+      "screen_avail_width": 1440,
+      "screen_avail_height": 860,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/New_York",
+      "timezone_offset": 300,
+      "webgl_vendor": "Google Inc. (AMD)",
+      "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Advanced Micro Devices, Inc.",
+      "webgl_unmasked_renderer": "AMD Radeon RX 6700 XT",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "86c002c0ba734d5092cab378c4e485c3",
+          "group_id": "ff65de5193ef470f92e3b1c7b927e6a9"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "f110fb9fc66f46ffbe16641c86bec3d1",
+          "group_id": "13ba0ec66c424ae49fdc9402f1c7d07c"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "0040704a152747d7ad92b63dce786a15",
+          "group_id": "ab2d550fcd0241458d1b26b7f28bbb15"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 182433,
+      "audio_noise": true,
+      "audio_noise_seed": 4.67733302583748e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T05:02:50.227290+00:00",
+    "updated_at": "2026-08-23T05:02:50.227304+00:00"
+  },
+  {
+    "id": "prof_c65d3d1a",
+    "name": "Profile 19 (1.2.3.4)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.2.3.4",
+      "port": 8080,
+      "username": "u1",
+      "password": "p1",
+      "raw": "1.2.3.4:8080:u1:p1",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1536,
+      "screen_height": 864,
+      "screen_avail_width": 1536,
+      "screen_avail_height": 824,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "f3735f4ff3cc48fba7c8f66c7e79e2e4",
+          "group_id": "30b798509d45498a86f4edbbd233d83b"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "d9e64618f7254051ab4413d56f0a57b1",
+          "group_id": "55c4097d53114b13b0d5c13337717f50"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "8e2272ddb9d1420d9dec74cd2c4a69cd",
+          "group_id": "cce57bf434d94df6be9a0df914e55e10"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 238960,
+      "audio_noise": true,
+      "audio_noise_seed": 4.438309001545181e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T16:22:14.447506+00:00",
+    "updated_at": "2026-08-23T16:22:14.447515+00:00"
+  },
+  {
+    "id": "prof_9e98ea33",
+    "name": "Profile 20 (5.6.7.8)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "5.6.7.8",
+      "port": 9000,
+      "username": "u2",
+      "password": "p2",
+      "raw": "5.6.7.8:9000:u2:p2",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1366,
+      "screen_height": 768,
+      "screen_avail_width": 1366,
+      "screen_avail_height": 728,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Europe/London",
+      "timezone_offset": 0,
+      "webgl_vendor": "Google Inc. (AMD)",
+      "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 7800 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Advanced Micro Devices, Inc.",
+      "webgl_unmasked_renderer": "AMD Radeon RX 7800 XT",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "9926a061182540d18eb830c145ea2828",
+          "group_id": "cc2e8d9f879448f3a5396a393e21409b"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "54ddfc546a9a47d7a4b5603a1354ddd8",
+          "group_id": "fbd9feff56b342919f4afd899d9b222f"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "7d9740c7d88f48f8b5e9dec0b0823455",
+          "group_id": "f09235e95f2c4f01b62b29330c0206ef"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 657736,
+      "audio_noise": true,
+      "audio_noise_seed": 2.4078909024045303e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T16:22:14.452955+00:00",
+    "updated_at": "2026-08-23T16:22:14.452969+00:00"
+  },
+  {
+    "id": "prof_1697ccb4",
+    "name": "Profile 21 (1.1.1.1)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.1.1.1",
+      "port": 8080,
+      "username": null,
+      "password": null,
+      "raw": "1.1.1.1:8080",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3840,
+      "screen_height": 2160,
+      "screen_avail_width": 3840,
+      "screen_avail_height": 2120,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 32,
+      "hardware_concurrency": 8,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Australia/Sydney",
+      "timezone_offset": -600,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 3080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "2978ea17449c4f258fd8ebaa4a383870",
+          "group_id": "cdc4b605f5454bb380640cfeb935b8ad"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "a3b90e5da4a744a5bf046f9ff6397064",
+          "group_id": "a6c54f68be9a453c82586aa51a0265d5"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "62235ae05c00429eac08fdae49cdac83",
+          "group_id": "ffcff3e3e6ad4ff4acc4434ac20c9f72"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 503757,
+      "audio_noise": true,
+      "audio_noise_seed": 1.4444866939335203e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T16:22:19.659380+00:00",
+    "updated_at": "2026-08-23T16:22:19.659397+00:00"
+  },
+  {
+    "id": "prof_539d86bf",
+    "name": "Profile 22 (2.2.2.2)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "2.2.2.2",
+      "port": 8080,
+      "username": "user",
+      "password": "pass",
+      "raw": "2.2.2.2:8080:user:pass",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "133"
+        },
+        {
+          "brand": "Chromium",
+          "version": "133"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1680,
+      "screen_height": 1050,
+      "screen_avail_width": 1680,
+      "screen_avail_height": 1010,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 24,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Chicago",
+      "timezone_offset": 360,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 4090",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "74e98d42ec4e422e8463099d933c06c6",
+          "group_id": "f877a69c8c5b4637915139b8b8bf5b2c"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "bd128f60bec24dfbbe5c851fc2cf7905",
+          "group_id": "3f6bf4a99a684c6da9df6d10a4e48fb2"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "5dac908027be40b58bf61e1d8f76c696",
+          "group_id": "26c9b37e17d4424fa1ee5067ddcba29f"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 937762,
+      "audio_noise": true,
+      "audio_noise_seed": 1.2027680737050311e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 1.0
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T16:22:19.665367+00:00",
+    "updated_at": "2026-08-23T16:22:19.665378+00:00"
+  },
+  {
+    "id": "prof_be569f47",
+    "name": "Profile 23 (1.2.3.4)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.2.3.4",
+      "port": 8080,
+      "username": "u1",
+      "password": "p1",
+      "raw": "1.2.3.4:8080:u1:p1",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1080,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1040,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 16,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Europe/Paris",
+      "timezone_offset": -60,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) UHD Graphics 770",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "f355e01d04154914b66a8c14f3474045",
+          "group_id": "e8b88ade004c47bb994570816aa213de"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "f0a2e13887844273853c7b0eac84e70c",
+          "group_id": "e7252c1ffe394464954ba98438f05f67"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "75991e966ed04410a1ee2d2c1f7c5a6e",
+          "group_id": "63e7093f91fa454589b7dcbd1fe0cf36"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 990500,
+      "audio_noise": true,
+      "audio_noise_seed": 3.123162490795294e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T18:18:02.217682+00:00",
+    "updated_at": "2026-08-23T18:18:02.217699+00:00"
+  },
+  {
+    "id": "prof_c661e145",
+    "name": "Profile 24 (5.6.7.8)",
+    "group": "Imported Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "5.6.7.8",
+      "port": 9000,
+      "username": "u2",
+      "password": "p2",
+      "raw": "5.6.7.8:9000:u2:p2",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 3840,
+      "screen_height": 2160,
+      "screen_avail_width": 3840,
+      "screen_avail_height": 2120,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 2.0,
+      "device_memory": 16,
+      "hardware_concurrency": 16,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "Asia/Tokyo",
+      "timezone_offset": -540,
+      "webgl_vendor": "Google Inc. (Intel)",
+      "webgl_renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "Intel Inc.",
+      "webgl_unmasked_renderer": "Intel(R) Arc(TM) Graphics",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "3f663eea1cad4733b0b31cf0d987c124",
+          "group_id": "1306d4e7e0a7402ca992762c1f3a61db"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "7af41f5202594382b5321b4440bde3be",
+          "group_id": "0efcec2d6ad84e479fdf6f305bebb012"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "605b4946e16246a2a1facdd41134ab3f",
+          "group_id": "6a153f2da5cf4ac39abb72d1909965f0"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 290875,
+      "audio_noise": true,
+      "audio_noise_seed": 4.938822742521647e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.98
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Imported Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T18:18:02.229979+00:00",
+    "updated_at": "2026-08-23T18:18:02.229997+00:00"
+  },
+  {
+    "id": "prof_b4b9d1bd",
+    "name": "Profile 25 (1.1.1.1)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "1.1.1.1",
+      "port": 8080,
+      "username": null,
+      "password": null,
+      "raw": "1.1.1.1:8080",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Chromium",
+          "version": "131"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1920,
+      "screen_height": 1200,
+      "screen_avail_width": 1920,
+      "screen_avail_height": 1160,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Denver",
+      "timezone_offset": 420,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 3080",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "c878e14b9aca4546be617d7b76cd9cac",
+          "group_id": "35b163ec45ba4d558f76c1dfff1e31ad"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "7b6c91ab7905418bba4fa8c040096397",
+          "group_id": "9c9f34c14c3349ef9564c713602f80cd"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "6589e1da4aa749119c6bb286e3f3f318",
+          "group_id": "72c42b2b60224dd8af791342d3956416"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 103239,
+      "audio_noise": true,
+      "audio_noise_seed": 1.4056202467561712e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T18:18:10.746764+00:00",
+    "updated_at": "2026-08-23T18:18:10.746777+00:00"
+  },
+  {
+    "id": "prof_8dd7a31d",
+    "name": "Profile 26 (2.2.2.2)",
+    "group": "Test Group",
+    "proxy": {
+      "type": "http",
+      "host": "2.2.2.2",
+      "port": 8080,
+      "username": "user",
+      "password": "pass",
+      "raw": "2.2.2.2:8080:user:pass",
+      "active": true
+    },
+    "fingerprint": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "app_version": "5.0 (Win32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+      "vendor": "Google Inc.",
+      "brands": [
+        {
+          "brand": "Not(A:Brand",
+          "version": "99"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "132"
+        },
+        {
+          "brand": "Chromium",
+          "version": "132"
+        }
+      ],
+      "platform_version": "10.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "mobile": false,
+      "screen_width": 1366,
+      "screen_height": 768,
+      "screen_avail_width": 1366,
+      "screen_avail_height": 728,
+      "color_depth": 24,
+      "pixel_depth": 24,
+      "device_pixel_ratio": 1.0,
+      "device_memory": 32,
+      "hardware_concurrency": 12,
+      "max_touch_points": 0,
+      "language": "en-US,en;q=0.9",
+      "languages": [
+        "en-US",
+        "en"
+      ],
+      "timezone": "America/Los_Angeles",
+      "timezone_offset": 480,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webgl_unmasked_vendor": "NVIDIA Corporation",
+      "webgl_unmasked_renderer": "NVIDIA GeForce RTX 3060",
+      "max_texture_size": 16384,
+      "max_renderbuffer_size": 16384,
+      "max_viewport_dims": [
+        16384,
+        16384
+      ],
+      "media_devices": [
+        {
+          "kind": "audioinput",
+          "label": "Microphone (High Definition Audio Device)",
+          "device_id": "887b9a4f39db49dab21e117bc1cbf0b0",
+          "group_id": "90d3e569cb404e4abb29b973080dcb9d"
+        },
+        {
+          "kind": "audiooutput",
+          "label": "Speakers (Realtek High Definition Audio)",
+          "device_id": "b9578d6903f8478abf55720ac0613e2d",
+          "group_id": "5e10b5dfff5045e6bb44872caf67c037"
+        },
+        {
+          "kind": "videoinput",
+          "label": "HD WebCam Pro",
+          "device_id": "def9c5b31621478aa07282b2017a621e",
+          "group_id": "d8288a4c6fd64483bc2625c7a7aafc53"
+        }
+      ],
+      "canvas_noise": true,
+      "canvas_noise_seed": 444774,
+      "audio_noise": true,
+      "audio_noise_seed": 3.208202758707859e-06,
+      "client_rects_noise": true,
+      "battery": {
+        "charging": true,
+        "charging_time": 0.0,
+        "discharging_time": null,
+        "level": 0.95
+      },
+      "geolocation": {
+        "enabled": true,
+        "latitude": null,
+        "longitude": null,
+        "accuracy": 15.0
+      },
+      "webrtc_policy": "disable_non_proxied_udp",
+      "block_port_scanning": true,
+      "block_sensors": true
+    },
+    "google": {
+      "target_account_email": null,
+      "auto_open_page": "google_login",
+      "custom_url": null,
+      "tags": [
+        "Bulk Import",
+        "Test Group"
+      ],
+      "notes": null
+    },
+    "status": "stopped",
+    "pid": null,
+    "last_launched_at": null,
+    "total_runtime_seconds": 0,
+    "last_health_check": null,
+    "created_at": "2026-08-23T18:18:10.754447+00:00",
+    "updated_at": "2026-08-23T18:18:10.754460+00:00"
+  }
+]

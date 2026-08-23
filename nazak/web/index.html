@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nazak Browser Studio - Multi-Profile Anti-Detect & Google Ads Manager</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo">N</div>
+        <div>
+          <span class="brand-title">Nazak Browser Studio</span>
+          <span class="brand-badge">PRO v1.3</span>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-pill" id="chrome-status-pill">
+          <span class="status-dot" id="chrome-dot"></span>
+          <span id="chrome-status-text">Chrome: Поиск...</span>
+        </div>
+        <div class="status-pill">
+          <span class="status-dot online pulsing"></span>
+          <span id="ws-status-text">WS: Live</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-warmup" onclick="openAutopostModal()">
+          <span>🚀 Автопостинг YouTube Shorts</span>
+        </button>
+        <button class="btn btn-secondary" onclick="openBulkImportModal()">
+          <span>📥 Импорт прокси</span>
+        </button>
+        <button class="btn btn-secondary" id="btn-check-all" onclick="checkAllProfiles()">
+          <span>🔍 Проверить прокси</span>
+        </button>
+        <button class="btn btn-primary" id="btn-add-profile" onclick="openCreateProfileModal()">
+          <span>+ Новый профиль</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Metrics Strip -->
+      <section class="metrics-strip">
+        <div class="metric-card">
+          <span class="metric-title">Всего профилей</span>
+          <span class="metric-val" id="metric-total-profiles">10</span>
+          <span class="metric-sub">Полная изоляция сессий</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-title">Активных браузеров</span>
+          <span class="metric-val" style="color: var(--accent-emerald);" id="metric-active-browsers">0</span>
+          <span class="metric-sub">Независимые PID процессы</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-title">Прокси онлайн</span>
+          <span class="metric-val" style="color: var(--accent-amber);" id="metric-live-proxies">-</span>
+          <span class="metric-sub">Пинг и геолокация</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-title">Google Reachability</span>
+          <span class="metric-val" style="color: var(--accent-sky);" id="metric-google-ready">-</span>
+          <span class="metric-sub">Search / Ads / Accounts</span>
+        </div>
+      </section>
+
+      <!-- Bulk Actions Bar (Shown when profiles selected) -->
+      <section class="bulk-bar" id="bulk-bar" style="display: none;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="profile-checkbox">
+          <span class="bulk-count" id="bulk-count-text">Выбрано: 0 профилей</span>
+        </div>
+        <div class="bulk-actions-group">
+          <button class="btn btn-success btn-sm" onclick="batchLaunchSelected()">🚀 Запустить выбранные</button>
+          <button class="btn btn-danger btn-sm" onclick="batchStopSelected()">⏹ Остановить выбранные</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchCheckSelected()">🔍 Проверить прокси</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearSelection()">✕ Снять выбор</button>
+        </div>
+      </section>
+
+      <!-- Controls & Filter Bar -->
+      <section class="controls-bar">
+        <div class="search-filter-group">
+          <input type="text" class="search-input" id="search-input" placeholder="Поиск по имени, группе, тегу, IP..." oninput="renderProfiles()">
+          
+          <select class="filter-select" id="group-filter" onchange="renderProfiles()">
+            <option value="ALL">Все группы</option>
+            <option value="Google Ads">Google Ads</option>
+            <option value="Warmup">Warmup</option>
+            <option value="YouTube">YouTube</option>
+            <option value="Organic">Organic</option>
+            <option value="Arbitrage">Arbitrage</option>
+          </select>
+
+          <select class="filter-select" id="status-filter" onchange="renderProfiles()">
+            <option value="ALL">Все статусы</option>
+            <option value="RUNNING">Только запущенные</option>
+            <option value="STOPPED">Только остановленные</option>
+          </select>
+        </div>
+
+        <div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchProfiles()">🔄 Обновить список</button>
+        </div>
+      </section>
+
+      <!-- Profiles Grid -->
+      <section class="profiles-grid" id="profiles-grid">
+        <!-- Injected dynamically -->
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast Notifications Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Diagnostic Report Modal -->
+  <div class="modal-backdrop" id="diag-modal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title" id="diag-modal-title">🔍 Диагностика профиля</h3>
+        <button class="modal-close-btn" onclick="closeDiagModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="diag-modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeDiagModal()">Закрыть</button>
+        <button class="btn btn-primary" id="diag-launch-btn" onclick="launchFromDiag()">🚀 Запустить браузер</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Edit / Create Modal -->
+  <div class="modal-backdrop" id="profile-modal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h3 class="modal-title" id="profile-modal-title">Настройки профиля</h3>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="randomizeFingerprintInModal()" style="font-size: 11px;">
+            🎲 Сгенерировать отпечаток
+          </button>
+        </div>
+        <button class="modal-close-btn" onclick="closeProfileModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-profile-id">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Название профиля</label>
+            <input type="text" class="form-input" id="edit-name" placeholder="Например: Google Ads - USA #1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Группа</label>
+            <input type="text" class="form-input" id="edit-group" placeholder="Google Ads / Warmup / YouTube">
+          </div>
+        </div>
+
+        <!-- Proxy Configuration -->
+        <div class="form-group">
+          <label class="form-label">Прокси (Формат: host:port, host:port:user:pass, socks5://user:pass@host:port, или direct)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" class="form-input" style="flex: 1;" id="edit-proxy-raw" placeholder="socks5://user:pass@127.0.0.1:1080">
+            <button class="btn btn-secondary btn-sm" type="button" onclick="testModalProxy()">⚡ Проверить прокси</button>
+          </div>
+          <span id="proxy-test-result" style="font-size: 11px; font-family: var(--font-mono); margin-top: 4px;"></span>
+        </div>
+
+        <!-- Google Target Settings -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Стартовая страница</label>
+            <select class="form-select" id="edit-google-target">
+              <option value="google_login">Google Accounts (Вход / Регистрация)</option>
+              <option value="google_ads">Google Ads (Кабинет рекламы)</option>
+              <option value="youtube_studio">YouTube Studio (Канал)</option>
+              <option value="google_search">Google Поиск (Прогрев / Warmup)</option>
+              <option value="whoer_check">Whoer.net (Проверка IP & Анонимности)</option>
+              <option value="blank">Чистая страница (about:blank)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Теги</label>
+            <input type="text" class="form-input" id="edit-tags" placeholder="Google Ads, USA, Tier 1">
+          </div>
+        </div>
+
+        <!-- Hardware & Fingerprint -->
+        <div class="form-group">
+          <label class="form-label">Пресет User-Agent & Платформы</label>
+          <select class="form-select" id="edit-ua-preset" onchange="applyUaPreset()">
+            <option value="win11_chrome133">Windows 11 / Chrome 133 (64-bit)</option>
+            <option value="win10_chrome132">Windows 10 / Chrome 132 (64-bit)</option>
+            <option value="mac_chrome133">macOS Sonoma / Chrome 133 (Apple Silicon)</option>
+            <option value="custom">Пользовательский User-Agent</option>
+          </select>
+          <input type="text" class="form-input" style="margin-top: 6px;" id="edit-user-agent">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Разрешение экрана</label>
+            <select class="form-select" id="edit-screen-res">
+              <option value="1920x1080">1920 x 1080 (Full HD)</option>
+              <option value="2560x1440">2560 x 1440 (2K QHD)</option>
+              <option value="1536x864">1536 x 864 (Laptop Standard)</option>
+              <option value="1440x900">1440 x 900 (MacBook Standard)</option>
+              <option value="1366x768">1366 x 768 (Compact)</option>
+              <option value="3840x2160">3840 x 2160 (4K UHD)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Язык браузера</label>
+            <input type="text" class="form-input" id="edit-language" placeholder="en-US,en;q=0.9">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">CPU Cores</label>
+            <input type="number" class="form-input" id="edit-cores" value="8" min="2" max="32">
+          </div>
+          <div class="form-group">
+            <label class="form-label">RAM (GB)</label>
+            <input type="number" class="form-input" id="edit-ram" value="16" min="4" max="64">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Заметки / Описание профиля</label>
+          <textarea class="form-textarea" id="edit-notes" rows="2" placeholder="Аккаунт с картой США, фарм 14 дней..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeProfileModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="saveProfileModal()">Сохранить профиль</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Proxy Import Modal -->
+  <div class="modal-backdrop" id="bulk-import-modal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title">📥 Массовый импорт прокси</h3>
+        <button class="modal-close-btn" onclick="closeBulkImportModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Вставьте список прокси (по одному на строку):</label>
+          <textarea class="form-textarea" id="bulk-proxy-text" rows="8" placeholder="192.168.1.1:8080:user:pass&#10;socks5://admin:pass@192.168.1.2:1080&#10;192.168.1.3:8080"></textarea>
+          <span style="font-size: 11px; color: var(--text-muted);">Для каждого прокси автоматически создастся уникальный профиль с уникальным отпечатком железа.</span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Группа профилей</label>
+            <input type="text" class="form-input" id="bulk-group" value="Google Ads">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Стартовая страница</label>
+            <select class="form-select" id="bulk-target-page">
+              <option value="google_login">Google Accounts (Вход)</option>
+              <option value="google_ads">Google Ads</option>
+              <option value="google_search">Google Поиск</option>
+              <option value="whoer_check">Whoer.net</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeBulkImportModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="submitBulkImport()">Создать профили</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Warmup Modal -->
+  <div class="modal-backdrop" id="warmup-modal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title" id="warmup-modal-title">🔥 Автопрогрев Google Аккаунта</h3>
+        <button class="modal-close-btn" onclick="closeWarmupModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="warmup-profile-id">
+        <p style="font-size: 13px; color: var(--text-secondary);">
+          Бот автоматически генерирует органические поисковые запросы по выбранной тематике, посещает сайты и накапливает трастовые куки перед авторизацией в Google Ads.
+        </p>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Тематика прогрева (Ниша)</label>
+            <select class="form-select" id="warmup-niche" onchange="previewWarmupPlan()">
+              <option value="ecommerce">E-Commerce & Покупки (Электроника, Товары)</option>
+              <option value="finance">Финансы & Инвестиции (ETF, Акции, Вклады)</option>
+              <option value="tech">IT & Технологии (Python, Docker, Cloud)</option>
+              <option value="travel">Путешествия (Отели, Авиабилеты, Туры)</option>
+              <option value="crypto">Криптовалюта (Bitcoin, DeFi, Web3)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Количество поисковых сессий</label>
+            <select class="form-select" id="warmup-steps" onchange="previewWarmupPlan()">
+              <option value="3">3 сессии (~4.5 мин)</option>
+              <option value="5" selected>5 сессий (~7.5 мин)</option>
+              <option value="8">8 сессий (~12 мин)</option>
+              <option value="12">12 сессий (~18 мин)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">План поисковых запросов:</label>
+          <div id="warmup-plan-preview" style="background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px; font-family: var(--font-mono); font-size: 11px; max-height: 140px; overflow-y: auto;">
+            Загрузка плана...
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeWarmupModal()">Отмена</button>
+        <button class="btn btn-warmup" onclick="startWarmup()">🔥 Запустить прогрев</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cookie Manager Modal -->
+  <div class="modal-backdrop" id="cookie-modal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title" id="cookie-modal-title">🍪 Менеджер Куки</h3>
+        <button class="modal-close-btn" onclick="closeCookieModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cookie-profile-id">
+        <div class="form-group">
+          <label class="form-label">Вставьте куки (JSON массив или Netscape формат):</label>
+          <textarea class="form-textarea" id="cookie-input-text" rows="9" placeholder='[{"name": "SID", "value": "...", "domain": ".google.com", "path": "/"}]'></textarea>
+          <span style="font-size: 11px; color: var(--text-muted);">Поддерживаются форматы расширений EditThisCookie, Cookie-Editor, Netscape cookie file.</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeCookieModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="submitCookiesImport()">Импортировать куки</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- YouTube Shorts Autoposting & Video Uniqueizer Modal -->
+  <div class="modal-backdrop" id="autopost-modal">
+    <div class="modal-window" style="max-width: 780px;">
+      <div class="modal-header">
+        <h3 class="modal-title">🚀 Автопостинг YouTube Shorts (Stealth Uploader)</h3>
+        <button class="modal-close-btn" onclick="closeAutopostModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid var(--accent-emerald); border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: var(--text-primary);">
+          <strong style="color: var(--accent-emerald);">Автономный пайплайн:</strong> Видео уникализируется под каждый аккаунт (FFmpeg сдвиг хэша, кроп 3%, микрошум, питч звука 1.5%), затем профили по очереди запускаются с CDP-управлением, вводят спинтакс-заголовки человеческими движениями мыши/клавиатуры и публикуют Shorts.
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Путь к исходному видео (MP4):</label>
+            <input type="text" class="form-input" id="autopost-video-path" value="data/videos/source.mp4" placeholder="data/videos/source.mp4 или абсолютный путь">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Telegram-канал / Бот воронки:</label>
+            <input type="text" class="form-input" id="autopost-tg" value="@speed_vpn_bot" placeholder="@your_vpn_channel">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Шаблон заголовка Shorts (со спинтаксом {A|B}):</label>
+          <input type="text" class="form-input" id="autopost-title-template" value="{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 ⚡ #shorts #vpn #ютуб">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Шаблон описания (со спинтаксом и CTA):</label>
+          <textarea class="form-textarea" id="autopost-desc-template" rows="3">{⚡ Скачать быстрый VPN для YouTube без лагов:|🚀 Как смотреть ютуб в 4K в РФ:} {tg}
+🎁 Промокод на скидку: {promo}
+
+#shorts #vpn #впн #ютуб #shortsyoutube</textarea>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0;">Целевые аккаунты для публикации:</label>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" onclick="previewAutopostSpintax()">🎲 Превью Спинтакс</button>
+              <button class="btn btn-secondary btn-sm" onclick="selectAutopostAll(true)">Выбрать все</button>
+              <button class="btn btn-secondary btn-sm" onclick="selectAutopostAll(false)">Снять</button>
+            </div>
+          </div>
+          <div id="autopost-profiles-selector" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px; max-height: 140px; overflow-y: auto;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div class="form-group" id="autopost-spintax-preview-box" style="display: none;">
+          <label class="form-label">Превью сгенерированных заголовков:</label>
+          <div id="autopost-spintax-preview-list" style="background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px; font-family: var(--font-mono); font-size: 11px; max-height: 120px; overflow-y: auto;"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Статус и прогресс загрузки по аккаунтам:</label>
+          <div id="autopost-jobs-table" style="background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px; font-family: var(--font-mono); font-size: 11px; max-height: 160px; overflow-y: auto;">
+            <div style="color: var(--text-muted); text-align: center;">Очередь готова к запуску</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeAutopostModal()">Закрыть</button>
+        <button class="btn btn-danger btn-sm" onclick="cancelAutopost()" id="btn-cancel-autopost" style="display: none;">⏹ Остановить очередь</button>
+        <button class="btn btn-warmup" onclick="startAutopostBatch()" id="btn-start-autopost">🚀 Запустить автопостинг</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

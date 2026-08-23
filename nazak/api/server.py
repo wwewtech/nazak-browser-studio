@@ -1,0 +1,468 @@
+"""
+FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
+"""
+import asyncio
+import os
+import json
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Body, Query, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+
+from ..config import WEB_DIR, PROFILES_DIR, EXTENSIONS_DIR, PROFILES_FILE, find_chrome_executable
+from ..models.profile import BrowserProfile, ProfileStatus, FingerprintConfig, GoogleSettings
+from ..models.proxy import ProxyConfig, ProxyType
+from ..models.health import HealthCheckResult, HealthStatus
+from ..core.profile_manager import ProfileManager
+from ..core.browser_launcher import BrowserLauncher
+from ..core.process_monitor import ProcessMonitor
+from ..core.proxy_checker import check_proxy_health
+from ..core.fingerprint_generator import generate_random_fingerprint
+from ..core.cookie_manager import parse_any_cookies, cookies_to_netscape
+from ..core.upload_queue import UploadQueueManager
+from ..core.video_uniquifier import VideoUniquifier, find_ffmpeg
+from ..core.spintax import parse_spintax, format_video_metadata
+
+from ..core.warmup_engine import WarmupPlan, generate_warmup_urls
+
+# Active WebSocket connections
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, event_type: str, data: Any):
+        payload = json.dumps({"event": event_type, "data": data})
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(payload)
+            except Exception:
+                self.disconnect(connection)
+
+ws_manager = ConnectionManager()
+
+# Initialize Core Services
+profile_manager = ProfileManager(PROFILES_FILE, PROFILES_DIR)
+browser_launcher = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
+upload_queue_mgr = UploadQueueManager(profile_manager, browser_launcher, ws_manager.broadcast)
+video_uniquifier = VideoUniquifier()
+process_monitor = ProcessMonitor(profile_manager, browser_launcher, poll_interval=1.0)
+
+def on_process_state_change(profile_id: str, status: ProfileStatus):
+    try:
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(ws_manager.broadcast("profile_status_change", {
+            "profile_id": profile_id,
+            "status": status.value
+        }))
+    except RuntimeError:
+        pass
+
+process_monitor.register_callback(on_process_state_change)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    process_monitor.start()
+    yield
+    process_monitor.stop()
+
+app = FastAPI(
+    title="Nazak Browser Studio API",
+    description="Professional Multi-Profile Anti-Detect Browser Launcher with Strict Proxy & Google Automation Isolation",
+    version="1.3.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Schemas for requests
+class LaunchRequest(BaseModel):
+    custom_url: Optional[str] = None
+
+class ProxyTestRequest(BaseModel):
+    raw_proxy: str
+
+class BulkImportRequest(BaseModel):
+    proxy_lines: str
+    group: str = "Google Ads"
+    target_page: str = "google_login"
+
+class BatchActionRequest(BaseModel):
+    profile_ids: List[str]
+
+class AutopostBatchRequest(BaseModel):
+    profile_ids: List[str]
+    source_video_path: Optional[str] = None
+    title_template: str = "{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 ⚡ #shorts"
+    description_template: str = "⚡ Скачать быстрый VPN без ограничений: {tg}\n🎁 Промокод на скидку: {promo}\n\n#shorts #vpn #впн"
+    tg_channel: str = "@your_vpn_bot"
+    delay_seconds: int = 10
+
+class UniquifyRequest(BaseModel):
+    source_video_path: str
+    profile_ids: List[str]
+
+class CookieImportRequest(BaseModel):
+    cookies_data: str
+
+class WarmupRequest(BaseModel):
+    niche: str = "ecommerce"
+    steps_count: int = 5
+
+# API Routes
+@app.get("/api/system/info")
+async def get_system_info():
+    chrome_exe = find_chrome_executable()
+    profiles = profile_manager.list_profiles()
+    running_count = sum(1 for p in profiles if browser_launcher.is_profile_running(p.id))
+    return {
+        "status": "online",
+        "chrome_installed": bool(chrome_exe),
+        "chrome_executable": chrome_exe,
+        "total_profiles": len(profiles),
+        "running_profiles": running_count,
+        "data_directory": str(PROFILES_DIR.resolve()),
+        "platform": os.name
+    }
+
+@app.get("/api/profiles", response_model=List[BrowserProfile])
+async def list_profiles():
+    profiles = profile_manager.list_profiles()
+    for p in profiles:
+        if browser_launcher.is_profile_running(p.id):
+            p.status = ProfileStatus.RUNNING
+            p.pid = browser_launcher.profile_pids.get(p.id)
+        else:
+            p.status = ProfileStatus.STOPPED
+            p.pid = None
+    return profiles
+
+@app.get("/api/profiles/{profile_id}", response_model=BrowserProfile)
+async def get_profile(profile_id: str):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if browser_launcher.is_profile_running(profile.id):
+        profile.status = ProfileStatus.RUNNING
+        profile.pid = browser_launcher.profile_pids.get(profile.id)
+    return profile
+
+@app.post("/api/profiles", response_model=BrowserProfile)
+async def create_profile(profile_data: BrowserProfile):
+    created = profile_manager.create_profile(profile_data)
+    await ws_manager.broadcast("profile_created", created.model_dump())
+    return created
+
+@app.put("/api/profiles/{profile_id}", response_model=BrowserProfile)
+async def update_profile(profile_id: str, profile_data: BrowserProfile):
+    profile_data.id = profile_id
+    updated = profile_manager.update_profile(profile_data)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    await ws_manager.broadcast("profile_updated", updated.model_dump())
+    return updated
+
+@app.delete("/api/profiles/{profile_id}")
+async def delete_profile(profile_id: str):
+    if browser_launcher.is_profile_running(profile_id):
+        browser_launcher.stop(profile_id)
+    deleted = profile_manager.delete_profile(profile_id, delete_data=True)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    await ws_manager.broadcast("profile_deleted", {"profile_id": profile_id})
+    return {"success": True, "message": "Profile deleted successfully"}
+
+@app.post("/api/profiles/{profile_id}/clone", response_model=BrowserProfile)
+async def clone_profile(profile_id: str, new_name: Optional[str] = Query(None)):
+    cloned = profile_manager.clone_profile(profile_id, new_name)
+    if not cloned:
+        raise HTTPException(status_code=404, detail="Source profile not found")
+    await ws_manager.broadcast("profile_created", cloned.model_dump())
+    return cloned
+
+@app.post("/api/profiles/{profile_id}/launch")
+async def launch_profile(profile_id: str, req: Optional[LaunchRequest] = None):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    custom_url = req.custom_url if req else None
+    success, pid, err = browser_launcher.launch(profile, custom_url=custom_url)
+    if not success:
+        profile.status = ProfileStatus.ERROR
+        profile_manager.update_profile(profile)
+        await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "error", "error": err})
+        raise HTTPException(status_code=400, detail=err or "Failed to launch browser")
+
+    profile.status = ProfileStatus.RUNNING
+    profile.pid = pid
+    profile_manager.update_profile(profile)
+    await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "running", "pid": pid})
+    return {"success": True, "pid": pid, "profile_id": profile_id}
+
+@app.post("/api/profiles/{profile_id}/stop")
+async def stop_profile(profile_id: str):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    browser_launcher.stop(profile_id)
+    profile.status = ProfileStatus.STOPPED
+    profile.pid = None
+    profile_manager.update_profile(profile)
+    await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "stopped"})
+    return {"success": True, "profile_id": profile_id}
+
+@app.post("/api/profiles/batch-launch")
+async def batch_launch(req: BatchActionRequest):
+    results = {}
+    for pid in req.profile_ids:
+        prof = profile_manager.get_profile(pid)
+        if prof:
+            ok, p_id, err = browser_launcher.launch(prof)
+            if ok:
+                prof.status = ProfileStatus.RUNNING
+                prof.pid = p_id
+                profile_manager.update_profile(prof)
+                results[pid] = {"success": True, "pid": p_id}
+            else:
+                results[pid] = {"success": False, "error": err}
+    return results
+
+@app.post("/api/profiles/batch-stop")
+async def batch_stop(req: BatchActionRequest):
+    for pid in req.profile_ids:
+        browser_launcher.stop(pid)
+        prof = profile_manager.get_profile(pid)
+        if prof:
+            prof.status = ProfileStatus.STOPPED
+            prof.pid = None
+            profile_manager.update_profile(prof)
+    return {"success": True, "stopped_count": len(req.profile_ids)}
+
+@app.post("/api/profiles/{profile_id}/check", response_model=HealthCheckResult)
+async def check_profile_proxy(profile_id: str):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    user_data_path = PROFILES_DIR / profile.id
+    result = await check_proxy_health(profile.proxy, profile_dir=user_data_path)
+    profile.last_health_check = result
+    
+    # Auto-align fingerprint geolocation and timezone with real proxy exit node
+    if result.latitude is not None and result.longitude is not None:
+        profile.fingerprint.geolocation.latitude = result.latitude
+        profile.fingerprint.geolocation.longitude = result.longitude
+    if result.timezone_name:
+        profile.fingerprint.timezone = result.timezone_name
+
+    profile_manager.update_profile(profile)
+
+    await ws_manager.broadcast("profile_health_update", {
+        "profile_id": profile_id,
+        "health": result.model_dump()
+    })
+    return result
+
+@app.post("/api/profiles/check-all")
+async def check_all_profiles():
+    profiles = profile_manager.list_profiles()
+
+    async def _check(p: BrowserProfile):
+        res = await check_proxy_health(p.proxy, profile_dir=PROFILES_DIR / p.id)
+        p.last_health_check = res
+        profile_manager.update_profile(p)
+        await ws_manager.broadcast("profile_health_update", {
+            "profile_id": p.id,
+            "health": res.model_dump()
+        })
+        return p.id, res
+
+    results = await asyncio.gather(*[_check(p) for p in profiles], return_exceptions=True)
+    return {"total_checked": len(profiles)}
+
+@app.post("/api/profiles/{profile_id}/clear-cache")
+async def clear_cache(profile_id: str):
+    if browser_launcher.is_profile_running(profile_id):
+        raise HTTPException(status_code=400, detail="Cannot clear cache while browser is running. Please stop it first.")
+    ok = profile_manager.clear_profile_cache(profile_id)
+    return {"success": ok, "message": "Cache cleared successfully"}
+
+@app.post("/api/profiles/randomize-fingerprint", response_model=FingerprintConfig)
+async def randomize_fingerprint(os_type: str = Query("windows")):
+    return generate_random_fingerprint(os_type=os_type)
+
+@app.post("/api/profiles/bulk-import")
+async def bulk_import_profiles(req: BulkImportRequest):
+    lines = [l.strip() for l in req.proxy_lines.splitlines() if l.strip()]
+    if not lines:
+        raise HTTPException(status_code=400, detail="No valid proxy lines provided")
+    created_list = []
+    
+    for idx, line in enumerate(lines, start=len(profile_manager.list_profiles()) + 1):
+        proxy_conf = ProxyConfig.parse(line)
+        fp = generate_random_fingerprint(os_type="windows")
+        google_set = GoogleSettings(
+            auto_open_page=req.target_page,
+            tags=["Bulk Import", req.group]
+        )
+        prof = BrowserProfile(
+            name=f"Profile {idx:02d} ({proxy_conf.host or 'Direct'})",
+            group=req.group,
+            proxy=proxy_conf,
+            fingerprint=fp,
+            google=google_set
+        )
+        saved = profile_manager.create_profile(prof)
+        created_list.append(saved)
+
+    await ws_manager.broadcast("profiles_bulk_created", {"count": len(created_list)})
+    return {"created_count": len(created_list)}
+
+@app.post("/api/profiles/{profile_id}/warmup/plan")
+async def get_warmup_plan(profile_id: str, req: WarmupRequest):
+    plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
+    return plan.to_dict()
+
+@app.post("/api/profiles/{profile_id}/warmup/launch")
+async def launch_warmup(profile_id: str, req: WarmupRequest):
+    plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
+    urls = generate_warmup_urls(plan.queries)
+    start_url = urls[0] if urls else "https://www.google.com"
+
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    ok, pid, err = browser_launcher.launch(profile, custom_url=start_url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err or "Failed to start browser for warmup")
+
+    profile.status = ProfileStatus.RUNNING
+    profile.pid = pid
+    profile_manager.update_profile(profile)
+    return {"success": True, "pid": pid, "plan": plan.to_dict(), "start_url": start_url}
+
+@app.post("/api/profiles/{profile_id}/cookies/import")
+async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
+    cookies = parse_any_cookies(req.cookies_data)
+    if not cookies:
+        raise HTTPException(status_code=400, detail="Invalid or empty cookies format. Supported: JSON or Netscape format.")
+    return {"success": True, "parsed_cookies_count": len(cookies)}
+
+@app.post("/api/profiles/test-proxy", response_model=HealthCheckResult)
+async def test_raw_proxy(req: ProxyTestRequest):
+    proxy_config = ProxyConfig.parse(req.raw_proxy)
+    result = await check_proxy_health(proxy_config, profile_dir=None)
+    return result
+
+# Auto-Posting & Video Uniqueization Endpoints
+@app.get("/api/autopost/status")
+async def get_autopost_status():
+    return {
+        "is_running": upload_queue_mgr.is_running,
+        "ffmpeg_available": video_uniquifier.is_ffmpeg_available(),
+        "ffmpeg_path": video_uniquifier.ffmpeg_path,
+        "jobs": upload_queue_mgr.get_jobs_status()
+    }
+
+@app.post("/api/autopost/uniquify")
+async def uniquify_videos_endpoint(req: UniquifyRequest):
+    src = Path(req.source_video_path)
+    if not src.exists():
+        raise HTTPException(status_code=400, detail=f"Source video not found: {req.source_video_path}")
+    results = video_uniquifier.batch_uniquify(src, req.profile_ids)
+    formatted = {}
+    for pid, (ok, path, err) in results.items():
+        formatted[pid] = {
+            "success": ok,
+            "output_path": str(path.resolve()) if path else None,
+            "error": err
+        }
+    return {"results": formatted, "count": len(results)}
+
+@app.post("/api/autopost/launch")
+async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: BackgroundTasks):
+    if upload_queue_mgr.is_running:
+        raise HTTPException(status_code=400, detail="An upload batch is already running. Please wait or cancel it first.")
+
+    src_path = Path(req.source_video_path) if req.source_video_path else (DATA_DIR / "videos" / "source.mp4")
+    if not src_path.exists():
+        # Create a dummy demo video if none exists so user can test immediately
+        src_path.parent.mkdir(parents=True, exist_ok=True)
+        src_path.write_bytes(b"DEMO_MP4_HEADER" + b"0" * 1024)
+
+    background_tasks.add_task(
+        upload_queue_mgr.run_batch_upload,
+        profile_ids=req.profile_ids,
+        source_video_path=src_path,
+        title_template=req.title_template,
+        description_template=req.description_template,
+        tg_channel=req.tg_channel,
+        delay_between_accounts_sec=req.delay_seconds
+    )
+    return {"success": True, "message": f"Autopost started for {len(req.profile_ids)} profiles in background"}
+
+@app.post("/api/autopost/cancel")
+async def cancel_autopost():
+    upload_queue_mgr.cancel_all()
+    return {"success": True, "message": "Autopost cancellation requested"}
+
+@app.post("/api/autopost/preview-spintax")
+async def preview_spintax_endpoint(req: AutopostBatchRequest):
+    samples = []
+    for pid in req.profile_ids[:5]:
+        prof = profile_manager.get_profile(pid)
+        pname = prof.name if prof else pid
+        meta = format_video_metadata(
+            title_template=req.title_template,
+            description_template=req.description_template,
+            profile_name=pname,
+            profile_id=pid,
+            tg_channel=req.tg_channel
+        )
+        samples.append({"profile_id": pid, "profile_name": pname, "title": meta["title"], "description": meta["description"]})
+    return {"samples": samples}
+
+# WebSocket Real-time Feed
+@app.websocket("/ws/events")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception:
+        ws_manager.disconnect(websocket)
+
+# Mount Static Web App
+if WEB_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+    @app.get("/")
+    async def serve_index():
+        index_file = WEB_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        return {"message": "Nazak Browser Studio API Server Running"}
