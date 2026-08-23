@@ -130,26 +130,52 @@ flowchart TD
 
 ## 🚀 Быстрый старт
 
-### Вариант 1: Запуск готового EXE (Рекомендуется)
+### 🪟 Windows: Запуск готового EXE (Рекомендуется)
 1. Скачайте архив из раздела [**Releases**](https://github.com/wwewtech/nazak-browser-studio/releases).
 2. Распакуйте в любую удобную папку.
 3. Запустите `NazakBrowserStudio.exe` (или `start_app.bat`).
 
-### Вариант 2: Запуск из исходного кода
-```powershell
-# 1. Клонирование репозитория
+---
+
+### 🍏 macOS & Linux: Запуск в 1 клик (`start_macos.sh`)
+Поддерживает **Apple Silicon (M1/M2/M3/M4)** и **Intel Mac**, а также любые дистрибутивы Linux:
+
+```bash
+# 1. Клонирование и переход в папку
 git clone https://github.com/wwewtech/nazak-browser-studio.git
 cd nazak-browser-studio
 
-# 2. Установка зависимостей
+# 2. Выдача прав и запуск лаунчера
+chmod +x start_macos.sh
+./start_macos.sh
+```
+
+Лаунчер автоматически проверит Python 3.10+, создаст изолированный `.venv`, установит зависимости и предложит интерактивный выбор:
+- `[1]` 🖥️ **Desktop GUI** (нативное окно с плавной работой)
+- `[2]` 🌐 **Web Studio Dashboard** (`http://127.0.0.1:8899`)
+- `[3]` 🧪 **Запуск 271 теста**
+
+---
+
+### 🐳 Docker: Серверный запуск (Headless Cloud)
+```bash
+docker compose up -d
+# Открывает панель управления на http://localhost:8899
+```
+
+---
+
+### 🐍 Запуск из исходного кода (Python 3.10+)
+```powershell
+# Установка зависимостей
 pip install -r requirements.txt
 playwright install chromium
 
-# 3. Запуск GUI-приложения
-python -m nazak.gui.main
+# Запуск нативного интерфейса
+python -m nazak.main --mode gui
 
-# Или запуск локального веб-сервера
-python -m nazak.main
+# Или запуск веб-студии в браузере
+python -m nazak.main --mode web
 ```
 
 ---

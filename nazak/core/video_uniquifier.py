@@ -16,20 +16,32 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 def find_ffmpeg() -> Optional[str]:
-    """Locates FFmpeg executable in PATH or standard Windows directories."""
+    """
+    Locates FFmpeg executable across Windows, macOS (Homebrew / MacPorts), and Linux.
+    """
     in_path = shutil.which("ffmpeg")
     if in_path:
         return in_path
 
     candidates = [
+        # Windows
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe",
         Path("C:/ProgramData/chocolatey/bin/ffmpeg.exe"),
         Path("C:/ffmpeg/bin/ffmpeg.exe"),
         Path("C:/tools/ffmpeg/bin/ffmpeg.exe"),
+        # macOS Homebrew (Apple Silicon)
+        Path("/opt/homebrew/bin/ffmpeg"),
+        # macOS Homebrew (Intel) & Linux standard
+        Path("/usr/local/bin/ffmpeg"),
+        # macOS MacPorts
+        Path("/opt/local/bin/ffmpeg"),
+        # User local bin
+        Path.home() / "bin" / "ffmpeg",
+        Path.home() / ".local" / "bin" / "ffmpeg",
     ]
     for c in candidates:
         if c.exists() and c.is_file():
-            return str(c)
+            return str(c.resolve())
     return None
 
 class VideoUniquifier:
