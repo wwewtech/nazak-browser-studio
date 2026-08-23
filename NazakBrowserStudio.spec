@@ -29,7 +29,12 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'torch', 'torchvision', 'torchaudio', 'tensorflow', 'tensorboard',
+        'keras', 'paddle', 'onnxruntime', 'scipy', 'sklearn', 'scikit_learn',
+        'bitsandbytes', 'llvmlite', 'numba', 'matplotlib', 'pandas', 'pyarrow',
+        'IPython', 'notebook', 'sympy', 'transformers', 'accelerate', 'cuda'
+    ],
     noarchive=False,
     optimize=0,
 )
