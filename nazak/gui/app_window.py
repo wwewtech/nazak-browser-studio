@@ -42,6 +42,14 @@ class NazakFluentMainWindow(MSFluentWindow):
         # Paint root window background obsidian dark
         self.setBackgroundColor(QColor(18, 18, 20))
 
+        # Set Window Branding Icon
+        from ..config import DATA_DIR
+        icon_path = DATA_DIR / "assets" / "icon.ico"
+        if not icon_path.exists():
+            icon_path = Path(__file__).resolve().parent.parent.parent / "data" / "assets" / "icon.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
     def init_navigation(self):
         # 1. Profiles Dashboard (Primary)
         self.profiles_view = ProfilesView(self.profile_manager, self.browser_launcher, self)

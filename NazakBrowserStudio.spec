@@ -2,7 +2,8 @@
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = [
-    ('nazak/web', 'nazak/web')
+    ('nazak/web', 'nazak/web'),
+    ('data/assets', 'data/assets')
 ]
 binaries = []
 hiddenimports = [
@@ -56,6 +57,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='data/assets/icon.ico',
 )
 
 coll = COLLECT(

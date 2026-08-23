@@ -1,5 +1,15 @@
 <div align="center">
 
+<img src="data/assets/banner.png" alt="Nazak Browser Studio Banner" width="100%">
+
+<br><br>
+
+<p align="center">
+  <img src="data/assets/logo_dark.png" width="120" alt="Nazak Dark Logo" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="data/assets/logo_light.png" width="120" alt="Nazak Light Logo" />
+</p>
+
 # 🌐 Nazak Browser Studio PRO
 ### Next-Generation Hardware-Isolated Anti-Detect Browser, Google 2FA Automation & YouTube Shorts Stealth Autoposter
 
