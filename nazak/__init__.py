@@ -1,7 +1,7 @@
 """
 Nazak Browser Studio - Professional Multi-Profile Browser Management Suite.
 """
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 __author__ = "Nazak Digital"
 
 from .models import BrowserProfile, ProxyConfig, ProxyType, HealthCheckResult, ProfileStatus

@@ -4,6 +4,7 @@ FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
 import asyncio
 import os
 import json
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -18,16 +19,22 @@ from ..models.profile import BrowserProfile, ProfileStatus, FingerprintConfig, G
 from ..models.proxy import ProxyConfig, ProxyType
 from ..models.health import HealthCheckResult, HealthStatus
 from ..core.profile_manager import ProfileManager
-from ..core.browser_launcher import BrowserLauncher
+from ..core.browser_launcher import BrowserLauncher, get_free_port
 from ..core.process_monitor import ProcessMonitor
 from ..core.proxy_checker import check_proxy_health
 from ..core.fingerprint_generator import generate_random_fingerprint
-from ..core.cookie_manager import parse_any_cookies, cookies_to_netscape
+from ..core.cookie_manager import (
+    parse_any_cookies, cookies_to_netscape, parse_bulk_cookie_input,
+    create_cookies_zip_archive
+)
 from ..core.upload_queue import UploadQueueManager
 from ..core.video_uniquifier import VideoUniquifier, find_ffmpeg
 from ..core.spintax import parse_spintax, format_video_metadata
-
-from ..core.warmup_engine import WarmupPlan, generate_warmup_urls
+from ..core.warmup_engine import (
+    WarmupPlan, generate_warmup_urls, ScenarioStep, WarmupScenario,
+    ScenarioExecutor, BUILTIN_SCENARIOS
+)
+from ..core.synchronizer import SynchronizerManager, SynchronizerSession, tile_windows_win32
 
 # Active WebSocket connections
 class ConnectionManager:
@@ -58,6 +65,8 @@ browser_launcher = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
 upload_queue_mgr = UploadQueueManager(profile_manager, browser_launcher, ws_manager.broadcast)
 video_uniquifier = VideoUniquifier()
 process_monitor = ProcessMonitor(profile_manager, browser_launcher, poll_interval=1.0)
+synchronizer_mgr = SynchronizerManager(browser_launcher)
+scenario_executor = ScenarioExecutor(browser_launcher, profile_manager)
 
 def on_process_state_change(profile_id: str, status: ProfileStatus):
     try:
@@ -95,6 +104,7 @@ app.add_middleware(
 # Schemas for requests
 class LaunchRequest(BaseModel):
     custom_url: Optional[str] = None
+    cdp_port: Optional[int] = None
 
 class ProxyTestRequest(BaseModel):
     raw_proxy: str
@@ -103,6 +113,15 @@ class BulkImportRequest(BaseModel):
     proxy_lines: str
     group: str = "Google Ads"
     target_page: str = "google_login"
+
+class MassGenerateRequest(BaseModel):
+    count: int = 10
+    group: str = "Mass Generated"
+    proxy_lines: Optional[str] = None
+    os_mix: str = "windows"
+    tags: Optional[List[str]] = None
+    target_page: str = "google_login"
+    notes: Optional[str] = None
 
 class BatchActionRequest(BaseModel):
     profile_ids: List[str]
@@ -122,9 +141,38 @@ class UniquifyRequest(BaseModel):
 class CookieImportRequest(BaseModel):
     cookies_data: str
 
+class BulkCookieImportRequest(BaseModel):
+    cookies_data: str
+    auto_create_missing: bool = True
+    group: str = "Imported Cookies"
+
+class BulkCookieExportRequest(BaseModel):
+    profile_ids: Optional[List[str]] = None
+    format: str = "json"
+
 class WarmupRequest(BaseModel):
     niche: str = "ecommerce"
     steps_count: int = 5
+
+class ScenarioRunRequest(BaseModel):
+    scenario_id: Optional[str] = None
+    scenario_data: Optional[Dict[str, Any]] = None
+    profile_ids: List[str]
+    max_concurrency: int = 3
+
+class SynchronizerStartRequest(BaseModel):
+    master_profile_id: str
+    worker_profile_ids: List[str]
+    humanize_jitter: bool = True
+    min_delay_ms: int = 20
+    max_delay_ms: int = 80
+    coordinate_jitter_px: int = 2
+
+class SynchronizerNavigateRequest(BaseModel):
+    url: str
+
+class WindowTileRequest(BaseModel):
+    cols: Optional[int] = None
 
 # API Routes
 @app.get("/api/system/info")
@@ -204,7 +252,14 @@ async def launch_profile(profile_id: str, req: Optional[LaunchRequest] = None):
         raise HTTPException(status_code=404, detail="Profile not found")
 
     custom_url = req.custom_url if req else None
-    success, pid, err = browser_launcher.launch(profile, custom_url=custom_url)
+    cdp_port = req.cdp_port if req else None
+
+    if cdp_port:
+        success, pid, port, ws_url, err = browser_launcher.launch_with_cdp(profile, custom_url=custom_url, port=cdp_port)
+    else:
+        success, pid, err = browser_launcher.launch(profile, custom_url=custom_url)
+        port, ws_url = None, None
+
     if not success:
         profile.status = ProfileStatus.ERROR
         profile_manager.update_profile(profile)
@@ -215,7 +270,11 @@ async def launch_profile(profile_id: str, req: Optional[LaunchRequest] = None):
     profile.pid = pid
     profile_manager.update_profile(profile)
     await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "running", "pid": pid})
-    return {"success": True, "pid": pid, "profile_id": profile_id}
+    res = {"success": True, "pid": pid, "profile_id": profile_id}
+    if port:
+        res["port"] = port
+        res["wsEndpoint"] = ws_url
+    return res
 
 @app.post("/api/profiles/{profile_id}/stop")
 async def stop_profile(profile_id: str):
@@ -229,6 +288,89 @@ async def stop_profile(profile_id: str):
     profile_manager.update_profile(profile)
     await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "stopped"})
     return {"success": True, "profile_id": profile_id}
+
+# ----------------------------------------------------
+# Dolphin{anty} Local Automation API v1.0 Parity
+# ----------------------------------------------------
+@app.get("/v1.0/browser_profiles")
+async def dolphin_list_profiles():
+    profiles = profile_manager.list_profiles()
+    data = []
+    for p in profiles:
+        is_run = browser_launcher.is_profile_running(p.id)
+        cdp_info = browser_launcher.get_cdp_info(p.id) if is_run else None
+        data.append({
+            "id": p.id,
+            "name": p.name,
+            "status": "running" if is_run else "stopped",
+            "proxy": p.proxy.model_dump(),
+            "automation": cdp_info,
+            "tags": p.google.tags
+        })
+    return {"success": True, "data": data}
+
+@app.get("/v1.0/browser_profiles/{profile_id}/start")
+@app.post("/api/v1/profiles/{profile_id}/start")
+async def dolphin_start_profile(profile_id: str, custom_url: Optional[str] = Query(None), port: Optional[int] = Query(None)):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    ok, pid, cdp_port, ws_endpoint, err = browser_launcher.launch_with_cdp(profile, custom_url=custom_url, port=port)
+    if not ok:
+        profile.status = ProfileStatus.ERROR
+        profile_manager.update_profile(profile)
+        raise HTTPException(status_code=400, detail=err or "Failed to start profile with automation")
+
+    profile.status = ProfileStatus.RUNNING
+    profile.pid = pid
+    profile_manager.update_profile(profile)
+    await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "running", "pid": pid})
+    return {
+        "success": True,
+        "automation": {
+            "port": cdp_port,
+            "wsEndpoint": ws_endpoint
+        },
+        "pid": pid,
+        "profile_id": profile_id
+    }
+
+@app.get("/v1.0/browser_profiles/{profile_id}/stop")
+@app.post("/api/v1/profiles/{profile_id}/stop")
+async def dolphin_stop_profile(profile_id: str):
+    profile = profile_manager.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    browser_launcher.stop(profile_id)
+    profile.status = ProfileStatus.STOPPED
+    profile.pid = None
+    profile_manager.update_profile(profile)
+    await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "stopped"})
+    return {"success": True, "profile_id": profile_id}
+
+@app.get("/v1.0/browser_profiles/active")
+async def dolphin_active_profiles():
+    profiles = profile_manager.list_profiles()
+    active = []
+    for p in profiles:
+        if browser_launcher.is_profile_running(p.id):
+            cdp_info = browser_launcher.get_cdp_info(p.id)
+            active.append({
+                "profile_id": p.id,
+                "name": p.name,
+                "pid": browser_launcher.profile_pids.get(p.id),
+                "automation": cdp_info
+            })
+    return {"success": True, "active_count": len(active), "profiles": active}
+
+@app.get("/api/v1/profiles/{profile_id}/cdp")
+async def get_profile_cdp(profile_id: str):
+    cdp_info = browser_launcher.get_cdp_info(profile_id)
+    if not cdp_info:
+        raise HTTPException(status_code=400, detail="Profile is not running or CDP is not active")
+    return {"success": True, "cdp": cdp_info}
 
 @app.post("/api/profiles/batch-launch")
 async def batch_launch(req: BatchActionRequest):
@@ -337,6 +479,140 @@ async def bulk_import_profiles(req: BulkImportRequest):
     await ws_manager.broadcast("profiles_bulk_created", {"count": len(created_list)})
     return {"created_count": len(created_list)}
 
+@app.post("/api/profiles/mass-generate")
+async def mass_generate_profiles_endpoint(req: MassGenerateRequest):
+    proxy_list = [p.strip() for p in req.proxy_lines.splitlines() if p.strip()] if req.proxy_lines else None
+    created = profile_manager.mass_generate_profiles(
+        count=req.count,
+        group=req.group,
+        proxy_list=proxy_list,
+        os_mix=req.os_mix,
+        tags=req.tags,
+        auto_open_page=req.target_page,
+        notes=req.notes
+    )
+    await ws_manager.broadcast("profiles_bulk_created", {"count": len(created)})
+    return {"success": True, "created_count": len(created), "profiles": [p.model_dump() for p in created]}
+
+@app.get("/api/profiles/{profile_id}/bundle/export")
+async def export_profile_bundle_endpoint(profile_id: str):
+    prof = profile_manager.get_profile(profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    bundle_path = profile_manager.export_profile_bundle(profile_id)
+    if not bundle_path or not bundle_path.exists():
+        raise HTTPException(status_code=500, detail="Failed to create profile bundle")
+    return FileResponse(path=str(bundle_path), filename=f"{profile_id}_bundle.nazak", media_type="application/zip")
+
+@app.post("/api/profiles/{profile_id}/rotate-proxy")
+async def rotate_profile_proxy_endpoint(profile_id: str):
+    prof = profile_manager.get_profile(profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if not prof.proxy.rotation_url:
+        raise HTTPException(status_code=400, detail="Profile does not have a proxy rotation URL configured")
+    try:
+        req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            resp_body = resp.read().decode("utf-8", errors="ignore")
+            return {"success": True, "status_code": resp.status, "response": resp_body[:200]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger proxy rotation: {str(e)}")
+
+# Cookie Management Endpoints
+@app.post("/api/cookies/bulk-import")
+async def bulk_import_cookies_endpoint(req: BulkCookieImportRequest):
+    cookie_map = parse_bulk_cookie_input(req.cookies_data)
+    if not cookie_map:
+        raise HTTPException(status_code=400, detail="No valid cookies parsed from input")
+    res = profile_manager.batch_import_cookies(cookie_map, auto_create_missing=req.auto_create_missing, group=req.group)
+    await ws_manager.broadcast("cookies_bulk_imported", res)
+    return {"success": True, "results": res}
+
+@app.post("/api/cookies/bulk-export")
+async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
+    cookie_dict = profile_manager.export_all_cookies(req.profile_ids)
+    if req.format.lower() == "zip":
+        zip_bytes = create_cookies_zip_archive(cookie_dict, format_type="json")
+        from fastapi.responses import Response
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": "attachment; filename=nazak_cookies.zip"})
+    return {"success": True, "cookies": cookie_dict, "profiles_count": len(cookie_dict)}
+
+@app.get("/api/profiles/{profile_id}/cookies/export")
+async def export_profile_cookies_endpoint(profile_id: str, format: str = Query("json")):
+    cookies = profile_manager.load_profile_cookies(profile_id)
+    if format.lower() == "netscape":
+        return {"format": "netscape", "content": cookies_to_netscape(cookies), "cookies_count": len(cookies)}
+    return {"format": "json", "cookies": cookies, "cookies_count": len(cookies)}
+
+@app.post("/api/profiles/{profile_id}/cookies/import")
+async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
+    cookies = parse_any_cookies(req.cookies_data)
+    if not cookies:
+        raise HTTPException(status_code=400, detail="Invalid or empty cookies format. Supported: JSON or Netscape format.")
+    saved = profile_manager.save_profile_cookies(profile_id, cookies)
+    return {"success": saved, "parsed_cookies_count": len(cookies)}
+
+# Scenario & Autonomous Warmup Endpoints
+@app.get("/api/scenarios")
+async def list_scenarios():
+    return [s.to_dict() for s in BUILTIN_SCENARIOS]
+
+@app.post("/api/scenarios/run")
+async def run_scenario_endpoint(req: ScenarioRunRequest, background_tasks: BackgroundTasks):
+    scenario = None
+    if req.scenario_id:
+        for s in BUILTIN_SCENARIOS:
+            if s.id == req.scenario_id:
+                scenario = s
+                break
+    elif req.scenario_data:
+        scenario = WarmupScenario.from_dict(req.scenario_data)
+
+    if not scenario:
+        scenario = BUILTIN_SCENARIOS[0]
+
+    background_tasks.add_task(
+        scenario_executor.run_batch_warmup,
+        scenario=scenario,
+        profile_ids=req.profile_ids,
+        max_concurrency=req.max_concurrency
+    )
+    return {"success": True, "message": f"Scenario '{scenario.name}' started for {len(req.profile_ids)} profiles"}
+
+# Synchronizer Endpoints
+@app.post("/api/synchronizer/start")
+async def start_synchronizer_endpoint(req: SynchronizerStartRequest):
+    session = synchronizer_mgr.start_session(
+        master_profile_id=req.master_profile_id,
+        worker_profile_ids=req.worker_profile_ids,
+        humanize_jitter=req.humanize_jitter,
+        delay_range_ms=(req.min_delay_ms, req.max_delay_ms),
+        coordinate_jitter_px=req.coordinate_jitter_px
+    )
+    await ws_manager.broadcast("synchronizer_started", session.to_dict())
+    return {"success": True, "session": session.to_dict()}
+
+@app.post("/api/synchronizer/stop")
+async def stop_synchronizer_endpoint():
+    s = synchronizer_mgr.stop_session()
+    await ws_manager.broadcast("synchronizer_stopped", {})
+    return {"success": True, "message": "Synchronizer stopped"}
+
+@app.get("/api/synchronizer/status")
+async def get_synchronizer_status():
+    return synchronizer_mgr.get_status()
+
+@app.post("/api/synchronizer/tile-windows")
+async def tile_windows_endpoint(req: WindowTileRequest = Body(default=WindowTileRequest())):
+    ok = synchronizer_mgr.tile_active_windows(cols=req.cols)
+    return {"success": ok}
+
+@app.post("/api/synchronizer/navigate")
+async def synchronizer_navigate(req: SynchronizerNavigateRequest):
+    results = await synchronizer_mgr.mirror_navigation(req.url)
+    return {"success": True, "results": results}
+
 @app.post("/api/profiles/{profile_id}/warmup/plan")
 async def get_warmup_plan(profile_id: str, req: WarmupRequest):
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
@@ -360,13 +636,6 @@ async def launch_warmup(profile_id: str, req: WarmupRequest):
     profile.pid = pid
     profile_manager.update_profile(profile)
     return {"success": True, "pid": pid, "plan": plan.to_dict(), "start_url": start_url}
-
-@app.post("/api/profiles/{profile_id}/cookies/import")
-async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
-    cookies = parse_any_cookies(req.cookies_data)
-    if not cookies:
-        raise HTTPException(status_code=400, detail="Invalid or empty cookies format. Supported: JSON or Netscape format.")
-    return {"success": True, "parsed_cookies_count": len(cookies)}
 
 @app.post("/api/profiles/test-proxy", response_model=HealthCheckResult)
 async def test_raw_proxy(req: ProxyTestRequest):

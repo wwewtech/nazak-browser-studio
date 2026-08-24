@@ -17,6 +17,9 @@ from qfluentwidgets import (
 
 from ..dialogs.profile_edit_dialog import ProfileEditDialog
 from ..dialogs.cookie_dialog import CookieManagerDialog
+from ..dialogs.batch_cookie_dialog import BatchCookieDialog
+from ..dialogs.mass_generate_dialog import MassGenerateDialog
+from ..dialogs.synchronizer_dialog import SynchronizerDialog
 from ..workers import ProxyCheckWorker, CheckAllProxiesWorker
 from ...models.profile import BrowserProfile, ProfileStatus
 from ...models.health import HealthStatus
@@ -190,8 +193,19 @@ class ProfilesView(QWidget):
         h_head.addLayout(v_title)
         h_head.addStretch()
 
+        self.btn_batch_cookies = PushButton(FluentIcon.DOCUMENT, "Пакетные куки", self)
+        self.btn_batch_cookies.clicked.connect(self.on_batch_cookies)
+        h_head.addWidget(self.btn_batch_cookies)
+
+        self.btn_mass_gen = PushButton(FluentIcon.ADD, "Массовая генерация", self)
+        self.btn_mass_gen.clicked.connect(self.on_mass_generate)
+        h_head.addWidget(self.btn_mass_gen)
+
+        self.btn_sync = PushButton(FluentIcon.SYNC, "Синхронизатор", self)
+        self.btn_sync.clicked.connect(self.on_synchronizer)
+        h_head.addWidget(self.btn_sync)
+
         self.btn_new_prof = PrimaryPushButton(FluentIcon.ADD, "Новый профиль", self)
-        
         self.btn_new_prof.clicked.connect(self.on_create_profile)
         h_head.addWidget(self.btn_new_prof)
         main_layout.addLayout(h_head)
@@ -456,3 +470,17 @@ class ProfilesView(QWidget):
         self.profile_manager.delete_profile(profile_id, delete_data=True)
         self.refresh_profiles()
         InfoBar.info("Профиль удален", f"'{pname}' и его данные удалены", parent=self, position=InfoBarPosition.TOP)
+
+    def on_batch_cookies(self):
+        dlg = BatchCookieDialog(self.profile_manager, parent=self)
+        if dlg.exec():
+            self.refresh_profiles()
+
+    def on_mass_generate(self):
+        dlg = MassGenerateDialog(self.profile_manager, parent=self)
+        if dlg.exec():
+            self.refresh_profiles()
+
+    def on_synchronizer(self):
+        dlg = SynchronizerDialog(self.profile_manager, self.browser_launcher, parent=self)
+        dlg.exec()
