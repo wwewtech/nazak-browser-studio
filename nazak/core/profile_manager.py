@@ -251,6 +251,7 @@ class ProfileManager:
 
     def save_profiles(self):
         """Atomically saves profiles to JSON file with Windows retry resilience."""
+        self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_file = self.profiles_file.with_suffix(".tmp")
         data = [p.model_dump() for p in self.profiles.values()]
         with open(tmp_file, "w", encoding="utf-8") as f:
@@ -412,3 +413,242 @@ class ProfileManager:
             except Exception:
                 pass
         return []
+
+    def batch_import_cookies(
+        self,
+        cookie_map: Dict[str, List[Dict[str, Any]]],
+        auto_create_missing: bool = False,
+        group: str = "Imported Cookies"
+    ) -> Dict[str, Any]:
+        """
+        Batch imports cookies across multiple profiles.
+        Matches by profile ID, exact profile Name, or case-insensitive substring.
+        If no matching profile is found and auto_create_missing is True, creates a new isolated profile.
+        """
+        results = {
+            "matched": 0,
+            "created": 0,
+            "failed": 0,
+            "profile_ids": []
+        }
+
+        all_profiles = list(self.profiles.values())
+        id_map = {p.id: p for p in all_profiles}
+        name_map = {p.name.strip().lower(): p for p in all_profiles}
+
+        from .fingerprint_generator import generate_random_fingerprint
+
+        for key, cookies in cookie_map.items():
+            if not cookies:
+                continue
+
+            target_profile: Optional[BrowserProfile] = None
+            key_clean = key.strip()
+            key_lower = key_clean.lower()
+
+            # 1. Direct ID match
+            if key_clean in id_map:
+                target_profile = id_map[key_clean]
+            # 2. Exact Name match
+            elif key_lower in name_map:
+                target_profile = name_map[key_lower]
+            # 3. Substring Name match
+            else:
+                for p in all_profiles:
+                    if key_lower in p.name.lower() or p.id.lower() in key_lower:
+                        target_profile = p
+                        break
+
+            # 4. Auto-create if not matched
+            if not target_profile and auto_create_missing:
+                fp = generate_random_fingerprint(os_type="windows")
+                p_name = key_clean if key_clean != "default" else f"Cookie Profile {len(self.profiles) + 1:02d}"
+                new_prof = BrowserProfile(
+                    name=p_name,
+                    group=group,
+                    proxy=ProxyConfig(type=ProxyType.DIRECT, raw="direct"),
+                    fingerprint=fp,
+                    google=GoogleSettings(auto_open_page="google_login", tags=["Cookie Import", group])
+                )
+                target_profile = self.create_profile(new_prof)
+                id_map[target_profile.id] = target_profile
+                name_map[target_profile.name.strip().lower()] = target_profile
+                results["created"] += 1
+            elif target_profile:
+                results["matched"] += 1
+
+            if target_profile:
+                saved = self.save_profile_cookies(target_profile.id, cookies)
+                if saved:
+                    results["profile_ids"].append(target_profile.id)
+                else:
+                    results["failed"] += 1
+            else:
+                results["failed"] += 1
+
+        return results
+
+    def export_all_cookies(self, profile_ids: Optional[List[str]] = None) -> Dict[str, List[Dict[str, Any]]]:
+        """Exports loaded cookies for specified or all profiles indexed by profile ID."""
+        target_ids = profile_ids or list(self.profiles.keys())
+        out = {}
+        for pid in target_ids:
+            cookies = self.load_profile_cookies(pid)
+            if cookies:
+                out[pid] = cookies
+        return out
+
+    def mass_generate_profiles(
+        self,
+        count: int,
+        group: str = "Mass Generated",
+        proxy_list: Optional[List[str]] = None,
+        os_mix: str = "windows",
+        tags: Optional[List[str]] = None,
+        auto_open_page: str = "google_login",
+        notes: Optional[str] = None
+    ) -> List[BrowserProfile]:
+        """
+        Mass generates N fully isolated, high-tier browser profiles with distinct hardware fingerprints
+        and proxy round-robin allocation.
+        """
+        from .fingerprint_generator import generate_random_fingerprint
+
+        created_profiles: List[BrowserProfile] = []
+        proxies_parsed = [ProxyConfig.parse(p) for p in (proxy_list or []) if p and p.strip()]
+
+        os_types = ["windows"]
+        if os_mix == "mac":
+            os_types = ["mac"]
+        elif os_mix == "linux":
+            os_types = ["linux"]
+        elif os_mix == "all":
+            os_types = ["windows", "mac", "linux"]
+
+        base_index = len(self.profiles) + 1
+        for i in range(count):
+            chosen_os = random.choice(os_types)
+            fp = generate_random_fingerprint(os_type=chosen_os)
+
+            proxy_conf = ProxyConfig(type=ProxyType.DIRECT, raw="direct")
+            if proxies_parsed:
+                proxy_conf = proxies_parsed[i % len(proxies_parsed)]
+
+            proxy_label = f" ({proxy_conf.host})" if proxy_conf.host else " (Direct)"
+            name = f"Profile {base_index + i:02d}{proxy_label}"
+
+            profile_tags = list(tags) if tags else ["Mass Generated", group]
+            g_settings = GoogleSettings(
+                auto_open_page=auto_open_page,
+                tags=profile_tags,
+                notes=notes or f"Generated in batch of {count}"
+            )
+
+            prof = BrowserProfile(
+                name=name,
+                group=group,
+                proxy=proxy_conf,
+                fingerprint=fp,
+                google=g_settings
+            )
+
+            saved = self.create_profile(prof)
+            created_profiles.append(saved)
+
+        return created_profiles
+
+    def export_profile_bundle(self, profile_id: str, output_path: Optional[Path] = None) -> Optional[Path]:
+        """
+        Exports a complete portable .nazak / zip bundle containing profile metadata,
+        fingerprint, cookies, and local session files.
+        """
+        prof = self.get_profile(profile_id)
+        if not prof:
+            return None
+
+        import zipfile
+        out_file = output_path or (self.profiles_dir / f"{profile_id}_bundle.nazak")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+
+        prof_dir = self.profiles_dir / profile_id
+
+        with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
+            # 1. Profile metadata JSON
+            zf.writestr("profile.json", json.dumps(prof.model_dump(), indent=2, ensure_ascii=False))
+
+            # 2. Profile cookies
+            cookies = self.load_profile_cookies(profile_id)
+            if cookies:
+                zf.writestr("cookies.json", json.dumps(cookies, indent=2, ensure_ascii=False))
+
+            # 3. Include local session files if exist (Default/Network, Default/Local Storage, Default/IndexedDB)
+            if prof_dir.exists():
+                for root, _, files in os.walk(prof_dir):
+                    for f in files:
+                        full_f = Path(root) / f
+                        rel_path = full_f.relative_to(prof_dir)
+                        # Skip huge caches, locks, and logs
+                        if any(c in str(rel_path) for c in ["Cache", "Code Cache", "DawnCache", "GPUCache", "Singleton", "lock"]):
+                            continue
+                        try:
+                            zf.write(full_f, arcname=f"data/{rel_path}")
+                        except Exception:
+                            pass
+
+        return out_file
+
+    def import_profile_bundle(self, bundle_path: Path, new_name: Optional[str] = None) -> Optional[BrowserProfile]:
+        """
+        Imports and restores a portable .nazak / zip bundle into the workspace.
+        """
+        if not bundle_path.exists():
+            return None
+
+        import zipfile
+        try:
+            with zipfile.ZipFile(bundle_path, "r") as zf:
+                if "profile.json" not in zf.namelist():
+                    return None
+
+                prof_data = json.loads(zf.read("profile.json").decode("utf-8"))
+                new_id = f"prof_{uuid.uuid4().hex[:8]}"
+                prof_data["id"] = new_id
+                if new_name:
+                    prof_data["name"] = new_name
+                else:
+                    prof_data["name"] = f"{prof_data.get('name', 'Imported Profile')} (Imported)"
+
+                prof_data["status"] = ProfileStatus.STOPPED
+                prof_data["pid"] = None
+                prof_data["last_launched_at"] = None
+                prof_data["total_runtime_seconds"] = 0
+                prof_data["last_health_check"] = None
+                prof_data["created_at"] = datetime.now(timezone.utc).isoformat()
+                prof_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+                # Restore session files
+                target_dir = self.profiles_dir / new_id
+                target_dir.mkdir(parents=True, exist_ok=True)
+
+                for name in zf.namelist():
+                    if name.startswith("data/"):
+                        rel_sub = name[len("data/"):]
+                        if rel_sub:
+                            target_file = target_dir / rel_sub
+                            target_file.parent.mkdir(parents=True, exist_ok=True)
+                            target_file.write_bytes(zf.read(name))
+
+                # Restore cookies
+                if "cookies.json" in zf.namelist():
+                    cookies = json.loads(zf.read("cookies.json").decode("utf-8"))
+                    from .cookie_manager import cookies_to_netscape
+                    (target_dir / "cookies.json").write_text(json.dumps(cookies, indent=2), encoding="utf-8")
+                    (target_dir / "cookies.txt").write_text(cookies_to_netscape(cookies), encoding="utf-8")
+
+                restored_profile = BrowserProfile(**prof_data)
+                self.profiles[new_id] = restored_profile
+                self.save_profiles()
+                return restored_profile
+        except Exception:
+            return None
+
