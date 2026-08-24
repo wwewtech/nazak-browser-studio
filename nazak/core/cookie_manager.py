@@ -77,6 +77,9 @@ def cookies_to_netscape(cookies: List[Dict[str, Any]]) -> str:
         lines.append(f"{prefix}{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
     return "\n".join(lines)
 
+import io
+import zipfile
+
 def parse_any_cookies(raw_text: str) -> List[Dict[str, Any]]:
     """
     Parses JSON array or Netscape formatted cookies automatically with field normalization.
@@ -107,3 +110,142 @@ def parse_any_cookies(raw_text: str) -> List[Dict[str, Any]]:
         except Exception:
             pass
     return parse_netscape_cookies(text)
+
+def parse_bulk_cookie_input(raw_input: str) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Parses bulk multi-profile cookie data in various popular formats:
+    1. Delimited blocks:
+       === Profile 01 ===
+       [{"name": "SID", ...}]
+       === Profile 02 ===
+       # Netscape HTTP Cookie File
+       ...
+    2. JSON dictionary mapping profile identifier to cookie list/string:
+       {"prof_01": [...], "prof_02": [...]}
+    3. Single cookie list/string -> returned as {"default": [...]}
+    """
+    if not raw_input or not raw_input.strip():
+        return {}
+
+    text = raw_input.strip()
+
+    # Case 1: Check if input is a JSON dictionary mapping profile_name -> cookies
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                # Check if it's a map of {profile_id: cookies}
+                result = {}
+                is_map = False
+                for key, val in data.items():
+                    if isinstance(val, (list, dict, str)):
+                        if isinstance(val, str):
+                            parsed = parse_any_cookies(val)
+                        elif isinstance(val, dict):
+                            parsed = parse_any_cookies(json.dumps([val]))
+                        else:
+                            parsed = parse_any_cookies(json.dumps(val))
+                        if parsed:
+                            result[str(key).strip()] = parsed
+                            is_map = True
+                if is_map and result:
+                    return result
+        except Exception:
+            pass
+
+    # Case 2: Delimited sections with === Name === or --- Name --- or ### Name or [Profile Name]
+    delimiter_pattern = re.compile(
+        r"^\s*(?:(?:={2,}|-{2,}|#{2,}|\/{2,})\s*([^\r\n=\-\#\/]+?)\s*(?:={2,}|-{2,}|#{2,}|\/{2,})?|\[([a-zA-Z0-9_\- .]+)\])\s*$",
+        re.MULTILINE
+    )
+    matches = list(delimiter_pattern.finditer(text))
+
+    if matches:
+        sections: Dict[str, List[Dict[str, Any]]] = {}
+        for i, match in enumerate(matches):
+            prof_name = (match.group(1) or match.group(2) or "").strip()
+            if not prof_name:
+                continue
+            start_pos = match.end()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            chunk = text[start_pos:end_pos].strip()
+            if chunk:
+                parsed = parse_any_cookies(chunk)
+                if parsed:
+                    sections[prof_name] = parsed
+        if sections:
+            return sections
+
+    # Case 3: Fallback single profile cookies
+    single = parse_any_cookies(text)
+    if single:
+        return {"default": single}
+    return {}
+
+def parse_cookie_files_from_dir(dir_path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Scans a directory for .json and .txt cookie files and parses them into a profile-indexed map.
+    File name (without extension) is treated as the profile identifier (ID or Name).
+    """
+    results = {}
+    if not dir_path.exists() or not dir_path.is_dir():
+        return results
+
+    for file_path in dir_path.glob("*"):
+        if file_path.is_file() and file_path.suffix.lower() in (".json", ".txt"):
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                cookies = parse_any_cookies(content)
+                if cookies:
+                    results[file_path.stem] = cookies
+            except Exception:
+                continue
+    return results
+
+def parse_cookie_files_from_zip(zip_source: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Extracts and parses all .json / .txt cookie files from a zip archive (Path, bytes, or file-like object).
+    """
+    results = {}
+    try:
+        if isinstance(zip_source, (str, Path)):
+            zf = zipfile.ZipFile(zip_source, "r")
+        elif isinstance(zip_source, bytes):
+            zf = zipfile.ZipFile(io.BytesIO(zip_source), "r")
+        else:
+            zf = zipfile.ZipFile(zip_source, "r")
+
+        with zf:
+            for name in zf.namelist():
+                if name.endswith("/") or name.startswith("__MACOSX"):
+                    continue
+                p = Path(name)
+                if p.suffix.lower() in (".json", ".txt"):
+                    try:
+                        content = zf.read(name).decode("utf-8", errors="ignore")
+                        cookies = parse_any_cookies(content)
+                        if cookies:
+                            results[p.stem] = cookies
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return results
+
+def create_cookies_zip_archive(cookie_map: Dict[str, List[Dict[str, Any]]], format_type: str = "json") -> bytes:
+    """
+    Creates a zip archive containing individual cookie files for each profile.
+    format_type: 'json' or 'netscape'
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for prof_id, cookies in cookie_map.items():
+            safe_name = re.sub(r'[\/:*?"<>|]', '_', prof_id)
+            if format_type.lower() == "netscape":
+                content = cookies_to_netscape(cookies)
+                zf.writestr(f"{safe_name}.txt", content)
+            else:
+                content = json.dumps(cookies, indent=2, ensure_ascii=False)
+                zf.writestr(f"{safe_name}.json", content)
+    return buf.getvalue()
+
