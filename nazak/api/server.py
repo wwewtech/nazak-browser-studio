@@ -86,12 +86,60 @@ async def lifespan(app: FastAPI):
     yield
     process_monitor.stop()
 
+tags_metadata = [
+    {
+        "name": "Dolphin Automation (v1.0 Parity)",
+        "description": "100% Dolphin{anty}-compatible REST endpoints for external automation scripts (Playwright, Puppeteer, Selenium).",
+    },
+    {
+        "name": "Profiles",
+        "description": "Anti-detect profile management, hardware fingerprint isolation, mass profile generator, and .nazak portable bundles.",
+    },
+    {
+        "name": "Automation & CDP",
+        "description": "Native Chrome DevTools Protocol port allocation, start/stop lifecycle, and active browser queries.",
+    },
+    {
+        "name": "Cookies",
+        "description": "Multi-profile bulk cookie import (text blocks, JSON maps, directory scan, ZIP), Netscape format parser, and ZIP archive exporter.",
+    },
+    {
+        "name": "Synchronizer",
+        "description": "Real-time action synchronizer (Master to Workers replication with Bezier jitter) and Win32 window tiling grid.",
+    },
+    {
+        "name": "Scenarios & Warmup",
+        "description": "Multi-step scenario constructor (E-Commerce, YouTube, Crypto, Banking) and parallel warmup executor.",
+    },
+    {
+        "name": "Proxies",
+        "description": "5-stage proxy health diagnostics (Latency, Geolocation, Google Suite, WebRTC) and mobile IP rotation triggers.",
+    },
+    {
+        "name": "YouTube Shorts Autoposter",
+        "description": "Autonomous YouTube Shorts upload queue with FFmpeg video uniqueizer and Bezier human motorics.",
+    },
+    {
+        "name": "System",
+        "description": "Host diagnostics, Chrome discovery, WebSocket telemetry, and platform information.",
+    },
+]
+
 app = FastAPI(
     title="Nazak Browser Studio API",
     description="Professional Multi-Profile Anti-Detect Browser Launcher with Strict Proxy & Google Automation Isolation",
-    version="1.3.0",
+    version="1.4.0",
+    openapi_tags=tags_metadata,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan
 )
+
+from fastapi.responses import RedirectResponse
+
+@app.get("/swagger", include_in_schema=False)
+async def redirect_to_swagger_docs():
+    return RedirectResponse(url="/docs")
 
 app.add_middleware(
     CORSMiddleware,
@@ -175,7 +223,7 @@ class WindowTileRequest(BaseModel):
     cols: Optional[int] = None
 
 # API Routes
-@app.get("/api/system/info")
+@app.get("/api/system/info", tags=["System"], summary="Get system diagnostics and host telemetry")
 async def get_system_info():
     chrome_exe = find_chrome_executable()
     profiles = profile_manager.list_profiles()
@@ -190,7 +238,7 @@ async def get_system_info():
         "platform": os.name
     }
 
-@app.get("/api/profiles", response_model=List[BrowserProfile])
+@app.get("/api/profiles", response_model=List[BrowserProfile], tags=["Profiles"], summary="List all browser profiles with live statuses")
 async def list_profiles():
     profiles = profile_manager.list_profiles()
     for p in profiles:
@@ -202,7 +250,7 @@ async def list_profiles():
             p.pid = None
     return profiles
 
-@app.get("/api/profiles/{profile_id}", response_model=BrowserProfile)
+@app.get("/api/profiles/{profile_id}", response_model=BrowserProfile, tags=["Profiles"], summary="Get single profile details")
 async def get_profile(profile_id: str):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -212,13 +260,13 @@ async def get_profile(profile_id: str):
         profile.pid = browser_launcher.profile_pids.get(profile.id)
     return profile
 
-@app.post("/api/profiles", response_model=BrowserProfile)
+@app.post("/api/profiles", response_model=BrowserProfile, tags=["Profiles"], summary="Create new isolated profile")
 async def create_profile(profile_data: BrowserProfile):
     created = profile_manager.create_profile(profile_data)
     await ws_manager.broadcast("profile_created", created.model_dump())
     return created
 
-@app.put("/api/profiles/{profile_id}", response_model=BrowserProfile)
+@app.put("/api/profiles/{profile_id}", response_model=BrowserProfile, tags=["Profiles"], summary="Update profile settings")
 async def update_profile(profile_id: str, profile_data: BrowserProfile):
     profile_data.id = profile_id
     updated = profile_manager.update_profile(profile_data)
@@ -227,7 +275,7 @@ async def update_profile(profile_id: str, profile_data: BrowserProfile):
     await ws_manager.broadcast("profile_updated", updated.model_dump())
     return updated
 
-@app.delete("/api/profiles/{profile_id}")
+@app.delete("/api/profiles/{profile_id}", tags=["Profiles"], summary="Delete profile and local storage data")
 async def delete_profile(profile_id: str):
     if browser_launcher.is_profile_running(profile_id):
         browser_launcher.stop(profile_id)
@@ -237,7 +285,7 @@ async def delete_profile(profile_id: str):
     await ws_manager.broadcast("profile_deleted", {"profile_id": profile_id})
     return {"success": True, "message": "Profile deleted successfully"}
 
-@app.post("/api/profiles/{profile_id}/clone", response_model=BrowserProfile)
+@app.post("/api/profiles/{profile_id}/clone", response_model=BrowserProfile, tags=["Profiles"], summary="Clone profile with randomized hardware fingerprint")
 async def clone_profile(profile_id: str, new_name: Optional[str] = Query(None)):
     cloned = profile_manager.clone_profile(profile_id, new_name)
     if not cloned:
@@ -245,7 +293,7 @@ async def clone_profile(profile_id: str, new_name: Optional[str] = Query(None)):
     await ws_manager.broadcast("profile_created", cloned.model_dump())
     return cloned
 
-@app.post("/api/profiles/{profile_id}/launch")
+@app.post("/api/profiles/{profile_id}/launch", tags=["Profiles"], summary="Launch browser profile")
 async def launch_profile(profile_id: str, req: Optional[LaunchRequest] = None):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -276,7 +324,7 @@ async def launch_profile(profile_id: str, req: Optional[LaunchRequest] = None):
         res["wsEndpoint"] = ws_url
     return res
 
-@app.post("/api/profiles/{profile_id}/stop")
+@app.post("/api/profiles/{profile_id}/stop", tags=["Profiles"], summary="Stop running browser profile")
 async def stop_profile(profile_id: str):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -292,7 +340,7 @@ async def stop_profile(profile_id: str):
 # ----------------------------------------------------
 # Dolphin{anty} Local Automation API v1.0 Parity
 # ----------------------------------------------------
-@app.get("/v1.0/browser_profiles")
+@app.get("/v1.0/browser_profiles", tags=["Dolphin Automation (v1.0 Parity)"], summary="Dolphin v1.0 - List all profiles")
 async def dolphin_list_profiles():
     profiles = profile_manager.list_profiles()
     data = []
@@ -309,8 +357,8 @@ async def dolphin_list_profiles():
         })
     return {"success": True, "data": data}
 
-@app.get("/v1.0/browser_profiles/{profile_id}/start")
-@app.post("/api/v1/profiles/{profile_id}/start")
+@app.get("/v1.0/browser_profiles/{profile_id}/start", tags=["Dolphin Automation (v1.0 Parity)", "Automation & CDP"], summary="Dolphin v1.0 - Start profile and get CDP WebSocket URL")
+@app.post("/api/v1/profiles/{profile_id}/start", tags=["Automation & CDP"], summary="Nazak v1 - Start profile with CDP automation")
 async def dolphin_start_profile(profile_id: str, custom_url: Optional[str] = Query(None), port: Optional[int] = Query(None)):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -336,8 +384,8 @@ async def dolphin_start_profile(profile_id: str, custom_url: Optional[str] = Que
         "profile_id": profile_id
     }
 
-@app.get("/v1.0/browser_profiles/{profile_id}/stop")
-@app.post("/api/v1/profiles/{profile_id}/stop")
+@app.get("/v1.0/browser_profiles/{profile_id}/stop", tags=["Dolphin Automation (v1.0 Parity)", "Automation & CDP"], summary="Dolphin v1.0 - Stop running profile")
+@app.post("/api/v1/profiles/{profile_id}/stop", tags=["Automation & CDP"], summary="Nazak v1 - Stop running profile")
 async def dolphin_stop_profile(profile_id: str):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -350,7 +398,7 @@ async def dolphin_stop_profile(profile_id: str):
     await ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": "stopped"})
     return {"success": True, "profile_id": profile_id}
 
-@app.get("/v1.0/browser_profiles/active")
+@app.get("/v1.0/browser_profiles/active", tags=["Dolphin Automation (v1.0 Parity)", "Automation & CDP"], summary="Dolphin v1.0 - List all active browser profiles with CDP endpoints")
 async def dolphin_active_profiles():
     profiles = profile_manager.list_profiles()
     active = []
@@ -365,14 +413,14 @@ async def dolphin_active_profiles():
             })
     return {"success": True, "active_count": len(active), "profiles": active}
 
-@app.get("/api/v1/profiles/{profile_id}/cdp")
+@app.get("/api/v1/profiles/{profile_id}/cdp", tags=["Automation & CDP"], summary="Query active CDP port and WebSocket URL for profile")
 async def get_profile_cdp(profile_id: str):
     cdp_info = browser_launcher.get_cdp_info(profile_id)
     if not cdp_info:
         raise HTTPException(status_code=400, detail="Profile is not running or CDP is not active")
     return {"success": True, "cdp": cdp_info}
 
-@app.post("/api/profiles/batch-launch")
+@app.post("/api/profiles/batch-launch", tags=["Profiles"], summary="Launch multiple profiles simultaneously")
 async def batch_launch(req: BatchActionRequest):
     results = {}
     for pid in req.profile_ids:
@@ -388,7 +436,7 @@ async def batch_launch(req: BatchActionRequest):
                 results[pid] = {"success": False, "error": err}
     return results
 
-@app.post("/api/profiles/batch-stop")
+@app.post("/api/profiles/batch-stop", tags=["Profiles"], summary="Stop multiple running profiles simultaneously")
 async def batch_stop(req: BatchActionRequest):
     for pid in req.profile_ids:
         browser_launcher.stop(pid)
@@ -399,7 +447,7 @@ async def batch_stop(req: BatchActionRequest):
             profile_manager.update_profile(prof)
     return {"success": True, "stopped_count": len(req.profile_ids)}
 
-@app.post("/api/profiles/{profile_id}/check", response_model=HealthCheckResult)
+@app.post("/api/profiles/{profile_id}/check", response_model=HealthCheckResult, tags=["Proxies"], summary="Perform 5-stage health check for profile proxy")
 async def check_profile_proxy(profile_id: str):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -424,7 +472,7 @@ async def check_profile_proxy(profile_id: str):
     })
     return result
 
-@app.post("/api/profiles/check-all")
+@app.post("/api/profiles/check-all", tags=["Proxies"], summary="Run proxy health checks across all profiles")
 async def check_all_profiles():
     profiles = profile_manager.list_profiles()
 
@@ -441,18 +489,18 @@ async def check_all_profiles():
     results = await asyncio.gather(*[_check(p) for p in profiles], return_exceptions=True)
     return {"total_checked": len(profiles)}
 
-@app.post("/api/profiles/{profile_id}/clear-cache")
+@app.post("/api/profiles/{profile_id}/clear-cache", tags=["Profiles"], summary="Purge browser cache for profile")
 async def clear_cache(profile_id: str):
     if browser_launcher.is_profile_running(profile_id):
         raise HTTPException(status_code=400, detail="Cannot clear cache while browser is running. Please stop it first.")
     ok = profile_manager.clear_profile_cache(profile_id)
     return {"success": ok, "message": "Cache cleared successfully"}
 
-@app.post("/api/profiles/randomize-fingerprint", response_model=FingerprintConfig)
+@app.post("/api/profiles/randomize-fingerprint", response_model=FingerprintConfig, tags=["Profiles"], summary="Generate random isolated hardware fingerprint")
 async def randomize_fingerprint(os_type: str = Query("windows")):
     return generate_random_fingerprint(os_type=os_type)
 
-@app.post("/api/profiles/bulk-import")
+@app.post("/api/profiles/bulk-import", tags=["Profiles"], summary="Bulk import profiles from proxy strings")
 async def bulk_import_profiles(req: BulkImportRequest):
     lines = [l.strip() for l in req.proxy_lines.splitlines() if l.strip()]
     if not lines:
@@ -479,7 +527,7 @@ async def bulk_import_profiles(req: BulkImportRequest):
     await ws_manager.broadcast("profiles_bulk_created", {"count": len(created_list)})
     return {"created_count": len(created_list)}
 
-@app.post("/api/profiles/mass-generate")
+@app.post("/api/profiles/mass-generate", tags=["Profiles"], summary="1-Click mass profile generator (1-100+ farm)")
 async def mass_generate_profiles_endpoint(req: MassGenerateRequest):
     proxy_list = [p.strip() for p in req.proxy_lines.splitlines() if p.strip()] if req.proxy_lines else None
     created = profile_manager.mass_generate_profiles(
@@ -494,7 +542,7 @@ async def mass_generate_profiles_endpoint(req: MassGenerateRequest):
     await ws_manager.broadcast("profiles_bulk_created", {"count": len(created)})
     return {"success": True, "created_count": len(created), "profiles": [p.model_dump() for p in created]}
 
-@app.get("/api/profiles/{profile_id}/bundle/export")
+@app.get("/api/profiles/{profile_id}/bundle/export", tags=["Profiles"], summary="Export complete profile as portable .nazak archive")
 async def export_profile_bundle_endpoint(profile_id: str):
     prof = profile_manager.get_profile(profile_id)
     if not prof:
@@ -504,7 +552,7 @@ async def export_profile_bundle_endpoint(profile_id: str):
         raise HTTPException(status_code=500, detail="Failed to create profile bundle")
     return FileResponse(path=str(bundle_path), filename=f"{profile_id}_bundle.nazak", media_type="application/zip")
 
-@app.post("/api/profiles/{profile_id}/rotate-proxy")
+@app.post("/api/profiles/{profile_id}/rotate-proxy", tags=["Proxies"], summary="Trigger mobile proxy IP rotation URL")
 async def rotate_profile_proxy_endpoint(profile_id: str):
     prof = profile_manager.get_profile(profile_id)
     if not prof:
@@ -520,7 +568,7 @@ async def rotate_profile_proxy_endpoint(profile_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to trigger proxy rotation: {str(e)}")
 
 # Cookie Management Endpoints
-@app.post("/api/cookies/bulk-import")
+@app.post("/api/cookies/bulk-import", tags=["Cookies"], summary="Bulk import multi-profile cookies (text blocks, JSON maps, ZIP)")
 async def bulk_import_cookies_endpoint(req: BulkCookieImportRequest):
     cookie_map = parse_bulk_cookie_input(req.cookies_data)
     if not cookie_map:
@@ -529,7 +577,7 @@ async def bulk_import_cookies_endpoint(req: BulkCookieImportRequest):
     await ws_manager.broadcast("cookies_bulk_imported", res)
     return {"success": True, "results": res}
 
-@app.post("/api/cookies/bulk-export")
+@app.post("/api/cookies/bulk-export", tags=["Cookies"], summary="Export all cookies as JSON or structured ZIP archive")
 async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
     cookie_dict = profile_manager.export_all_cookies(req.profile_ids)
     if req.format.lower() == "zip":
@@ -538,14 +586,14 @@ async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
         return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": "attachment; filename=nazak_cookies.zip"})
     return {"success": True, "cookies": cookie_dict, "profiles_count": len(cookie_dict)}
 
-@app.get("/api/profiles/{profile_id}/cookies/export")
+@app.get("/api/profiles/{profile_id}/cookies/export", tags=["Cookies"], summary="Export profile cookies as JSON or Netscape format")
 async def export_profile_cookies_endpoint(profile_id: str, format: str = Query("json")):
     cookies = profile_manager.load_profile_cookies(profile_id)
     if format.lower() == "netscape":
         return {"format": "netscape", "content": cookies_to_netscape(cookies), "cookies_count": len(cookies)}
     return {"format": "json", "cookies": cookies, "cookies_count": len(cookies)}
 
-@app.post("/api/profiles/{profile_id}/cookies/import")
+@app.post("/api/profiles/{profile_id}/cookies/import", tags=["Cookies"], summary="Import cookies into profile (JSON or Netscape format)")
 async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
     cookies = parse_any_cookies(req.cookies_data)
     if not cookies:
@@ -554,11 +602,11 @@ async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
     return {"success": saved, "parsed_cookies_count": len(cookies)}
 
 # Scenario & Autonomous Warmup Endpoints
-@app.get("/api/scenarios")
+@app.get("/api/scenarios", tags=["Scenarios & Warmup"], summary="List built-in warmup scenarios")
 async def list_scenarios():
     return [s.to_dict() for s in BUILTIN_SCENARIOS]
 
-@app.post("/api/scenarios/run")
+@app.post("/api/scenarios/run", tags=["Scenarios & Warmup"], summary="Run scenario across profile pool with concurrency limit")
 async def run_scenario_endpoint(req: ScenarioRunRequest, background_tasks: BackgroundTasks):
     scenario = None
     if req.scenario_id:
@@ -581,7 +629,7 @@ async def run_scenario_endpoint(req: ScenarioRunRequest, background_tasks: Backg
     return {"success": True, "message": f"Scenario '{scenario.name}' started for {len(req.profile_ids)} profiles"}
 
 # Synchronizer Endpoints
-@app.post("/api/synchronizer/start")
+@app.post("/api/synchronizer/start", tags=["Synchronizer"], summary="Start Master-to-Workers action synchronizer session")
 async def start_synchronizer_endpoint(req: SynchronizerStartRequest):
     session = synchronizer_mgr.start_session(
         master_profile_id=req.master_profile_id,
@@ -593,32 +641,32 @@ async def start_synchronizer_endpoint(req: SynchronizerStartRequest):
     await ws_manager.broadcast("synchronizer_started", session.to_dict())
     return {"success": True, "session": session.to_dict()}
 
-@app.post("/api/synchronizer/stop")
+@app.post("/api/synchronizer/stop", tags=["Synchronizer"], summary="Stop active synchronizer session")
 async def stop_synchronizer_endpoint():
     s = synchronizer_mgr.stop_session()
     await ws_manager.broadcast("synchronizer_stopped", {})
     return {"success": True, "message": "Synchronizer stopped"}
 
-@app.get("/api/synchronizer/status")
+@app.get("/api/synchronizer/status", tags=["Synchronizer"], summary="Get synchronizer session status")
 async def get_synchronizer_status():
     return synchronizer_mgr.get_status()
 
-@app.post("/api/synchronizer/tile-windows")
+@app.post("/api/synchronizer/tile-windows", tags=["Synchronizer"], summary="Arrange active browser windows into Win32 grid layout")
 async def tile_windows_endpoint(req: WindowTileRequest = Body(default=WindowTileRequest())):
     ok = synchronizer_mgr.tile_active_windows(cols=req.cols)
     return {"success": ok}
 
-@app.post("/api/synchronizer/navigate")
+@app.post("/api/synchronizer/navigate", tags=["Synchronizer"], summary="Broadcast URL navigation to all worker browsers")
 async def synchronizer_navigate(req: SynchronizerNavigateRequest):
     results = await synchronizer_mgr.mirror_navigation(req.url)
     return {"success": True, "results": results}
 
-@app.post("/api/profiles/{profile_id}/warmup/plan")
+@app.post("/api/profiles/{profile_id}/warmup/plan", tags=["Scenarios & Warmup"], summary="Generate organic warmup search plan")
 async def get_warmup_plan(profile_id: str, req: WarmupRequest):
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
     return plan.to_dict()
 
-@app.post("/api/profiles/{profile_id}/warmup/launch")
+@app.post("/api/profiles/{profile_id}/warmup/launch", tags=["Scenarios & Warmup"], summary="Launch profile on warmup start URL")
 async def launch_warmup(profile_id: str, req: WarmupRequest):
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
     urls = generate_warmup_urls(plan.queries)
@@ -637,14 +685,14 @@ async def launch_warmup(profile_id: str, req: WarmupRequest):
     profile_manager.update_profile(profile)
     return {"success": True, "pid": pid, "plan": plan.to_dict(), "start_url": start_url}
 
-@app.post("/api/profiles/test-proxy", response_model=HealthCheckResult)
+@app.post("/api/profiles/test-proxy", response_model=HealthCheckResult, tags=["Proxies"], summary="Test standalone raw proxy string")
 async def test_raw_proxy(req: ProxyTestRequest):
     proxy_config = ProxyConfig.parse(req.raw_proxy)
     result = await check_proxy_health(proxy_config, profile_dir=None)
     return result
 
 # Auto-Posting & Video Uniqueization Endpoints
-@app.get("/api/autopost/status")
+@app.get("/api/autopost/status", tags=["YouTube Shorts Autoposter"], summary="Get autopost queue and FFmpeg encoder status")
 async def get_autopost_status():
     return {
         "is_running": upload_queue_mgr.is_running,
@@ -653,7 +701,7 @@ async def get_autopost_status():
         "jobs": upload_queue_mgr.get_jobs_status()
     }
 
-@app.post("/api/autopost/uniquify")
+@app.post("/api/autopost/uniquify", tags=["YouTube Shorts Autoposter"], summary="Batch uniqueize video using FFmpeg")
 async def uniquify_videos_endpoint(req: UniquifyRequest):
     src = Path(req.source_video_path)
     if not src.exists():
@@ -668,7 +716,7 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
         }
     return {"results": formatted, "count": len(results)}
 
-@app.post("/api/autopost/launch")
+@app.post("/api/autopost/launch", tags=["YouTube Shorts Autoposter"], summary="Launch autonomous YouTube Shorts upload queue")
 async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: BackgroundTasks):
     if upload_queue_mgr.is_running:
         raise HTTPException(status_code=400, detail="An upload batch is already running. Please wait or cancel it first.")
@@ -690,12 +738,12 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
     )
     return {"success": True, "message": f"Autopost started for {len(req.profile_ids)} profiles in background"}
 
-@app.post("/api/autopost/cancel")
+@app.post("/api/autopost/cancel", tags=["YouTube Shorts Autoposter"], summary="Cancel running autopost queue")
 async def cancel_autopost():
     upload_queue_mgr.cancel_all()
     return {"success": True, "message": "Autopost cancellation requested"}
 
-@app.post("/api/autopost/preview-spintax")
+@app.post("/api/autopost/preview-spintax", tags=["YouTube Shorts Autoposter"], summary="Preview Spintax title and description generations")
 async def preview_spintax_endpoint(req: AutopostBatchRequest):
     samples = []
     for pid in req.profile_ids[:5]:
@@ -729,7 +777,7 @@ async def websocket_endpoint(websocket: WebSocket):
 if WEB_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
-    @app.get("/")
+    @app.get("/", tags=["System"], summary="Serve Nazak Web Studio Dashboard")
     async def serve_index():
         index_file = WEB_DIR / "index.html"
         if index_file.exists():
