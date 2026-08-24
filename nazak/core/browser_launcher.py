@@ -6,11 +6,23 @@ import sys
 import subprocess
 import psutil
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 
 from ..config import find_chrome_executable, PROFILES_DIR, EXTENSIONS_DIR, GOOGLE_TARGET_URLS
 from ..models.profile import BrowserProfile, ProfileStatus
 from .extension_generator import generate_profile_extension
+
+import socket
+import urllib.request
+import json
+import time
+
+def get_free_port() -> int:
+    """Finds an available TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        s.listen(1)
+        return s.getsockname()[1]
 
 class BrowserLauncher:
     """
@@ -22,6 +34,8 @@ class BrowserLauncher:
         self.extensions_dir = extensions_dir
         self.active_processes: Dict[str, subprocess.Popen] = {}
         self.profile_pids: Dict[str, int] = {}
+        self.profile_cdp_ports: Dict[str, int] = {}
+        self.profile_cdp_ws: Dict[str, str] = {}
 
     def is_profile_running(self, profile_id: str) -> bool:
         """Checks if profile process is currently alive."""
@@ -42,6 +56,8 @@ class BrowserLauncher:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
             self.profile_pids.pop(profile_id, None)
+        self.profile_cdp_ports.pop(profile_id, None)
+        self.profile_cdp_ws.pop(profile_id, None)
         return False
 
     def clean_stale_locks(self, user_data_dir: Path):
@@ -170,10 +186,67 @@ class BrowserLauncher:
 
             self.active_processes[profile.id] = proc
             self.profile_pids[profile.id] = proc.pid
+            if cdp_port:
+                self.profile_cdp_ports[profile.id] = cdp_port
             return True, proc.pid, None
 
         except Exception as e:
             return False, None, f"Failed to launch Chrome: {str(e)}"
+
+    def resolve_cdp_ws_url(self, port: int, timeout_sec: float = 5.0) -> Optional[str]:
+        """
+        Queries Chromium's /json/version endpoint to obtain the WebSocket debugger URL.
+        """
+        start_time = time.time()
+        url = f"http://127.0.0.1:{port}/json/version"
+        while time.time() - start_time < timeout_sec:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        ws_url = data.get("webSocketDebuggerUrl")
+                        if ws_url:
+                            return ws_url
+            except Exception:
+                time.sleep(0.15)
+        return None
+
+    def get_cdp_info(self, profile_id: str) -> Optional[Dict[str, Any]]:
+        """Returns CDP port and WebSocket URL if profile is running with CDP enabled."""
+        if not self.is_profile_running(profile_id):
+            return None
+        port = self.profile_cdp_ports.get(profile_id)
+        if not port:
+            return None
+        ws = self.profile_cdp_ws.get(profile_id) or self.resolve_cdp_ws_url(port, timeout_sec=1.0)
+        if ws:
+            self.profile_cdp_ws[profile_id] = ws
+        return {
+            "port": port,
+            "ws_endpoint": ws or f"ws://127.0.0.1:{port}/devtools/browser",
+            "http_endpoint": f"http://127.0.0.1:{port}"
+        }
+
+    def launch_with_cdp(
+        self,
+        profile: BrowserProfile,
+        custom_url: Optional[str] = None,
+        port: Optional[int] = None
+    ) -> Tuple[bool, Optional[int], Optional[int], Optional[str], Optional[str]]:
+        """
+        Launches profile with an assigned CDP remote debugging port and resolves its WebSocket URL.
+        Returns: (success, pid, port, ws_endpoint, error_message)
+        """
+        assigned_port = port or get_free_port()
+        ok, pid, err = self.launch(profile, custom_url=custom_url, cdp_port=assigned_port)
+        if not ok:
+            return False, None, None, None, err
+
+        self.profile_cdp_ports[profile.id] = assigned_port
+        ws_url = self.resolve_cdp_ws_url(assigned_port, timeout_sec=6.0) or f"ws://127.0.0.1:{assigned_port}/devtools/browser"
+        self.profile_cdp_ws[profile.id] = ws_url
+        return True, pid, assigned_port, ws_url, None
 
     def stop(self, profile_id: str) -> Tuple[bool, Optional[str]]:
         """
@@ -183,6 +256,8 @@ class BrowserLauncher:
         pid = self.profile_pids.get(profile_id)
 
         if not proc and not pid:
+            self.profile_cdp_ports.pop(profile_id, None)
+            self.profile_cdp_ws.pop(profile_id, None)
             return True, "Profile is not currently running"
 
         try:
@@ -208,4 +283,6 @@ class BrowserLauncher:
 
         self.active_processes.pop(profile_id, None)
         self.profile_pids.pop(profile_id, None)
+        self.profile_cdp_ports.pop(profile_id, None)
+        self.profile_cdp_ws.pop(profile_id, None)
         return True, None
