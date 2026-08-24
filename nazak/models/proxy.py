@@ -33,6 +33,7 @@ class ProxyConfig(BaseModel):
     port: Optional[int] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    rotation_url: Optional[str] = None
     raw: Optional[str] = None
     active: bool = True
 
@@ -48,12 +49,36 @@ class ProxyConfig(BaseModel):
         - http://user:pass@host:port
         - socks5://user:pass@host:port
         - socks5://host:port:user:pass
+        - host:port:user:pass:http://change-ip-url
+        - host:port:user:pass|http://change-ip-url
         - [ipv6]:port
         """
         if not raw_str or raw_str.strip().lower() in ("direct", "none", "", "null"):
             return cls(type=ProxyType.DIRECT, raw=raw_str)
 
-        text = raw_str.strip().rstrip("/").lstrip(":")
+        text = raw_str.strip()
+        rotation_url = None
+
+        # Check for rotation URL delimiter (| or # or :http/https)
+        if "|" in text and ("http://" in text or "https://" in text):
+            p_part, r_part = text.split("|", 1)
+            text = p_part.strip()
+            rotation_url = r_part.strip()
+        elif "#http" in text:
+            p_part, r_part = text.split("#", 1)
+            text = p_part.strip()
+            rotation_url = r_part.strip()
+        else:
+            # Check for colon-separated rotation URL (e.g. host:port:u:p:http://...)
+            # Find the last occurrence of http:// or https:// if it's preceded by a colon or space
+            for proto in (":http://", ":https://"):
+                if proto in text:
+                    idx = text.rfind(proto)
+                    rotation_url = text[idx + 1:].strip()
+                    text = text[:idx].strip()
+                    break
+
+        text = text.rstrip("/").lstrip(":")
         scheme = None
 
         # Check for scheme prefix (http://, socks5://, etc)
@@ -74,7 +99,7 @@ class ProxyConfig(BaseModel):
                 port = sanitize_port(ipv6_match.group(2), 8080)
                 user = ipv6_match.group(3)
                 pwd = ipv6_match.group(4)
-                return cls(type=default_scheme, host=host, port=port, username=user, password=pwd, raw=raw_str)
+                return cls(type=default_scheme, host=host, port=port, username=user, password=pwd, rotation_url=rotation_url, raw=raw_str)
 
         # Case 1: user:pass@host:port
         if "@" in text:
@@ -86,7 +111,7 @@ class ProxyConfig(BaseModel):
             host_parts = net_part.split(":")
             host = host_parts[0]
             port = sanitize_port(host_parts[1] if len(host_parts) > 1 else None, 1080 if default_scheme == ProxyType.SOCKS5 else 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password=password, raw=raw_str)
+            return cls(type=default_scheme, host=host, port=port, username=username, password=password, rotation_url=rotation_url, raw=raw_str)
 
         # Case 2: Multi-part colon separated (host:port, host:port:user:pass, user:pass:host:port, host:port:user)
         parts = text.split(":")
@@ -97,25 +122,25 @@ class ProxyConfig(BaseModel):
             else:
                 host, port_str, username, password = parts
             port = sanitize_port(port_str, 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password=password, raw=raw_str)
+            return cls(type=default_scheme, host=host, port=port, username=username, password=password, rotation_url=rotation_url, raw=raw_str)
         elif len(parts) == 3:
             # host:port:username (password empty)
             host, port_str, username = parts
             port = sanitize_port(port_str, 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password="", raw=raw_str)
+            return cls(type=default_scheme, host=host, port=port, username=username, password="", rotation_url=rotation_url, raw=raw_str)
         elif len(parts) == 2:
             host, port_str = parts
             port = sanitize_port(port_str, 8080)
-            return cls(type=default_scheme, host=host, port=port, raw=raw_str)
+            return cls(type=default_scheme, host=host, port=port, rotation_url=rotation_url, raw=raw_str)
         elif len(parts) == 1 and parts[0]:
             h = parts[0].strip()
             if h.lower() in ("direct", "none", "null", "false", "no", "local", "invalid") or ("." not in h and h.lower() != "localhost"):
-                return cls(type=ProxyType.DIRECT, raw=raw_str)
+                return cls(type=ProxyType.DIRECT, rotation_url=rotation_url, raw=raw_str)
             host = h
             port = 1080 if default_scheme == ProxyType.SOCKS5 else 8080
-            return cls(type=default_scheme, host=host, port=port, raw=raw_str)
+            return cls(type=default_scheme, host=host, port=port, rotation_url=rotation_url, raw=raw_str)
 
-        return cls(type=ProxyType.DIRECT, raw=raw_str)
+        return cls(type=ProxyType.DIRECT, rotation_url=rotation_url, raw=raw_str)
 
     def is_direct(self) -> bool:
         return self.type == ProxyType.DIRECT or not self.host or not self.port

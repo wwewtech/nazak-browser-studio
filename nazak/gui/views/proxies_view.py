@@ -85,9 +85,9 @@ class ProxiesView(QWidget):
         l_table.addLayout(h_tbl_head)
 
         self.table = TableWidget(card_table)
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "Профиль", "Прокси сервер", "Пинг", "Внешний IP • Страна", "Google Статус", "YouTube Доступ"
+            "Профиль", "Прокси сервер", "Пинг", "Внешний IP • Страна", "Google Статус", "YouTube Доступ", "Смена IP"
         ])
         
         header = self.table.horizontalHeader()
@@ -96,13 +96,15 @@ class ProxiesView(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         
-        self.table.setColumnWidth(0, 240)
-        self.table.setColumnWidth(1, 150)
-        self.table.setColumnWidth(2, 80)
-        self.table.setColumnWidth(3, 230)
-        self.table.setColumnWidth(4, 120)
+        self.table.setColumnWidth(0, 200)
+        self.table.setColumnWidth(1, 140)
+        self.table.setColumnWidth(2, 70)
+        self.table.setColumnWidth(3, 180)
+        self.table.setColumnWidth(4, 100)
+        self.table.setColumnWidth(5, 100)
 
         l_table.addWidget(self.table)
         main_layout.addWidget(card_table)
@@ -133,6 +135,26 @@ class ProxiesView(QWidget):
                 self.table.setItem(row, 3, QTableWidgetItem("-"))
                 self.table.setItem(row, 4, QTableWidgetItem("Не проверен"))
                 self.table.setItem(row, 5, QTableWidgetItem("-"))
+
+            if p.proxy.rotation_url:
+                btn_rot = PushButton(FluentIcon.SYNC, "Сменить IP", self.table)
+                btn_rot.setFixedHeight(26)
+                btn_rot.clicked.connect(lambda checked, pid=p.id: self.on_rotate_ip(pid))
+                self.table.setCellWidget(row, 6, btn_rot)
+            else:
+                self.table.setItem(row, 6, QTableWidgetItem("Статичный"))
+
+    def on_rotate_ip(self, profile_id: str):
+        prof = self.profile_manager.get_profile(profile_id)
+        if not prof or not prof.proxy.rotation_url:
+            return
+        import urllib.request
+        try:
+            req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                InfoBar.success("IP изменен", f"Запрос на ротацию IP для '{prof.name}' успешно отправлен", parent=self, position=InfoBarPosition.TOP)
+        except Exception as e:
+            InfoBar.warning("Ошибка ротации", f"Не удалось сменить IP: {str(e)}", parent=self, position=InfoBarPosition.TOP)
 
     def on_bulk_import(self):
         text = self.input_proxies.toPlainText().strip()
