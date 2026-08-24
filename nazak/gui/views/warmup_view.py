@@ -3,15 +3,19 @@ Fluent Google Account Warmup Bot View.
 Fluent Vector Iconography & Zero-Emoji Architecture.
 """
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QLabel, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QLabel, QFrame,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt
 from qfluentwidgets import (
-    ComboBox, Slider, PrimaryPushButton, PushButton,
-    SimpleCardWidget, InfoBar, InfoBarPosition, FluentIcon
+    ComboBox, Slider, PrimaryPushButton, PushButton, CheckBox,
+    SimpleCardWidget, TableWidget, InfoBar, InfoBarPosition, FluentIcon
 )
 
-from ...core.warmup_engine import WarmupPlan, generate_warmup_urls, WARMUP_NICHES
+from ...core.warmup_engine import (
+    WarmupPlan, generate_warmup_urls, WARMUP_NICHES,
+    BUILTIN_SCENARIOS, WarmupScenario, ScenarioStep
+)
 from ...models.profile import ProfileStatus
 
 class WarmupView(QWidget):
@@ -30,10 +34,10 @@ class WarmupView(QWidget):
         # 1. Header with Top Actions
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        lbl_title = QLabel("Автопрогрев Google Аккаунтов", self)
+        lbl_title = QLabel("Конструктор сценариев & Органический автопрогрев", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
         
-        lbl_desc = QLabel("Генерация органических поисковых сессий, набор истории и Cookie Trust Score перед запуском рекламы", self)
+        lbl_desc = QLabel("Многошаговые органические маршруты (Google Search, YouTube Shorts, E-Commerce) и накопление Cookie Trust Score", self)
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         
         v_title.addWidget(lbl_title)
@@ -64,7 +68,7 @@ class WarmupView(QWidget):
         l_set = QVBoxLayout(card_set)
         l_set.setContentsMargins(16, 14, 16, 14)
         
-        lbl_w1 = QLabel("Параметры прогревочной сессии", card_set)
+        lbl_w1 = QLabel("Параметры и сценарий прогревочной сессии", card_set)
         lbl_w1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_set.addWidget(lbl_w1)
 
@@ -80,10 +84,21 @@ class WarmupView(QWidget):
         self.populate_profiles()
         grid.addWidget(self.combo_profile, 0, 1)
 
-        # Niche Select
-        lbl_n = QLabel("Тематическая ниша:", card_set)
+        # Scenario Presets Select
+        lbl_scen = QLabel("Готовый сценарий прогрева:", card_set)
+        lbl_scen.setStyleSheet("color: #d4d4d8; font-size: 12px;")
+        grid.addWidget(lbl_scen, 1, 0)
+
+        self.combo_scenario = ComboBox(card_set)
+        for scen in BUILTIN_SCENARIOS:
+            self.combo_scenario.addItem(f"{scen.name} ({len(scen.steps)} шагов)", userData=scen.id)
+        self.combo_scenario.currentIndexChanged.connect(self.update_scenario_preview)
+        grid.addWidget(self.combo_scenario, 1, 1)
+
+        # Niche Select (Fallback/Search mode)
+        lbl_n = QLabel("Тематическая ниша поиска:", card_set)
         lbl_n.setStyleSheet("color: #d4d4d8; font-size: 12px;")
-        grid.addWidget(lbl_n, 1, 0)
+        grid.addWidget(lbl_n, 2, 0)
         
         self.combo_niche = ComboBox(card_set)
         self.combo_niche.addItem("E-Commerce & Ритейл • Электроника, Одежда", userData="ecommerce")
@@ -91,41 +106,32 @@ class WarmupView(QWidget):
         self.combo_niche.addItem("IT & Разработка • Python, Docker, Cloud", userData="tech")
         self.combo_niche.addItem("Путешествия & Туризм • Отели, Авиабилеты", userData="travel")
         self.combo_niche.addItem("Криптовалюта & Web3 • Bitcoin, DeFi", userData="crypto")
-        self.combo_niche.currentIndexChanged.connect(self.update_preview)
-        grid.addWidget(self.combo_niche, 1, 1)
-
-        # Steps Slider
-        lbl_s = QLabel("Количество поисковых шагов:", card_set)
-        lbl_s.setStyleSheet("color: #d4d4d8; font-size: 12px;")
-        grid.addWidget(lbl_s, 2, 0)
-        
-        h_slider = QHBoxLayout()
-        self.slider_steps = Slider(Qt.Orientation.Horizontal, card_set)
-        self.slider_steps.setRange(3, 10)
-        self.slider_steps.setValue(5)
-        self.slider_steps.valueChanged.connect(self.on_slider_changed)
-        
-        self.lbl_steps_val = QLabel("5 сессий • ~7.5 мин", card_set)
-        self.lbl_steps_val.setStyleSheet("color: #34d399; font-weight: 600; font-size: 12px;")
-        h_slider.addWidget(self.slider_steps)
-        h_slider.addWidget(self.lbl_steps_val)
-        grid.addLayout(h_slider, 2, 1)
+        self.combo_niche.currentIndexChanged.connect(self.update_scenario_preview)
+        grid.addWidget(self.combo_niche, 2, 1)
 
         l_set.addLayout(grid)
         layout.addWidget(card_set)
 
-        # 3. Plan Preview Card
+        # 3. Scenario Steps Card (Interactive Preview Table)
         card_preview = SimpleCardWidget(container)
         l_prev = QVBoxLayout(card_preview)
         l_prev.setContentsMargins(16, 14, 16, 14)
         
-        lbl_w2 = QLabel("Сгенерированный маршрут поисковых запросов", card_preview)
+        lbl_w2 = QLabel("Шаги выбранного сценария", card_preview)
         lbl_w2.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_prev.addWidget(lbl_w2)
 
-        self.lbl_plan_preview = QLabel("", card_preview)
-        self.lbl_plan_preview.setStyleSheet("font-family: monospace; color: #38bdf8; font-size: 11px; background: #22222a; padding: 8px 12px; border-radius: 6px; border: 1px solid #2e2e3a;")
-        l_prev.addWidget(self.lbl_plan_preview)
+        self.table_steps = TableWidget(card_preview)
+        self.table_steps.setColumnCount(3)
+        self.table_steps.setHorizontalHeaderLabels(["Шаг #", "Тип действия", "Описание и параметры"])
+        h = self.table_steps.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table_steps.setColumnWidth(0, 60)
+        self.table_steps.setColumnWidth(1, 140)
+        self.table_steps.setFixedHeight(160)
+        l_prev.addWidget(self.table_steps)
         layout.addWidget(card_preview)
 
         # 4. Live Telemetry & Trust Score Card
@@ -156,7 +162,7 @@ class WarmupView(QWidget):
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
 
-        self.update_preview()
+        self.update_scenario_preview()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -168,7 +174,7 @@ class WarmupView(QWidget):
         self.combo_profile.clear()
         profs = self.profile_manager.list_profiles()
         for p in profs:
-            self.combo_profile.addItem(p.name, userData=p.id)
+            self.combo_profile.addItem(f"{p.name} [{p.group or 'No Group'}]", userData=p.id)
         if curr_id:
             idx = self.combo_profile.findData(curr_id)
             if idx >= 0:
@@ -178,16 +184,23 @@ class WarmupView(QWidget):
     def refresh_profiles(self):
         self.populate_profiles()
 
-    def on_slider_changed(self, val):
-        self.lbl_steps_val.setText(f"{val} сессий • ~{val * 1.5:.1f} мин")
-        self.update_preview()
+    def update_scenario_preview(self):
+        scen_id = self.combo_scenario.currentData()
+        selected_scenario = None
+        for s in BUILTIN_SCENARIOS:
+            if s.id == scen_id:
+                selected_scenario = s
+                break
 
-    def update_preview(self):
-        niche = self.combo_niche.currentData() or "ecommerce"
-        steps = self.slider_steps.value()
-        plan = WarmupPlan("temp", niche=niche, steps_count=steps)
-        lines = [f"{i}. {q}" for i, q in enumerate(plan.queries, start=1)]
-        self.lbl_plan_preview.setText("\n".join(lines))
+        if not selected_scenario:
+            selected_scenario = BUILTIN_SCENARIOS[0]
+
+        self.table_steps.setRowCount(len(selected_scenario.steps))
+        for row, step in enumerate(selected_scenario.steps, start=0):
+            self.table_steps.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+            self.table_steps.setItem(row, 1, QTableWidgetItem(step.action))
+            desc = step.description or str(step.params)
+            self.table_steps.setItem(row, 2, QTableWidgetItem(desc))
 
     def on_launch_warmup(self):
         pid = self.combo_profile.currentData()
@@ -199,18 +212,32 @@ class WarmupView(QWidget):
         if not prof:
             return
 
-        niche = self.combo_niche.currentData() or "ecommerce"
-        steps = self.slider_steps.value()
-        plan = WarmupPlan(pid, niche=niche, steps_count=steps)
-        urls = generate_warmup_urls(plan.queries)
-        start_url = urls[0] if urls else "https://www.google.com"
+        scen_id = self.combo_scenario.currentData()
+        selected_scenario = None
+        for s in BUILTIN_SCENARIOS:
+            if s.id == scen_id:
+                selected_scenario = s
+                break
+
+        if not selected_scenario:
+            selected_scenario = BUILTIN_SCENARIOS[0]
+
+        # Determine start URL from first step
+        start_url = "https://www.google.com"
+        for st in selected_scenario.steps:
+            if st.action == "open_url" and "url" in st.params:
+                start_url = st.params["url"]
+                break
+            elif st.action == "google_search" and "query" in st.params:
+                start_url = f"https://www.google.com/search?q={st.params['query'].replace(' ', '+')}&hl=en"
+                break
 
         ok, proc_id, err = self.browser_launcher.launch(prof, custom_url=start_url)
         if ok:
             prof.status = ProfileStatus.RUNNING
             prof.pid = proc_id
             self.profile_manager.update_profile(prof)
-            InfoBar.success("Прогрев начат", f"Профиль '{prof.name}' запущен по органическому маршруту", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success("Сценарий запущен", f"Профиль '{prof.name}' выполняет сценарий '{selected_scenario.name}'", parent=self, position=InfoBarPosition.TOP)
         else:
             InfoBar.error("Ошибка запуска", err or "Не удалось запустить браузер", parent=self, position=InfoBarPosition.TOP)
 
