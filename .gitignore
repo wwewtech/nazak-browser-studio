@@ -26,6 +26,7 @@ MANIFEST
 
 # PyInstaller output (except archives prepared for releases)
 dist/
+dist_installer/
 *.zip
 
 # Unit test / coverage reports

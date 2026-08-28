@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Nazak Browser Studio PRO - Senior Production Build Orchestrator.
-Automates PyInstaller compilation, footprint optimization, smoke tests, and Inno Setup packaging.
+Automates PyInstaller compilation, footprint optimization, smoke tests, ZIP packaging, and Inno Setup installer.
 """
 
 import os
@@ -10,15 +10,32 @@ import shutil
 import hashlib
 import subprocess
 import time
+import zipfile
 from pathlib import Path
+
+# Fix Windows console encoding issues if necessary
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 ROOT_DIR = Path(__file__).resolve().parent
 DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build"
 INSTALLER_DIR = ROOT_DIR / "dist_installer"
 SPEC_FILE = ROOT_DIR / "NazakBrowserStudio.spec"
-EXE_PATH = DIST_DIR / "NazakBrowserStudio" / "NazakBrowserStudio.exe"
+APP_DIR = DIST_DIR / "NazakBrowserStudio"
+EXE_PATH = APP_DIR / "NazakBrowserStudio.exe"
 ISS_FILE = ROOT_DIR / "installer.iss"
+VERSION = "1.4.1"
+ZIP_NAME = f"NazakBrowserStudio-v{VERSION}-Windows-x64.zip"
+ZIP_PATH = DIST_DIR / ZIP_NAME
 
 # ANSI Colors for terminal output
 CYAN = "\033[96m"
@@ -34,15 +51,15 @@ def print_step(title: str):
 
 
 def print_success(msg: str):
-    print(f"{GREEN}✓ {msg}{RESET}")
+    print(f"{GREEN}[OK] {msg}{RESET}")
 
 
 def print_warn(msg: str):
-    print(f"{YELLOW}⚠ {msg}{RESET}")
+    print(f"{YELLOW}[WARN] {msg}{RESET}")
 
 
 def print_error(msg: str):
-    print(f"{RED}✗ {msg}{RESET}")
+    print(f"{RED}[ERROR] {msg}{RESET}")
 
 
 def calculate_sha256(file_path: Path) -> str:
@@ -59,7 +76,7 @@ def get_dir_size_mb(path: Path) -> float:
 
 
 def validate_environment():
-    print_step("Step 1/6: Validating Build Environment")
+    print_step("Step 1/7: Validating Build Environment")
     try:
         import PyInstaller
         print_success(f"PyInstaller version: {PyInstaller.__version__}")
@@ -69,7 +86,7 @@ def validate_environment():
 
     try:
         import PyQt6
-        print_success(f"PyQt6 installed at: {Path(PyQt6.__file__).parent}")
+        print_success(f"PyQt6 path: {Path(PyQt6.__file__).parent}")
     except ImportError:
         print_error("PyQt6 is not installed. Run: pip install PyQt6")
         sys.exit(1)
@@ -82,7 +99,7 @@ def validate_environment():
 
 
 def clean_artifacts():
-    print_step("Step 2/6: Cleaning Previous Build Artifacts")
+    print_step("Step 2/7: Cleaning Previous Build Artifacts")
     for d in [BUILD_DIR, DIST_DIR, INSTALLER_DIR]:
         if d.exists():
             print(f"  Removing: {d}")
@@ -91,7 +108,7 @@ def clean_artifacts():
 
 
 def run_pyinstaller():
-    print_step("Step 3/6: Compiling Application with PyInstaller")
+    print_step("Step 3/7: Compiling Application with PyInstaller")
     if not SPEC_FILE.exists():
         print_error(f"Spec file not found: {SPEC_FILE}")
         sys.exit(1)
@@ -117,14 +134,13 @@ def run_pyinstaller():
 
 
 def optimize_distribution():
-    print_step("Step 4/6: Post-Build Footprint Optimization")
-    dist_app = DIST_DIR / "NazakBrowserStudio"
-    if not dist_app.exists():
+    print_step("Step 4/7: Post-Build Footprint Optimization")
+    if not APP_DIR.exists():
         print_error("Distribution directory does not exist.")
         return
 
     # Strip unused translation files (.qm) for languages other than ru / en to save disk space
-    translations_dir = dist_app / "PyQt6" / "Qt6" / "translations"
+    translations_dir = APP_DIR / "PyQt6" / "Qt6" / "translations"
     removed_bytes = 0
     if translations_dir.exists():
         for qm in list(translations_dir.glob("*.qm")):
@@ -143,7 +159,7 @@ def optimize_distribution():
 
 
 def smoke_test():
-    print_step("Step 5/6: Executing Smoke Test on Compiled Binary")
+    print_step("Step 5/7: Executing Smoke Test on Compiled Binary")
     if not EXE_PATH.exists():
         print_error(f"Target executable not found: {EXE_PATH}")
         sys.exit(1)
@@ -161,8 +177,29 @@ def smoke_test():
         print_error(f"Smoke test failed: {e}")
 
 
+def package_zip():
+    print_step("Step 6/7: Creating Standalone Release ZIP Bundle")
+    if not APP_DIR.exists():
+        print_error("Cannot package ZIP: App directory does not exist.")
+        return
+
+    print(f"  Archiving {APP_DIR} -> {ZIP_PATH} ...")
+    start_time = time.time()
+
+    with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for file in APP_DIR.rglob("*"):
+            if file.is_file():
+                # Store relative to dist directory so it unzips into NazakBrowserStudio/
+                arcname = file.relative_to(DIST_DIR)
+                zf.write(file, arcname)
+
+    elapsed = time.time() - start_time
+    zip_size_mb = ZIP_PATH.stat().st_size / (1024 * 1024)
+    print_success(f"ZIP package created: {ZIP_NAME} ({zip_size_mb:.2f} MB) in {elapsed:.2f}s")
+
+
 def build_inno_installer():
-    print_step("Step 6/6: Building Windows Inno Setup Installer")
+    print_step("Step 7/7: Building Windows Inno Setup Installer")
     if not ISS_FILE.exists():
         print_warn(f"Installer script not found: {ISS_FILE}")
         return
@@ -178,10 +215,8 @@ def build_inno_installer():
     iscc_path = next((p for p in iscc_candidates if p and Path(p).exists()), None)
 
     if not iscc_path:
-        print_warn("Inno Setup 6 (ISCC.exe) not found on this system.")
-        print("  To generate a setup.exe installer:")
-        print("  1. Download Inno Setup 6 from https://jrsoftware.org/isdl.php")
-        print(f"  2. Run: ISCC.exe {ISS_FILE}")
+        print_warn("Inno Setup 6 (ISCC.exe) not detected on this machine.")
+        print("  Skipping Setup.exe generation. Standalone ZIP package is ready for distribution.")
         return
 
     INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
@@ -204,23 +239,30 @@ def print_summary():
     print(f"{GREEN}{BOLD}================================================================{RESET}\n")
 
     if EXE_PATH.exists():
-        dist_app = DIST_DIR / "NazakBrowserStudio"
-        size_mb = get_dir_size_mb(dist_app)
+        size_mb = get_dir_size_mb(APP_DIR)
         sha256 = calculate_sha256(EXE_PATH)
-        print(f"  • {BOLD}Executable:{RESET} {EXE_PATH}")
-        print(f"  • {BOLD}Bundle Size:{RESET} {size_mb:.2f} MB")
-        print(f"  • {BOLD}EXE SHA256:{RESET}  {sha256}")
+        print(f"  * {BOLD}Executable:{RESET} {EXE_PATH}")
+        print(f"  * {BOLD}Bundle Size:{RESET} {size_mb:.2f} MB")
+        print(f"  * {BOLD}EXE SHA256:{RESET}  {sha256}")
+
+    if ZIP_PATH.exists():
+        zip_size = ZIP_PATH.stat().st_size / (1024 * 1024)
+        zip_sha = calculate_sha256(ZIP_PATH)
+        print(f"  * {BOLD}Release ZIP:{RESET} {ZIP_PATH}")
+        print(f"  * {BOLD}ZIP Size:{RESET}    {zip_size:.2f} MB")
+        print(f"  * {BOLD}ZIP SHA256:{RESET}  {zip_sha}")
 
     setup_files = list(INSTALLER_DIR.glob("*.exe")) if INSTALLER_DIR.exists() else []
     if setup_files:
         setup_exe = setup_files[0]
         setup_size = setup_exe.stat().st_size / (1024 * 1024)
         setup_sha = calculate_sha256(setup_exe)
-        print(f"  • {BOLD}Installer:{RESET}  {setup_exe}")
-        print(f"  • {BOLD}Setup Size:{RESET} {setup_size:.2f} MB")
-        print(f"  • {BOLD}Setup SHA:{RESET}  {setup_sha}")
+        print(f"  * {BOLD}Installer:{RESET}   {setup_exe}")
+        print(f"  * {BOLD}Setup Size:{RESET}  {setup_size:.2f} MB")
+        print(f"  * {BOLD}Setup SHA:{RESET}   {setup_sha}")
 
-    print(f"\n{CYAN}Deploy or test by running:{RESET} {EXE_PATH}\n")
+    print(f"\n{CYAN}To upload to GitHub Release:{RESET}")
+    print(f"  gh release upload v{VERSION} \"{ZIP_PATH}\" --clobber\n")
 
 
 def main():
@@ -229,6 +271,7 @@ def main():
     run_pyinstaller()
     optimize_distribution()
     smoke_test()
+    package_zip()
     build_inno_installer()
     print_summary()
 
