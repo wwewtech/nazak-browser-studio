@@ -40,7 +40,7 @@ class ProfileManager:
         """
         Creates 10 deeply distinct, ultra-realistic browser profiles with complete system isolation.
         """
-        presets = [
+        presets: list[dict[str, Any]] = [
             {
                 "name": "01 - Google Ads USA (High-Tier Desktop RTX 4090)",
                 "group": "Google Ads",

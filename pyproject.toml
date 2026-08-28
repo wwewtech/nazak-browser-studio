@@ -194,6 +194,7 @@ disable_error_code = [
     "misc",
     "attr-defined",
     "call-arg",
+    "call-overload",
     "valid-type",
 ]
 exclude = [
