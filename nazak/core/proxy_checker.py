@@ -86,24 +86,17 @@ async def check_proxy_health(
 
         proxy_url = proxy.to_httpx_url()
 
-    # Create HTTPX client with proxy settings
-    httpx.AsyncHTTPTransport(retries=1)
-    client_kwargs = {
-        "timeout": httpx.Timeout(timeout_sec, connect=5.0),
-        "follow_redirects": True,
-        "headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
-    if proxy_url:
-        client_kwargs["proxy"] = proxy_url
+    timeout = httpx.Timeout(timeout_sec, connect=5.0)
 
-    async with httpx.AsyncClient(**client_kwargs) as client:
+    async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout, follow_redirects=True, headers=headers) as client:
         # 2. IP & Geo Location Check
         try:
             geo_resp = await client.get(

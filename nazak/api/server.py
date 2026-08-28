@@ -505,7 +505,7 @@ async def get_profile_cdp(profile_id: str):
 
 @app.post("/api/profiles/batch-launch", tags=["Profiles"], summary="Launch multiple profiles simultaneously")
 async def batch_launch(req: BatchActionRequest):
-    results = {}
+    results: dict[str, Any] = {}
     for pid in req.profile_ids:
         prof = profile_manager.get_profile(pid)
         if prof:

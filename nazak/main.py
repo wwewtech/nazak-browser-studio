@@ -18,14 +18,9 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-try:
-    from nazak.api.server import app as fastapi_app
-    from nazak.cli import run_cli
-    from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
-except ImportError:
-    from api.server import app as fastapi_app
-    from cli import run_cli
-    from config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
+from nazak.api.server import app as fastapi_app
+from nazak.cli import run_cli
+from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
 
 
 # Robust SafeStream redirection for pure windowed GUI without console
@@ -74,10 +69,8 @@ def main():
 
     if args.mode == "gui":
         try:
-            try:
-                from nazak.gui.main_window import launch_gui
-            except ImportError:
-                from gui.main_window import launch_gui
+            from nazak.gui.main_window import launch_gui
+
             launch_gui(host=args.host, port=args.port)
         except Exception:
             # Write crash log

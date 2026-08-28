@@ -25,23 +25,16 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-try:
-    from nazak.config import (
-        EXTENSIONS_DIR,
-        PROFILES_DIR,
-        PROFILES_FILE,
-        find_chrome_executable,
-    )
-    from nazak.core.browser_launcher import BrowserLauncher
-    from nazak.core.profile_manager import ProfileManager
-    from nazak.core.proxy_checker import check_proxy_health
-    from nazak.models.profile import ProfileStatus
-except ImportError:
-    from config import EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE, find_chrome_executable
-    from core.browser_launcher import BrowserLauncher
-    from core.profile_manager import ProfileManager
-    from core.proxy_checker import check_proxy_health
-    from models.profile import ProfileStatus
+from nazak.config import (
+    EXTENSIONS_DIR,
+    PROFILES_DIR,
+    PROFILES_FILE,
+    find_chrome_executable,
+)
+from nazak.core.browser_launcher import BrowserLauncher
+from nazak.core.profile_manager import ProfileManager
+from nazak.core.proxy_checker import check_proxy_health
+from nazak.models.profile import ProfileStatus
 
 console = Console()
 

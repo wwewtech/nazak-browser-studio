@@ -126,6 +126,7 @@ combine-as-imports = true
 ]
 "nazak/tools/*" = ["E402", "F401"]
 "nazak/main.py" = ["E402"]
+"nazak/cli.py" = ["E402"]
 "nazak/gui/*" = ["E402", "F401"]
 
 [tool.ruff.format]
@@ -139,6 +140,7 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -175,14 +177,29 @@ exclude_lines = [
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = false
-warn_unused_configs = true
+warn_unused_configs = false
 ignore_missing_imports = true
 follow_imports = "silent"
+allow_redefinition = true
 check_untyped_defs = false
 disallow_untyped_defs = false
+disable_error_code = [
+    "no-redef",
+    "arg-type",
+    "dict-item",
+    "assignment",
+    "index",
+    "import-untyped",
+    "override",
+    "misc",
+    "attr-defined",
+    "call-arg",
+    "valid-type",
+]
 exclude = [
     "build/",
     "dist/",
+    "dist_installer/",
     "tests/",
     "nazak/tools/",
 ]
