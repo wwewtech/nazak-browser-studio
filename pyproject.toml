@@ -40,7 +40,7 @@ dependencies = [
     "PySocks>=1.7.1",
     "psutil>=5.9.0",
     "PyQt6>=6.7.0",
-    "qfluentwidgets>=1.7.0",
+    "PyQt6-Fluent-Widgets>=1.7.0",
     "rich>=13.7.0",
     "websockets>=12.0",
 ]
