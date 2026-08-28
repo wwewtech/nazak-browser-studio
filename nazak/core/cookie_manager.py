@@ -197,7 +197,7 @@ def parse_cookie_files_from_dir(dir_path: Path) -> dict[str, list[dict[str, Any]
     Scans a directory for .json and .txt cookie files and parses them into a profile-indexed map.
     File name (without extension) is treated as the profile identifier (ID or Name).
     """
-    results = {}
+    results: dict[str, list[dict[str, Any]]] = {}
     if not dir_path.exists() or not dir_path.is_dir():
         return results
 

@@ -162,7 +162,8 @@ def calculate_tz_offset(tz_name: str) -> int:
         from zoneinfo import ZoneInfo
 
         now = datetime.now(ZoneInfo(tz_name))
-        offset_sec = now.utcoffset().total_seconds()
+        offset = now.utcoffset()
+        offset_sec = offset.total_seconds() if offset is not None else 0
         # In JS: UTC-5 (New York) is +300, UTC+3 (Moscow) is -180
         return int(-offset_sec / 60)
     except Exception:

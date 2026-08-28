@@ -280,25 +280,25 @@ class ProfileManager:
             ]
 
             fp = FingerprintConfig(
-                user_agent=item["ua"],
-                platform=item["platform"],
-                screen_width=item["width"],
-                screen_height=item["height"],
-                screen_avail_width=item["width"],
-                screen_avail_height=item["height"] - 40,
+                user_agent=str(item["ua"]),
+                platform=str(item["platform"]),
+                screen_width=int(item["width"]),
+                screen_height=int(item["height"]),
+                screen_avail_width=int(item["width"]),
+                screen_avail_height=int(item["height"]) - 40,
                 color_depth=24,
                 pixel_depth=24,
-                device_pixel_ratio=1.0 if item["width"] <= 2560 else 2.0,
-                device_memory=item["ram"],
-                hardware_concurrency=item["cores"],
-                language=item["lang"],
-                languages=item["langs"],
-                timezone=item["tz"],
-                timezone_offset=item["tz_off"],
-                webgl_vendor=item["gpu_v"],
-                webgl_renderer=item["gpu_r"],
-                webgl_unmasked_vendor=item["gpu_uv"],
-                webgl_unmasked_renderer=item["gpu_ur"],
+                device_pixel_ratio=1.0 if int(item["width"]) <= 2560 else 2.0,
+                device_memory=int(item["ram"]),
+                hardware_concurrency=int(item["cores"]),
+                language=str(item["lang"]),
+                languages=list(item["langs"]),
+                timezone=str(item["tz"]),
+                timezone_offset=int(item["tz_off"]),
+                webgl_vendor=str(item["gpu_v"]),
+                webgl_renderer=str(item["gpu_r"]),
+                webgl_unmasked_vendor=str(item["gpu_uv"]),
+                webgl_unmasked_renderer=str(item["gpu_ur"]),
                 media_devices=devs,
                 canvas_noise=True,
                 canvas_noise_seed=100000 + idx * 7777,
@@ -306,7 +306,8 @@ class ProfileManager:
                 audio_noise_seed=0.000001 * idx,
                 client_rects_noise=True,
                 battery=BatterySpoofConfig(
-                    charging=True, level=0.98 if "Laptop" in item["name"] or "MacBook" in item["name"] else 1.0
+                    charging=True,
+                    level=0.98 if "Laptop" in str(item["name"]) or "MacBook" in str(item["name"]) else 1.0,
                 ),
                 geolocation=GeolocationSpoofConfig(enabled=True),
                 webrtc_policy="disable_non_proxied_udp",
@@ -550,7 +551,10 @@ class ProfileManager:
         Matches by profile ID, exact profile Name, or case-insensitive substring.
         If no matching profile is found and auto_create_missing is True, creates a new isolated profile.
         """
-        results = {"matched": 0, "created": 0, "failed": 0, "profile_ids": []}
+        matched_count = 0
+        created_count = 0
+        failed_count = 0
+        imported_profile_ids: list[str] = []
 
         all_profiles = list(self.profiles.values())
         id_map = {p.id: p for p in all_profiles}
@@ -593,20 +597,25 @@ class ProfileManager:
                 target_profile = self.create_profile(new_prof)
                 id_map[target_profile.id] = target_profile
                 name_map[target_profile.name.strip().lower()] = target_profile
-                results["created"] += 1
+                created_count += 1
             elif target_profile:
-                results["matched"] += 1
+                matched_count += 1
 
             if target_profile:
                 saved = self.save_profile_cookies(target_profile.id, cookies)
                 if saved:
-                    results["profile_ids"].append(target_profile.id)
+                    imported_profile_ids.append(target_profile.id)
                 else:
-                    results["failed"] += 1
+                    failed_count += 1
             else:
-                results["failed"] += 1
+                failed_count += 1
 
-        return results
+        return {
+            "matched": matched_count,
+            "created": created_count,
+            "failed": failed_count,
+            "profile_ids": imported_profile_ids,
+        }
 
     def export_all_cookies(self, profile_ids: list[str] | None = None) -> dict[str, list[dict[str, Any]]]:
         """Exports loaded cookies for specified or all profiles indexed by profile ID."""
