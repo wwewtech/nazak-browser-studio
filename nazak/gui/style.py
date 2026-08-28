@@ -2,7 +2,9 @@
 Windows 11 Fluent Design System - Global Stylesheet & Color Tokens.
 Obsidian Dark Mode Architecture with High-Contrast Typography & Tactile States.
 """
+
 from PyQt6.QtGui import QFont
+
 
 def apply_app_typography(app):
     """Configures high-precision anti-aliased Segoe UI Variable typography."""
@@ -10,6 +12,7 @@ def apply_app_typography(app):
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.PreferQuality)
     font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     app.setFont(font)
+
 
 FLUENT_DARK_QSS = """
 /* Global Window & Background */

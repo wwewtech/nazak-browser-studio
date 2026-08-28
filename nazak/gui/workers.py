@@ -3,23 +3,26 @@ Qt Background Worker Threads.
 Executes network diagnostics, browser lifecycle, FFmpeg video processing,
 and automated YouTube Shorts posting without blocking the UI thread.
 """
+
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Optional
+
 from PyQt6.QtCore import QThread, pyqtSignal as Signal
 
 from ..core.proxy_checker import check_proxy_health
-from ..core.video_uniquifier import VideoUniquifier
 from ..core.spintax import format_video_metadata
+from ..core.video_uniquifier import VideoUniquifier
 from ..core.youtube_uploader import YouTubeUploader
-from ..models.profile import BrowserProfile, ProfileStatus
 from ..models.health import HealthCheckResult
+from ..models.profile import BrowserProfile, ProfileStatus
+
 
 class ProxyCheckWorker(QThread):
     finished_signal = Signal(str, object)  # profile_id, HealthCheckResult
     error_signal = Signal(str, str)
 
-    def __init__(self, profile_id: str, proxy_config, profile_dir: Optional[Path] = None):
+    def __init__(self, profile_id: str, proxy_config, profile_dir: Path | None = None):
         super().__init__()
         self.profile_id = profile_id
         self.proxy_config = proxy_config
@@ -29,19 +32,18 @@ class ProxyCheckWorker(QThread):
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            res = loop.run_until_complete(
-                check_proxy_health(self.proxy_config, profile_dir=self.profile_dir)
-            )
+            res = loop.run_until_complete(check_proxy_health(self.proxy_config, profile_dir=self.profile_dir))
             loop.close()
             self.finished_signal.emit(self.profile_id, res)
         except Exception as e:
             self.error_signal.emit(self.profile_id, str(e))
 
+
 class CheckAllProxiesWorker(QThread):
     progress_signal = Signal(int, int, str)  # current, total, profile_name
     finished_signal = Signal(list)
 
-    def __init__(self, profiles: List[BrowserProfile], profiles_dir: Path):
+    def __init__(self, profiles: list[BrowserProfile], profiles_dir: Path):
         super().__init__()
         self.profiles = profiles
         self.profiles_dir = profiles_dir
@@ -49,7 +51,7 @@ class CheckAllProxiesWorker(QThread):
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         async def _run_all():
             results = []
             for idx, p in enumerate(self.profiles, start=1):
@@ -63,6 +65,7 @@ class CheckAllProxiesWorker(QThread):
         loop.close()
         self.finished_signal.emit(results)
 
+
 class AutopostBatchWorker(QThread):
     job_update_signal = Signal(str, str, str)  # profile_id, status, message
     batch_finished_signal = Signal(list)
@@ -71,11 +74,11 @@ class AutopostBatchWorker(QThread):
         self,
         profile_manager,
         browser_launcher,
-        profile_ids: List[str],
+        profile_ids: list[str],
         source_video_path: Path,
         title_template: str,
         description_template: str,
-        tg_channel: str = "@your_vpn_bot"
+        tg_channel: str = "@your_vpn_bot",
     ):
         super().__init__()
         self.profile_manager = profile_manager
@@ -116,7 +119,7 @@ class AutopostBatchWorker(QThread):
                     description_template=self.description_template,
                     profile_name=prof.name,
                     profile_id=pid,
-                    tg_channel=self.tg_channel
+                    tg_channel=self.tg_channel,
                 )
 
                 self.job_update_signal.emit(pid, "launching", "Запуск изолированного браузера...")
@@ -133,15 +136,17 @@ class AutopostBatchWorker(QThread):
 
                 self.job_update_signal.emit(pid, "uploading", "Загрузка Shorts в YouTube Studio...")
 
-                async def progress_cb(msg: str):
-                    self.job_update_signal.emit(pid, "uploading", msg)
+                curr_pid = pid
+
+                async def progress_cb(msg: str, p=curr_pid):
+                    self.job_update_signal.emit(p, "uploading", msg)
 
                 uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
                 upload_ok, video_url, upload_err = await uploader.upload_shorts(
                     video_path=out_path,
                     title=meta["title"],
                     description=meta["description"],
-                    progress_callback=progress_cb
+                    progress_callback=progress_cb,
                 )
 
                 self.browser_launcher.stop(pid)

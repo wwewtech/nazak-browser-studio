@@ -1,8 +1,11 @@
 import asyncio
-import pytest
 from pathlib import Path
-from nazak.models.proxy import ProxyConfig, ProxyType
+
+import pytest
+
 from nazak.core.proxy_checker import check_profile_data_isolation, check_proxy_health
+from nazak.models.proxy import ProxyConfig, ProxyType
+
 
 def test_data_isolation_checker(tmp_path):
     prof_dir = tmp_path / "test_iso_prof"
@@ -10,6 +13,7 @@ def test_data_isolation_checker(tmp_path):
     assert ok is True
     assert err is None
     assert prof_dir.exists()
+
 
 def test_direct_connection_health_check(tmp_path):
     prof_dir = tmp_path / "test_direct_prof"

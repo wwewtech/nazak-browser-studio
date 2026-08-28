@@ -4,11 +4,11 @@ Nazak Browser Studio PRO - Senior Production Build Orchestrator.
 Automates PyInstaller compilation, footprint optimization, smoke tests, ZIP packaging, and Inno Setup installer.
 """
 
-import os
-import sys
-import shutil
 import hashlib
+import os
+import shutil
 import subprocess
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -79,6 +79,7 @@ def validate_environment():
     print_step("Step 1/7: Validating Build Environment")
     try:
         import PyInstaller
+
         print_success(f"PyInstaller version: {PyInstaller.__version__}")
     except ImportError:
         print_error("PyInstaller is not installed. Run: pip install pyinstaller")
@@ -86,6 +87,7 @@ def validate_environment():
 
     try:
         import PyQt6
+
         print_success(f"PyQt6 path: {Path(PyQt6.__file__).parent}")
     except ImportError:
         print_error("PyQt6 is not installed. Run: pip install PyQt6")
@@ -93,6 +95,7 @@ def validate_environment():
 
     try:
         import qfluentwidgets
+
         print_success(f"QFluentWidgets version: {getattr(qfluentwidgets, '__version__', 'detected')}")
     except ImportError:
         print_warn("qfluentwidgets is not installed in current environment.")
@@ -262,7 +265,7 @@ def print_summary():
         print(f"  * {BOLD}Setup SHA:{RESET}   {setup_sha}")
 
     print(f"\n{CYAN}To upload to GitHub Release:{RESET}")
-    print(f"  gh release upload v{VERSION} \"{ZIP_PATH}\" --clobber\n")
+    print(f'  gh release upload v{VERSION} "{ZIP_PATH}" --clobber\n')
 
 
 def main():

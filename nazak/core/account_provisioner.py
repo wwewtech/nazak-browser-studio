@@ -3,30 +3,28 @@ Account Provisioner & Dual-Mode Activation Engine.
 Automates batch importing accounts (Login:Pass:2FA:Recovery), generating isolated browser profiles,
 performing automated Google login via CDP with TOTP generation, and managing OAuth 2.0 / YouTube Studio sessions.
 """
-import os
-import re
-import time
+
 import base64
-import hmac
-import struct
 import hashlib
+import hmac
 import json
 import logging
-import uuid
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+import re
+import struct
+import time
+from collections.abc import Callable
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Callable
+from urllib.parse import parse_qs, urlparse
 
 try:
     import pyotp
 except ImportError:
     pyotp = None
 
-from .fingerprint_generator import generate_random_fingerprint
-from ..models.profile import BrowserProfile, ProfileStatus, GoogleSettings, FingerprintConfig
+from ..models.profile import BrowserProfile, GoogleSettings, ProfileStatus
 from ..models.proxy import ProxyConfig, ProxyType
+from .fingerprint_generator import generate_random_fingerprint
 from .profile_manager import ProfileManager
 
 logger = logging.getLogger(__name__)
@@ -52,15 +50,15 @@ def generate_totp_rfc6238(secret: str, interval: int = 30, digits: int = 6) -> s
         counter_bytes = struct.pack(">Q", counter)
         h = hmac.new(key, counter_bytes, hashlib.sha1).digest()
         offset = h[-1] & 0x0F
-        code_int = struct.unpack(">I", h[offset:offset + 4])[0] & 0x7FFFFFFF
-        code = str(code_int % (10 ** digits)).zfill(digits)
+        code_int = struct.unpack(">I", h[offset : offset + 4])[0] & 0x7FFFFFFF
+        code = str(code_int % (10**digits)).zfill(digits)
         return code
     except Exception as e:
         logger.error(f"Error computing TOTP: {e}")
         return "000000"
 
 
-def parse_account_string(raw_line: str) -> Optional[Dict[str, str]]:
+def parse_account_string(raw_line: str) -> dict[str, str] | None:
     """
     Parses market account string format:
     login@gmail.com:password:2fa_secret:recovery@mail.com
@@ -111,12 +109,13 @@ def parse_account_string(raw_line: str) -> Optional[Dict[str, str]]:
         "password": password,
         "totp_secret": totp_secret,
         "recovery_email": recovery_email,
-        "raw": line
+        "raw": line,
     }
 
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
     """Local HTTP callback receiver for Google OAuth 2.0 redirect flow."""
+
     auth_code = None
     error = None
 
@@ -144,7 +143,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(f"Ошибка авторизации: {err}".encode("utf-8"))
+            self.wfile.write(f"Ошибка авторизации: {err}".encode())
 
     def log_message(self, format, *args):
         pass
@@ -155,6 +154,7 @@ class AccountProvisioner:
     Orchestrates batch account import, profile fingerprint creation,
     CDP automated Google login, and OAuth 2.0 dual-mode management.
     """
+
     def __init__(self, profile_manager: ProfileManager, profiles_dir: Path):
         self.profile_manager = profile_manager
         self.profiles_dir = profiles_dir
@@ -164,8 +164,8 @@ class AccountProvisioner:
         raw_text: str,
         group_name: str = "Imported",
         posting_mode: str = "browser_stealth",
-        proxy_list: Optional[List[str]] = None
-    ) -> List[BrowserProfile]:
+        proxy_list: list[str] | None = None,
+    ) -> list[BrowserProfile]:
         """
         Parses multi-line account strings and creates corresponding isolated profiles with hardware fingerprints.
         """
@@ -194,22 +194,24 @@ class AccountProvisioner:
             profile_name = f"{username} — {gpu_display}"
 
             # Encode account data into google settings notes & tags
-            notes_payload = json.dumps({
-                "account_email": acc["email"],
-                "account_password": acc["password"],
-                "totp_secret": acc["totp_secret"],
-                "recovery_email": acc["recovery_email"],
-                "posting_mode": posting_mode,
-                "auth_status": "ready_to_launch",
-                "imported_at": time.time(),
-                "oauth_tokens": {}
-            })
+            notes_payload = json.dumps(
+                {
+                    "account_email": acc["email"],
+                    "account_password": acc["password"],
+                    "totp_secret": acc["totp_secret"],
+                    "recovery_email": acc["recovery_email"],
+                    "posting_mode": posting_mode,
+                    "auth_status": "ready_to_launch",
+                    "imported_at": time.time(),
+                    "oauth_tokens": {},
+                }
+            )
 
             google_settings = GoogleSettings(
                 target_account_email=acc["email"],
                 auto_open_page="youtube_studio" if posting_mode == "browser_stealth" else "google_login",
                 tags=["Imported", "2FA", posting_mode],
-                notes=notes_payload
+                notes=notes_payload,
             )
 
             profile = BrowserProfile(
@@ -219,7 +221,7 @@ class AccountProvisioner:
                 proxy=proxy_cfg,
                 fingerprint=fp,
                 google=google_settings,
-                status=ProfileStatus.STOPPED
+                status=ProfileStatus.STOPPED,
             )
 
             saved = self.profile_manager.create_profile(profile)
@@ -236,7 +238,7 @@ class AccountProvisioner:
             f"response_type=code&client_id={client_id}&redirect_uri={redirect_uri}"
         )
 
-    def listen_for_oauth_code(self, port: int = 3000, timeout: int = 120) -> Optional[str]:
+    def listen_for_oauth_code(self, port: int = 3000, timeout: int = 120) -> str | None:
         """Spins up a temporary local HTTP server to receive the OAuth redirect code."""
         OAuthCallbackHandler.auth_code = None
         OAuthCallbackHandler.error = None
@@ -262,11 +264,11 @@ class AccountProvisioner:
         client_id: str,
         client_secret: str,
         redirect_uri: str = "http://127.0.0.1:3000",
-        proxy_url: Optional[str] = None
-    ) -> Optional[Dict[str, any]]:
+        proxy_url: str | None = None,
+    ) -> dict[str, any] | None:
         """Exchanges Google OAuth 2.0 code for tokens through profile isolated proxy."""
-        import urllib.request
         import urllib.parse
+        import urllib.request
 
         token_url = "https://oauth2.googleapis.com/token"
         payload = {
@@ -274,7 +276,7 @@ class AccountProvisioner:
             "client_id": client_id,
             "client_secret": client_secret,
             "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code"
+            "grant_type": "authorization_code",
         }
 
         try:
@@ -285,10 +287,10 @@ class AccountProvisioner:
                 method="POST",
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                    "Content-Type": "application/x-www-form-urlencoded"
-                }
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
             )
-            
+
             # Route through profile proxy if configured
             if proxy_url and proxy_url != "direct":
                 proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
@@ -306,22 +308,18 @@ class AccountProvisioner:
             return None
 
     def refresh_access_token(
-        self,
-        refresh_token: str,
-        client_id: str,
-        client_secret: str,
-        proxy_url: Optional[str] = None
-    ) -> Optional[Dict[str, any]]:
+        self, refresh_token: str, client_id: str, client_secret: str, proxy_url: str | None = None
+    ) -> dict[str, any] | None:
         """Uses refresh_token to acquire fresh access_token through profile proxy."""
-        import urllib.request
         import urllib.parse
+        import urllib.request
 
         token_url = "https://oauth2.googleapis.com/token"
         payload = {
             "refresh_token": refresh_token,
             "client_id": client_id,
             "client_secret": client_secret,
-            "grant_type": "refresh_token"
+            "grant_type": "refresh_token",
         }
 
         try:
@@ -332,8 +330,8 @@ class AccountProvisioner:
                 method="POST",
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                    "Content-Type": "application/x-www-form-urlencoded"
-                }
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
             )
 
             # Route through profile proxy if configured
@@ -353,11 +351,8 @@ class AccountProvisioner:
             return None
 
     async def automate_google_login(
-        self,
-        profile: BrowserProfile,
-        cdp_url: str,
-        progress_callback: Optional[Callable] = None
-    ) -> Tuple[bool, str]:
+        self, profile: BrowserProfile, cdp_url: str, progress_callback: Callable | None = None
+    ) -> tuple[bool, str]:
         """
         Executes stealth automated Google login over CDP:
         1. Navigates to accounts.google.com
@@ -367,8 +362,9 @@ class AccountProvisioner:
         5. Handles recovery email if prompted
         6. Saves session
         """
-        from playwright.async_api import async_playwright
         import asyncio
+
+        from playwright.async_api import async_playwright
 
         notes = {}
         if profile.google.notes:
@@ -394,7 +390,11 @@ class AccountProvisioner:
                 if progress_callback:
                     await progress_callback("Открытие страницы авторизации Google...")
 
-                await page.goto("https://accounts.google.com/signin/v2/identifier?service=youtube", wait_until="domcontentloaded", timeout=45000)
+                await page.goto(
+                    "https://accounts.google.com/signin/v2/identifier?service=youtube",
+                    wait_until="domcontentloaded",
+                    timeout=45000,
+                )
                 await asyncio.sleep(2)
 
                 # Check if already logged in
@@ -431,7 +431,9 @@ class AccountProvisioner:
                 await asyncio.sleep(4)
 
                 # 3. Handle 2FA TOTP prompt if presented
-                totp_input = page.locator("input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='код' i], [aria-label*='code' i]").first
+                totp_input = page.locator(
+                    "input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='код' i], [aria-label*='code' i]"
+                ).first
                 if await totp_input.is_visible():
                     if not totp_secret:
                         await browser.close()
@@ -480,4 +482,4 @@ class AccountProvisioner:
                 return True, "Авторизация Google успешно завершена!"
 
             except Exception as e:
-                return False, f"Ошибка авто-логина: {str(e)}"
+                return False, f"Ошибка авто-логина: {e!s}"

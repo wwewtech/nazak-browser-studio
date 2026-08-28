@@ -1,25 +1,32 @@
 """
 Suite 2: Browser, CDP, Hardware Shield & Extension Generator Resilience Tests (26 Tests).
 """
-import pytest
+
 import json
 import tempfile
 from pathlib import Path
 
-from nazak.models.profile import (
-    BrowserProfile, ProfileStatus, GoogleSettings, FingerprintConfig,
-    MediaDeviceInfo, BatterySpoofConfig, GeolocationSpoofConfig
-)
-from nazak.models.proxy import ProxyConfig, ProxyType
+import pytest
+
 from nazak.core.browser_launcher import BrowserLauncher, find_chrome_executable
 from nazak.core.extension_generator import generate_profile_extension
+from nazak.models.profile import (
+    BatterySpoofConfig,
+    BrowserProfile,
+    FingerprintConfig,
+    GeolocationSpoofConfig,
+    GoogleSettings,
+    MediaDeviceInfo,
+    ProfileStatus,
+)
+from nazak.models.proxy import ProxyConfig, ProxyType
 
 
 @pytest.fixture
 def test_profile():
     devs = [
         MediaDeviceInfo(kind="audioinput", label="Mic HD", device_id="mic123", group_id="grp123"),
-        MediaDeviceInfo(kind="videoinput", label="Cam HD", device_id="cam123", group_id="grp123")
+        MediaDeviceInfo(kind="videoinput", label="Cam HD", device_id="cam123", group_id="grp123"),
     ]
     fp = FingerprintConfig(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133.0.0.0 Safari/537.36",
@@ -50,7 +57,7 @@ def test_profile():
         battery=BatterySpoofConfig(charging=True, level=0.95),
         geolocation=GeolocationSpoofConfig(enabled=True, latitude=55.7558, longitude=37.6173),
         webrtc_policy="disable_non_proxied_udp",
-        block_port_scanning=True
+        block_port_scanning=True,
     )
     return BrowserProfile(
         id="prof_test_cdp_01",
@@ -59,7 +66,7 @@ def test_profile():
         proxy=ProxyConfig(type=ProxyType.DIRECT, raw="direct"),
         fingerprint=fp,
         google=GoogleSettings(auto_open_page="youtube_studio"),
-        status=ProfileStatus.STOPPED
+        status=ProfileStatus.STOPPED,
     )
 
 
@@ -67,10 +74,11 @@ def test_profile():
 # 1. Chrome Command-Line Arguments Construction (8 Tests)
 # -------------------------------------------------------------
 
+
 def test_chrome_args_builder_minimal_profile(test_profile):
     """Minimal direct profile args contain essential anti-detection flags."""
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, ext_path = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "chrome.exe" in args
         assert any(a.startswith("--user-data-dir=") for a in args)
@@ -81,14 +89,10 @@ def test_chrome_args_builder_minimal_profile(test_profile):
 def test_chrome_args_builder_socks5_authenticated_proxy(test_profile):
     """SOCKS5 auth proxy generates extension and proxy argument."""
     test_profile.proxy = ProxyConfig(
-        type=ProxyType.SOCKS5,
-        host="127.0.0.1",
-        port=1080,
-        username="proxy_user",
-        password="proxy_pass"
+        type=ProxyType.SOCKS5, host="127.0.0.1", port=1080, username="proxy_user", password="proxy_pass"
     )
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, ext_path = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "--proxy-server=socks5://127.0.0.1:1080" in args
         assert ext_path is not None
@@ -99,7 +103,7 @@ def test_chrome_args_builder_http_proxy_flag(test_profile):
     """HTTP proxy without auth sets --proxy-server=http://host:port."""
     test_profile.proxy = ProxyConfig(type=ProxyType.HTTP, host="10.0.0.1", port=8080)
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, ext_path = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "--proxy-server=http://10.0.0.1:8080" in args
 
@@ -109,20 +113,16 @@ def test_chrome_args_builder_custom_screen_and_window_size(test_profile):
     test_profile.fingerprint.screen_width = 2560
     test_profile.fingerprint.screen_height = 1440
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "--window-size=2560,1440" in args
 
 
 def test_chrome_args_builder_webrtc_policies(test_profile):
     """All WebRTC policies are serialized accurately to force-webrtc-ip-handling-policy."""
-    policies = [
-        "disable_non_proxied_udp",
-        "default_public_interface_only",
-        "default_public_and_private_interfaces"
-    ]
+    policies = ["disable_non_proxied_udp", "default_public_interface_only", "default_public_and_private_interfaces"]
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         for pol in policies:
             test_profile.fingerprint.webrtc_policy = pol
             args, _ = bl.build_chrome_args(test_profile, "chrome.exe")
@@ -134,7 +134,7 @@ def test_chrome_args_builder_user_agent_injection(test_profile):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0"
     test_profile.fingerprint.user_agent = ua
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert f"--user-agent={ua}" in args
 
@@ -143,7 +143,7 @@ def test_chrome_args_builder_language_flag(test_profile):
     """Primary language is extracted from composite language string."""
     test_profile.fingerprint.language = "de-DE,de;q=0.9,en;q=0.8"
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "--lang=de-DE" in args
 
@@ -152,7 +152,7 @@ def test_chrome_args_builder_empty_language_fallback(test_profile):
     """Empty language falls back safely to en-US."""
     test_profile.fingerprint.language = ""
     with tempfile.TemporaryDirectory() as td:
-        bl = BrowserLauncher(Path(td)/"profiles", Path(td)/"extensions")
+        bl = BrowserLauncher(Path(td) / "profiles", Path(td) / "extensions")
         args, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert "--lang=en-US" in args
 
@@ -160,6 +160,7 @@ def test_chrome_args_builder_empty_language_fallback(test_profile):
 # -------------------------------------------------------------
 # 2. Extension Generator & Stealth JS Injection (10 Tests)
 # -------------------------------------------------------------
+
 
 def test_extension_generator_valid_manifest_json(test_profile):
     """Extension manifest is valid JSON with Manifest V2 schema."""
@@ -265,6 +266,7 @@ def test_extension_generator_proxy_auth_background_js(test_profile):
 # 3. Browser Process & Launcher Operations (8 Tests)
 # -------------------------------------------------------------
 
+
 def test_browser_launcher_is_running_nonexistent_profile():
     """Non-existent or stopped profile returns False for is_profile_running."""
     with tempfile.TemporaryDirectory() as td:
@@ -309,15 +311,15 @@ def test_browser_launcher_google_preset_urls(test_profile):
     """Presets like youtube_studio, google_ads, and google_login resolve to correct targets."""
     with tempfile.TemporaryDirectory() as td:
         bl = BrowserLauncher(Path(td), Path(td))
-        
+
         test_profile.google.auto_open_page = "youtube_studio"
         args1, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert any("studio.youtube.com" in a for a in args1)
-        
+
         test_profile.google.auto_open_page = "google_ads"
         args2, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert any("ads.google.com" in a for a in args2)
-        
+
         test_profile.google.auto_open_page = "google_login"
         args3, _ = bl.build_chrome_args(test_profile, "chrome.exe")
         assert any("accounts.google.com" in a for a in args3)

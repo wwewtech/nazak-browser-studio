@@ -3,15 +3,15 @@ Dynamic Chrome Extension Generator for Proxy Authentication and Total System Har
 Ensures ZERO host PC characteristics (CPU, RAM, GPU, Screen, Audio, Webcam, Battery, Network, Geolocation, Fonts)
 can be queried or fingerprinted by websites or anti-fraud systems.
 """
-import os
+
 import json
 import shutil
 from pathlib import Path
-from typing import Optional
-from ..models.profile import BrowserProfile, FingerprintConfig
-from ..models.proxy import ProxyConfig
 
-def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Path) -> Optional[str]:
+from ..models.profile import BrowserProfile
+
+
+def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Path) -> str | None:
     """
     Creates an unpacked Chrome extension for the profile with total hardware isolation and proxy auth.
     """
@@ -28,20 +28,10 @@ def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Pat
         "name": f"Nazak Deep Shield - {profile.name}",
         "version": "2.0.0",
         "description": "Total Hardware Isolation & Proxy Authentication Shield for Google Automation",
-        "permissions": [
-            "webRequest",
-            "webRequestBlocking",
-            "<all_urls>",
-            "tabs"
-        ],
+        "permissions": ["webRequest", "webRequestBlocking", "<all_urls>", "tabs"],
         "content_scripts": [
-            {
-                "matches": ["<all_urls>"],
-                "js": ["stealth.js"],
-                "run_at": "document_start",
-                "all_frames": True
-            }
-        ]
+            {"matches": ["<all_urls>"], "js": ["stealth.js"], "run_at": "document_start", "all_frames": True}
+        ],
     }
 
     if proxy.has_auth():
@@ -67,7 +57,9 @@ chrome.webRequest.onAuthRequired.addListener(
 
     # Serialize complex objects to JSON for JavaScript injection
     brands_json = json.dumps(fp.brands)
-    languages_json = json.dumps(fp.languages if fp.languages else [l.strip() for l in fp.language.split(",") if l.strip()])
+    languages_json = json.dumps(
+        fp.languages if fp.languages else [lang.strip() for lang in fp.language.split(",") if lang.strip()]
+    )
     media_devs_json = json.dumps([d.model_dump() for d in fp.media_devices])
     geo_json = json.dumps(fp.geolocation.model_dump())
     battery_json = json.dumps(fp.battery.model_dump())
@@ -132,7 +124,7 @@ chrome.webRequest.onAuthRequired.addListener(
                     bitness: "{fp.bitness}",
                     model: "{fp.model}",
                     platformVersion: "{fp.platform_version}",
-                    uaFullVersion: "{fp.app_version.split('Chrome/')[1].split(' ')[0] if 'Chrome/' in fp.app_version else '133.0.0.0'}"
+                    uaFullVersion: "{fp.app_version.split("Chrome/")[1].split(" ")[0] if "Chrome/" in fp.app_version else "133.0.0.0"}"
                 }});
             }},
             toJSON: function() {{
@@ -176,7 +168,7 @@ chrome.webRequest.onAuthRequired.addListener(
     try {{
         const targetTimezone = "{fp.timezone}";
         const targetOffset = {fp.timezone_offset};
-        
+
         const origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
         Intl.DateTimeFormat.prototype.resolvedOptions = function() {{
             const res = origResolvedOptions.apply(this, arguments);

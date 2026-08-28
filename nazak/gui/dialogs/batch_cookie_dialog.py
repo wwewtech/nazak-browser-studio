@@ -3,20 +3,36 @@ Fluent Batch Cookie Importer Dialog.
 Supports multi-profile delimited text, JSON maps, directory scanner, and zip archives.
 Windows 11 Fluent Iconography & Zero-Emoji Architecture.
 """
+
 from pathlib import Path
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QTableWidgetItem, QHeaderView, QFrame
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
 from qfluentwidgets import (
-    TextEdit, LineEdit, CheckBox, PrimaryPushButton, PushButton,
-    SimpleCardWidget, TableWidget, InfoBar, InfoBarPosition, FluentIcon
+    CheckBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    TableWidget,
+    TextEdit,
 )
 
-from ...core.cookie_manager import (
-    parse_bulk_cookie_input, parse_cookie_files_from_dir, parse_cookie_files_from_zip
-)
+from ...core.cookie_manager import parse_bulk_cookie_input, parse_cookie_files_from_dir, parse_cookie_files_from_zip
 from ..style import FLUENT_DARK_QSS
+
 
 class BatchCookieDialog(QDialog):
     def __init__(self, profile_manager, parent=None):
@@ -39,7 +55,9 @@ class BatchCookieDialog(QDialog):
         lbl_title.setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 700;")
         main_layout.addWidget(lbl_title)
 
-        lbl_desc = QLabel("Импорт куков для множества профилей из текста с разделителями, JSON словаря, папки или ZIP-архива.", self)
+        lbl_desc = QLabel(
+            "Импорт куков для множества профилей из текста с разделителями, JSON словаря, папки или ZIP-архива.", self
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         main_layout.addWidget(lbl_desc)
 
@@ -143,9 +161,19 @@ class BatchCookieDialog(QDialog):
             if parsed:
                 self.parsed_cookies_map = parsed
                 self.update_preview_table()
-                InfoBar.success("Файлы прочитаны", f"Найдено {len(parsed)} файлов с куками", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.success(
+                    "Файлы прочитаны",
+                    f"Найдено {len(parsed)} файлов с куками",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
             else:
-                InfoBar.warning("Внимание", "В выбранной папке нет валидных .json / .txt файлов куков", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.warning(
+                    "Внимание",
+                    "В выбранной папке нет валидных .json / .txt файлов куков",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
 
     def on_pick_zip(self):
         zip_file, _ = QFileDialog.getOpenFileName(self, "Выберите ZIP архив с куками", "", "ZIP Files (*.zip)")
@@ -154,9 +182,19 @@ class BatchCookieDialog(QDialog):
             if parsed:
                 self.parsed_cookies_map = parsed
                 self.update_preview_table()
-                InfoBar.success("Архив прочитан", f"Распознано {len(parsed)} профилей из архива", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.success(
+                    "Архив прочитан",
+                    f"Распознано {len(parsed)} профилей из архива",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
             else:
-                InfoBar.warning("Внимание", "Не удалось извлечь куки из выбранного архива", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.warning(
+                    "Внимание",
+                    "Не удалось извлечь куки из выбранного архива",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
 
     def on_text_changed(self):
         text = self.txt_cookies.toPlainText().strip()
@@ -175,7 +213,9 @@ class BatchCookieDialog(QDialog):
             self.table.setItem(row, 1, QTableWidgetItem(f"{len(cookies)} шт."))
 
             p_lower = p_ident.lower()
-            is_matched = p_lower in id_set or p_lower in name_set or any(p_lower in p.name.lower() for p in existing_profiles)
+            is_matched = (
+                p_lower in id_set or p_lower in name_set or any(p_lower in p.name.lower() for p in existing_profiles)
+            )
             status_str = "Существующий профиль" if is_matched else "Будет создан новый"
             self.table.setItem(row, 2, QTableWidgetItem(status_str))
 
@@ -186,13 +226,18 @@ class BatchCookieDialog(QDialog):
                 self.parsed_cookies_map = parse_bulk_cookie_input(text)
 
         if not self.parsed_cookies_map:
-            InfoBar.warning("Пустые данные", "Вставьте куки или выберите файлы для импорта", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Пустые данные",
+                "Вставьте куки или выберите файлы для импорта",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         res = self.profile_manager.batch_import_cookies(
             self.parsed_cookies_map,
             auto_create_missing=self.chk_autocreate.isChecked(),
-            group=self.edit_group.text().strip() or "Imported Cookies"
+            group=self.edit_group.text().strip() or "Imported Cookies",
         )
 
         msg = f"Импортировано: {res['matched']} обновлено, {res['created']} создано"

@@ -3,18 +3,18 @@ Bespoke High-Craft Brand Identity Generator for Nazak Browser Studio.
 Eliminates all AI-slop tropes: no neon circles, no generic radial glow blobs.
 Pure Bauhaus / Swiss mathematical isometric prism geometry with exact vertex topology.
 """
+
 import sys
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import (
-    QImage, QPainter, QColor, QPen, QBrush, QLinearGradient,
-    QPainterPath, QFont, QPolygonF
-)
-from PyQt6.QtCore import Qt, QPointF, QRectF
+
 from PIL import Image
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QBrush, QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
+from PyQt6.QtWidgets import QApplication
+
 
 def generate_bespoke_brand():
-    app = QApplication.instance() or QApplication(sys.argv)
+    _app = QApplication.instance() or QApplication(sys.argv)
     assets_dir = Path("D:/nazak/data/assets")
     assets_dir.mkdir(parents=True, exist_ok=True)
 
@@ -23,51 +23,57 @@ def generate_bespoke_brand():
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         s = size
-        W = s * 0.24   # Pillar Width
-        G = s * 0.22   # Center Gap
-        H = s * 0.84   # Total Height
-        S = s * 0.08   # Top/Bottom Bevel Slope
-        D = s * 0.28   # Diagonal Beam Thickness
+        W = s * 0.24  # Pillar Width
+        G = s * 0.22  # Center Gap
+        H = s * 0.84  # Total Height
+        S = s * 0.08  # Top/Bottom Bevel Slope
+        D = s * 0.28  # Diagonal Beam Thickness
 
         # 1. Left Vertical Monolith
-        poly_left = QPolygonF([
-            QPointF(cx - G/2 - W, cy - H/2 + S),  # Top-left
-            QPointF(cx - G/2,     cy - H/2),      # Top-right
-            QPointF(cx - G/2,     cy + H/2 - S),  # Bottom-right
-            QPointF(cx - G/2 - W, cy + H/2),      # Bottom-left
-        ])
+        poly_left = QPolygonF(
+            [
+                QPointF(cx - G / 2 - W, cy - H / 2 + S),  # Top-left
+                QPointF(cx - G / 2, cy - H / 2),  # Top-right
+                QPointF(cx - G / 2, cy + H / 2 - S),  # Bottom-right
+                QPointF(cx - G / 2 - W, cy + H / 2),  # Bottom-left
+            ]
+        )
 
         # 2. Right Vertical Monolith
-        poly_right = QPolygonF([
-            QPointF(cx + G/2,     cy - H/2 + S),  # Top-left
-            QPointF(cx + G/2 + W, cy - H/2),      # Top-right
-            QPointF(cx + G/2 + W, cy + H/2 - S),  # Bottom-right
-            QPointF(cx + G/2,     cy + H/2),      # Bottom-left
-        ])
+        poly_right = QPolygonF(
+            [
+                QPointF(cx + G / 2, cy - H / 2 + S),  # Top-left
+                QPointF(cx + G / 2 + W, cy - H / 2),  # Top-right
+                QPointF(cx + G / 2 + W, cy + H / 2 - S),  # Bottom-right
+                QPointF(cx + G / 2, cy + H / 2),  # Bottom-left
+            ]
+        )
 
         # 3. Seamless Diagonal Shutter (100% exact vertex topology matching pillars)
-        poly_diag = QPolygonF([
-            QPointF(cx - G/2,     cy - H/2),          # Shared with Left Top-Right
-            QPointF(cx - G/2,     cy - H/2 + D),      # Left Inner Drop
-            QPointF(cx + G/2,     cy + H/2),          # Shared with Right Bottom-Left
-            QPointF(cx + G/2,     cy + H/2 - D),      # Right Inner Rise
-        ])
+        poly_diag = QPolygonF(
+            [
+                QPointF(cx - G / 2, cy - H / 2),  # Shared with Left Top-Right
+                QPointF(cx - G / 2, cy - H / 2 + D),  # Left Inner Drop
+                QPointF(cx + G / 2, cy + H / 2),  # Shared with Right Bottom-Left
+                QPointF(cx + G / 2, cy + H / 2 - D),  # Right Inner Rise
+            ]
+        )
 
         if mode == "dark":
             # Left Facet: Pure Satin Titanium
-            g_left = QLinearGradient(cx - G/2 - W, cy - H/2, cx - G/2, cy + H/2)
+            g_left = QLinearGradient(cx - G / 2 - W, cy - H / 2, cx - G / 2, cy + H / 2)
             g_left.setColorAt(0.0, QColor(255, 255, 255))
             g_left.setColorAt(0.5, QColor(240, 243, 248))
             g_left.setColorAt(1.0, QColor(210, 215, 225))
 
             # Diagonal: Deep Electric Cobalt Beam (The optical core)
-            g_diag = QLinearGradient(cx - G/2, cy - H/2, cx + G/2, cy + H/2)
-            g_diag.setColorAt(0.0, QColor(59, 130, 246))   # Cobalt
-            g_diag.setColorAt(0.5, QColor(37, 99, 235))   # Electric Royal
-            g_diag.setColorAt(1.0, QColor(29, 78, 216))   # Deep Sapphire
+            g_diag = QLinearGradient(cx - G / 2, cy - H / 2, cx + G / 2, cy + H / 2)
+            g_diag.setColorAt(0.0, QColor(59, 130, 246))  # Cobalt
+            g_diag.setColorAt(0.5, QColor(37, 99, 235))  # Electric Royal
+            g_diag.setColorAt(1.0, QColor(29, 78, 216))  # Deep Sapphire
 
             # Right Facet: Graphite Titanium
-            g_right = QLinearGradient(cx + G/2, cy - H/2, cx + G/2 + W, cy + H/2)
+            g_right = QLinearGradient(cx + G / 2, cy - H / 2, cx + G / 2 + W, cy + H / 2)
             g_right.setColorAt(0.0, QColor(230, 235, 242))
             g_right.setColorAt(1.0, QColor(160, 165, 175))
 
@@ -87,19 +93,19 @@ def generate_bespoke_brand():
 
             # Subtle Precision Chamfer Line (1px hairline highlight on seam)
             p.setPen(QPen(QColor(255, 255, 255, 160), s * 0.008))
-            p.drawLine(QPointF(cx - G/2, cy - H/2), QPointF(cx - G/2, cy + H/2 - S))
+            p.drawLine(QPointF(cx - G / 2, cy - H / 2), QPointF(cx - G / 2, cy + H / 2 - S))
 
         elif mode == "pure_mono":
             # 100% Monochrome Black & White (No blue, pure Swiss brutalist aesthetic)
-            g_left = QLinearGradient(cx - G/2 - W, cy - H/2, cx - G/2, cy + H/2)
+            g_left = QLinearGradient(cx - G / 2 - W, cy - H / 2, cx - G / 2, cy + H / 2)
             g_left.setColorAt(0.0, QColor(255, 255, 255))
             g_left.setColorAt(1.0, QColor(220, 220, 225))
 
-            g_diag = QLinearGradient(cx - G/2, cy - H/2, cx + G/2, cy + H/2)
+            g_diag = QLinearGradient(cx - G / 2, cy - H / 2, cx + G / 2, cy + H / 2)
             g_diag.setColorAt(0.0, QColor(130, 135, 145))
             g_diag.setColorAt(1.0, QColor(70, 75, 85))
 
-            g_right = QLinearGradient(cx + G/2, cy - H/2, cx + G/2 + W, cy + H/2)
+            g_right = QLinearGradient(cx + G / 2, cy - H / 2, cx + G / 2 + W, cy + H / 2)
             g_right.setColorAt(0.0, QColor(240, 243, 248))
             g_right.setColorAt(1.0, QColor(170, 175, 185))
 
@@ -113,15 +119,15 @@ def generate_bespoke_brand():
 
         else:
             # Monochrome Light Mode (Jet Black on White)
-            g_left_l = QLinearGradient(cx - G/2 - W, cy - H/2, cx - G/2, cy + H/2)
+            g_left_l = QLinearGradient(cx - G / 2 - W, cy - H / 2, cx - G / 2, cy + H / 2)
             g_left_l.setColorAt(0.0, QColor(15, 15, 18))
             g_left_l.setColorAt(1.0, QColor(35, 35, 42))
 
-            g_diag_l = QLinearGradient(cx - G/2, cy - H/2, cx + G/2, cy + H/2)
+            g_diag_l = QLinearGradient(cx - G / 2, cy - H / 2, cx + G / 2, cy + H / 2)
             g_diag_l.setColorAt(0.0, QColor(37, 99, 235))
             g_diag_l.setColorAt(1.0, QColor(29, 78, 216))
 
-            g_right_l = QLinearGradient(cx + G/2, cy - H/2, cx + G/2 + W, cy + H/2)
+            g_right_l = QLinearGradient(cx + G / 2, cy - H / 2, cx + G / 2 + W, cy + H / 2)
             g_right_l.setColorAt(0.0, QColor(24, 24, 28))
             g_right_l.setColorAt(1.0, QColor(55, 55, 65))
 
@@ -138,10 +144,10 @@ def generate_bespoke_brand():
     img_dark.fill(QColor(0, 0, 0, 0))
     p_dark = QPainter(img_dark)
     p_dark.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    
+
     bg_path = QPainterPath()
     bg_path.addRoundedRect(QRectF(48, 48, 928, 928), 210, 210)
-    
+
     bg_grad = QLinearGradient(0, 0, 0, 1024)
     bg_grad.setColorAt(0.0, QColor(20, 20, 24))
     bg_grad.setColorAt(1.0, QColor(10, 10, 12))
@@ -273,6 +279,7 @@ def generate_bespoke_brand():
     p_b.end()
     banner.save(str(assets_dir / "banner.png"))
     print("Saved all perfected mathematical assets!")
+
 
 if __name__ == "__main__":
     generate_bespoke_brand()

@@ -1,16 +1,18 @@
 """
 Suite 1: UI & UX Edge Cases, Parsing Tolerances, Filtering & Dialog Validation Tests (26 Tests).
 """
-import pytest
+
 import json
 import tempfile
 from pathlib import Path
 
-from nazak.models.profile import BrowserProfile, ProfileStatus, GoogleSettings, FingerprintConfig
-from nazak.models.proxy import ProxyConfig, ProxyType
-from nazak.core.profile_manager import ProfileManager
+import pytest
+
 from nazak.core.account_provisioner import AccountProvisioner, parse_account_string
-from nazak.core.cookie_manager import parse_any_cookies, parse_netscape_cookies, cookies_to_netscape
+from nazak.core.cookie_manager import cookies_to_netscape, parse_any_cookies, parse_netscape_cookies
+from nazak.core.profile_manager import ProfileManager
+from nazak.models.profile import BrowserProfile, FingerprintConfig, GoogleSettings, ProfileStatus
+from nazak.models.proxy import ProxyConfig, ProxyType
 
 
 @pytest.fixture
@@ -26,11 +28,12 @@ def temp_profile_manager():
 # 1. Search & Filtering Edge Cases (6 Tests)
 # -------------------------------------------------------------
 
+
 def test_search_filter_regex_special_characters(temp_profile_manager):
     """Search queries with regex metacharacters (*, +, ?, ^, $, (, ), [, ], {, }, |, \\) must not crash."""
     pm = temp_profile_manager
     profiles = pm.list_profiles()
-    
+
     special_queries = [
         "RTX 4090 (High-Tier)",
         "Core [i7] + 32GB",
@@ -39,13 +42,14 @@ def test_search_filter_regex_special_characters(temp_profile_manager):
         "^start|end",
         "\\backslash/path",
         "[0-9]+",
-        "???***"
+        "???***",
     ]
     for q in special_queries:
         # Simulate filter logic
         q_lower = q.lower()
         filtered = [
-            p for p in profiles
+            p
+            for p in profiles
             if q_lower in p.name.lower()
             or q_lower in p.group.lower()
             or (p.google.target_account_email and q_lower in p.google.target_account_email.lower())
@@ -58,11 +62,11 @@ def test_search_filter_case_insensitivity(temp_profile_manager):
     """Search must match identically regardless of UPPERCASE, lowercase, or MiXeD cAsE."""
     pm = temp_profile_manager
     profiles = pm.list_profiles()
-    
+
     p = profiles[0]
     p.name = "Custom Alpha Tester Profile"
     pm.save_profiles()
-    
+
     for term in ["ALPHA", "alpha", "AlPhA", "CUSTOM", "tester", "PROFILE"]:
         q_lower = term.lower()
         res = [x for x in pm.list_profiles() if q_lower in x.name.lower()]
@@ -77,13 +81,10 @@ def test_search_filter_cyrillic_and_unicode(temp_profile_manager):
     p.name = "Тестовый Профиль Москва RTX 4080"
     p.group = "Россия Фарм"
     pm.save_profiles()
-    
+
     for term in ["Тестовый", "москва", "РОССИЯ", "Фарм", "4080"]:
         q_lower = term.lower()
-        res = [
-            x for x in pm.list_profiles()
-            if q_lower in x.name.lower() or q_lower in x.group.lower()
-        ]
+        res = [x for x in pm.list_profiles() if q_lower in x.name.lower() or q_lower in x.group.lower()]
         assert len(res) >= 1
 
 
@@ -91,10 +92,10 @@ def test_search_filter_whitespace_only(temp_profile_manager):
     """Whitespace-only search query should return all profiles without filtering out everything."""
     pm = temp_profile_manager
     total = len(pm.list_profiles())
-    
+
     query = "    \t \n   "
     clean_q = query.strip().lower()
-    
+
     if not clean_q:
         res = pm.list_profiles()
     else:
@@ -111,7 +112,7 @@ def test_search_filter_none_and_empty_fields(temp_profile_manager):
     p.google.tags = []
     p.group = ""
     pm.save_profiles()
-    
+
     query = "google"
     for item in pm.list_profiles():
         email = (item.google.target_account_email or "").lower()
@@ -119,7 +120,7 @@ def test_search_filter_none_and_empty_fields(temp_profile_manager):
         name = (item.name or "").lower()
         group = (item.group or "").lower()
         tags = " ".join(item.google.tags or []).lower()
-        
+
         matches = query in email or query in notes or query in name or query in group or query in tags
         assert isinstance(matches, bool)
 
@@ -132,7 +133,7 @@ def test_profile_card_rendering_extreme_lengths(temp_profile_manager):
     p.google.notes = "B" * 2000
     p.google.tags = [f"tag_{i}" for i in range(100)]
     pm.save_profiles()
-    
+
     reloaded = pm.get_profile(p.id)
     assert len(reloaded.name) == 500
     assert len(reloaded.google.notes) == 2000
@@ -142,6 +143,7 @@ def test_profile_card_rendering_extreme_lengths(temp_profile_manager):
 # -------------------------------------------------------------
 # 2. Batch Import & Market Parsing Edge Cases (11 Tests)
 # -------------------------------------------------------------
+
 
 def test_batch_import_windows_crlf_endings():
     """Windows \\r\\n line endings must be parsed accurately."""
@@ -165,7 +167,7 @@ def test_batch_import_trailing_blank_lines():
     """Batches with multiple blank lines at start, middle, and end should produce exact account count."""
     raw = "\n\n\n  \nuser1@gmail.com:pass1:secret1:rec1\n\n   \n\nuser2@gmail.com:pass2:secret2:rec2\n\n\n"
     with tempfile.TemporaryDirectory() as td:
-        pm = ProfileManager(Path(td)/"p.json", Path(td))
+        pm = ProfileManager(Path(td) / "p.json", Path(td))
         prov = AccountProvisioner(pm, Path(td))
         profs = prov.batch_import_and_create_profiles(raw, "TestGroup", "browser_stealth")
         assert len(profs) == 2
@@ -219,7 +221,7 @@ def test_batch_import_mixed_delimiters_in_single_batch():
         "user4@gmail.com\tpass4\tsec4\trec4\n"
     )
     with tempfile.TemporaryDirectory() as td:
-        pm = ProfileManager(Path(td)/"p.json", Path(td))
+        pm = ProfileManager(Path(td) / "p.json", Path(td))
         prov = AccountProvisioner(pm, Path(td))
         profs = prov.batch_import_and_create_profiles(raw, "MixedGroup", "browser_stealth")
         assert len(profs) == 4
@@ -235,7 +237,7 @@ def test_batch_import_malformed_lines_skipped():
         "Спасибо за покупку!\n"
     )
     with tempfile.TemporaryDirectory() as td:
-        pm = ProfileManager(Path(td)/"p.json", Path(td))
+        pm = ProfileManager(Path(td) / "p.json", Path(td))
         prov = AccountProvisioner(pm, Path(td))
         profs = prov.batch_import_and_create_profiles(raw, "FilteredGroup", "browser_stealth")
         assert len(profs) == 1
@@ -254,12 +256,9 @@ def test_batch_import_extra_colons_in_recovery_url():
 
 def test_batch_import_duplicate_email_handling():
     """Importing identical email twice creates distinct profiles without primary key clash."""
-    raw = (
-        "same_email@gmail.com:pass1:sec1:rec1\n"
-        "same_email@gmail.com:pass2:sec2:rec2\n"
-    )
+    raw = "same_email@gmail.com:pass1:sec1:rec1\nsame_email@gmail.com:pass2:sec2:rec2\n"
     with tempfile.TemporaryDirectory() as td:
-        pm = ProfileManager(Path(td)/"p.json", Path(td))
+        pm = ProfileManager(Path(td) / "p.json", Path(td))
         prov = AccountProvisioner(pm, Path(td))
         profs = prov.batch_import_and_create_profiles(raw, "DupGroup", "browser_stealth")
         assert len(profs) == 2
@@ -269,6 +268,7 @@ def test_batch_import_duplicate_email_handling():
 # -------------------------------------------------------------
 # 3. Cookie Formats & Tolerances Edge Cases (5 Tests)
 # -------------------------------------------------------------
+
 
 def test_cookie_dialog_netscape_with_http_only_hash():
     """Netscape format containing #HttpOnly_ prefixes must preserve httpOnly flag."""
@@ -317,8 +317,24 @@ def test_cookie_dialog_single_json_object():
 def test_cookie_netscape_roundtrip_fidelity():
     """Converting cookies to Netscape and back must retain names, values, and domains."""
     orig = [
-        {"name": "c1", "value": "v1", "domain": ".google.com", "path": "/", "secure": True, "httpOnly": True, "expires": 1800000000},
-        {"name": "c2", "value": "v2", "domain": ".youtube.com", "path": "/studio", "secure": False, "httpOnly": False, "expires": 0}
+        {
+            "name": "c1",
+            "value": "v1",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": True,
+            "httpOnly": True,
+            "expires": 1800000000,
+        },
+        {
+            "name": "c2",
+            "value": "v2",
+            "domain": ".youtube.com",
+            "path": "/studio",
+            "secure": False,
+            "httpOnly": False,
+            "expires": 0,
+        },
     ]
     netscape_text = cookies_to_netscape(orig)
     reparsed = parse_netscape_cookies(netscape_text)
@@ -332,6 +348,7 @@ def test_cookie_netscape_roundtrip_fidelity():
 # -------------------------------------------------------------
 # 4. Proxy Parsing & Dialog Validation Edge Cases (4 Tests)
 # -------------------------------------------------------------
+
 
 def test_proxy_parser_full_schemes():
     """Tests all standard proxy connection schemes."""

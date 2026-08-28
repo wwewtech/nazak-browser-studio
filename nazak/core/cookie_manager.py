@@ -2,12 +2,16 @@
 Cookie Manager: JSON and Netscape formats parsing, export, validation, and storage.
 Handles #HttpOnly_ prefixes, float expiration dates, whitespace tolerances, and format conversions.
 """
+
+import io
 import json
 import re
+import zipfile
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
-def parse_netscape_cookies(text: str) -> List[Dict[str, Any]]:
+
+def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
     """
     Parses standard Netscape HTTP Cookie file format into list of cookie dicts.
     Format: domain, flag, path, secure, expiration, name, value
@@ -23,7 +27,7 @@ def parse_netscape_cookies(text: str) -> List[Dict[str, Any]]:
         http_only = False
         if line.startswith("#HttpOnly_"):
             http_only = True
-            line = line[len("#HttpOnly_"):].strip()
+            line = line[len("#HttpOnly_") :].strip()
         elif line.startswith("#"):
             continue
 
@@ -40,18 +44,22 @@ def parse_netscape_cookies(text: str) -> List[Dict[str, Any]]:
             except (ValueError, TypeError):
                 exp_int = 0
 
-            cookies.append({
-                "name": name.strip(),
-                "value": value.strip(),
-                "domain": domain.strip(),
-                "path": path.strip() or "/",
-                "expires": exp_int,
-                "secure": secure.strip().lower() == "true",
-                "httpOnly": http_only or (include_subdomains.strip().lower() == "true" and not domain.startswith("."))
-            })
+            cookies.append(
+                {
+                    "name": name.strip(),
+                    "value": value.strip(),
+                    "domain": domain.strip(),
+                    "path": path.strip() or "/",
+                    "expires": exp_int,
+                    "secure": secure.strip().lower() == "true",
+                    "httpOnly": http_only
+                    or (include_subdomains.strip().lower() == "true" and not domain.startswith(".")),
+                }
+            )
     return cookies
 
-def cookies_to_netscape(cookies: List[Dict[str, Any]]) -> str:
+
+def cookies_to_netscape(cookies: list[dict[str, Any]]) -> str:
     """
     Converts list of cookie objects to Netscape format.
     """
@@ -63,24 +71,22 @@ def cookies_to_netscape(cookies: List[Dict[str, Any]]) -> str:
         include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
         path = str(c.get("path", "/")).strip() or "/"
         secure = "TRUE" if c.get("secure", False) else "FALSE"
-        
+
         raw_exp = c.get("expires") or c.get("expirationDate") or 0
         try:
             expires = str(int(float(raw_exp)))
         except (ValueError, TypeError):
             expires = "0"
-            
+
         name = str(c.get("name", "")).strip()
         value = str(c.get("value", "")).strip()
-        
+
         prefix = "#HttpOnly_" if c.get("httpOnly", False) else ""
         lines.append(f"{prefix}{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}")
     return "\n".join(lines)
 
-import io
-import zipfile
 
-def parse_any_cookies(raw_text: str) -> List[Dict[str, Any]]:
+def parse_any_cookies(raw_text: str) -> list[dict[str, Any]]:
     """
     Parses JSON array or Netscape formatted cookies automatically with field normalization.
     """
@@ -96,22 +102,25 @@ def parse_any_cookies(raw_text: str) -> List[Dict[str, Any]]:
                 sanitized = []
                 for item in data:
                     if isinstance(item, dict) and item.get("name"):
-                        sanitized.append({
-                            "name": str(item.get("name", "")),
-                            "value": str(item.get("value", "")),
-                            "domain": str(item.get("domain", "")),
-                            "path": str(item.get("path", "/")),
-                            "expires": int(float(item.get("expirationDate") or item.get("expires") or 0)),
-                            "secure": bool(item.get("secure", False)),
-                            "httpOnly": bool(item.get("httpOnly", False))
-                        })
+                        sanitized.append(
+                            {
+                                "name": str(item.get("name", "")),
+                                "value": str(item.get("value", "")),
+                                "domain": str(item.get("domain", "")),
+                                "path": str(item.get("path", "/")),
+                                "expires": int(float(item.get("expirationDate") or item.get("expires") or 0)),
+                                "secure": bool(item.get("secure", False)),
+                                "httpOnly": bool(item.get("httpOnly", False)),
+                            }
+                        )
                 if sanitized:
                     return sanitized
         except Exception:
             pass
     return parse_netscape_cookies(text)
 
-def parse_bulk_cookie_input(raw_input: str) -> Dict[str, List[Dict[str, Any]]]:
+
+def parse_bulk_cookie_input(raw_input: str) -> dict[str, list[dict[str, Any]]]:
     """
     Parses bulk multi-profile cookie data in various popular formats:
     1. Delimited blocks:
@@ -156,12 +165,12 @@ def parse_bulk_cookie_input(raw_input: str) -> Dict[str, List[Dict[str, Any]]]:
     # Case 2: Delimited sections with === Name === or --- Name --- or ### Name or [Profile Name]
     delimiter_pattern = re.compile(
         r"^\s*(?:(?:={2,}|-{2,}|#{2,}|\/{2,})\s*([^\r\n=\-\#\/]+?)\s*(?:={2,}|-{2,}|#{2,}|\/{2,})?|\[([a-zA-Z0-9_\- .]+)\])\s*$",
-        re.MULTILINE
+        re.MULTILINE,
     )
     matches = list(delimiter_pattern.finditer(text))
 
     if matches:
-        sections: Dict[str, List[Dict[str, Any]]] = {}
+        sections: dict[str, list[dict[str, Any]]] = {}
         for i, match in enumerate(matches):
             prof_name = (match.group(1) or match.group(2) or "").strip()
             if not prof_name:
@@ -182,7 +191,8 @@ def parse_bulk_cookie_input(raw_input: str) -> Dict[str, List[Dict[str, Any]]]:
         return {"default": single}
     return {}
 
-def parse_cookie_files_from_dir(dir_path: Path) -> Dict[str, List[Dict[str, Any]]]:
+
+def parse_cookie_files_from_dir(dir_path: Path) -> dict[str, list[dict[str, Any]]]:
     """
     Scans a directory for .json and .txt cookie files and parses them into a profile-indexed map.
     File name (without extension) is treated as the profile identifier (ID or Name).
@@ -202,7 +212,8 @@ def parse_cookie_files_from_dir(dir_path: Path) -> Dict[str, List[Dict[str, Any]
                 continue
     return results
 
-def parse_cookie_files_from_zip(zip_source: Any) -> Dict[str, List[Dict[str, Any]]]:
+
+def parse_cookie_files_from_zip(zip_source: Any) -> dict[str, list[dict[str, Any]]]:
     """
     Extracts and parses all .json / .txt cookie files from a zip archive (Path, bytes, or file-like object).
     """
@@ -232,7 +243,8 @@ def parse_cookie_files_from_zip(zip_source: Any) -> Dict[str, List[Dict[str, Any
         pass
     return results
 
-def create_cookies_zip_archive(cookie_map: Dict[str, List[Dict[str, Any]]], format_type: str = "json") -> bytes:
+
+def create_cookies_zip_archive(cookie_map: dict[str, list[dict[str, Any]]], format_type: str = "json") -> bytes:
     """
     Creates a zip archive containing individual cookie files for each profile.
     format_type: 'json' or 'netscape'
@@ -240,7 +252,7 @@ def create_cookies_zip_archive(cookie_map: Dict[str, List[Dict[str, Any]]], form
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for prof_id, cookies in cookie_map.items():
-            safe_name = re.sub(r'[\/:*?"<>|]', '_', prof_id)
+            safe_name = re.sub(r'[\/:*?"<>|]', "_", prof_id)
             if format_type.lower() == "netscape":
                 content = cookies_to_netscape(cookies)
                 zf.writestr(f"{safe_name}.txt", content)
@@ -248,4 +260,3 @@ def create_cookies_zip_archive(cookie_map: Dict[str, List[Dict[str, Any]]], form
                 content = json.dumps(cookies, indent=2, ensure_ascii=False)
                 zf.writestr(f"{safe_name}.json", content)
     return buf.getvalue()
-

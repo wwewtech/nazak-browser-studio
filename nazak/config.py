@@ -2,10 +2,10 @@
 Nazak Browser Studio - Configuration and System Paths.
 Supports both source runtime and frozen PyInstaller standalone executable.
 """
+
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 # Detect frozen executable state
 IS_FROZEN = getattr(sys, "frozen", False)
@@ -36,7 +36,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8899
 
 # Candidate paths for Chrome / Chromium / Edge / Brave / Arc
-CHROME_CANDIDATES: List[str] = [
+CHROME_CANDIDATES: list[str] = [
     os.environ.get("CHROME_PATH", ""),
     # Windows paths
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -67,13 +67,14 @@ CHROME_CANDIDATES: List[str] = [
     "/usr/local/bin/chrome",
 ]
 
-def find_chrome_executable() -> Optional[str]:
+
+def find_chrome_executable() -> str | None:
     """
     Locates the first available Chrome, Chromium, Brave, Edge, or Playwright binary.
     Supports Windows, macOS (Apple Silicon / Intel), and Linux.
     """
-    import shutil
     import glob
+    import shutil
 
     # 1. Check direct candidates list
     for candidate in CHROME_CANDIDATES:
@@ -81,7 +82,15 @@ def find_chrome_executable() -> Optional[str]:
             return str(Path(candidate).resolve())
 
     # 2. Check system PATH
-    for bin_name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "msedge", "chrome"):
+    for bin_name in (
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+        "msedge",
+        "chrome",
+    ):
         p = shutil.which(bin_name)
         if p and os.path.isfile(p):
             return str(Path(p).resolve())
@@ -90,12 +99,14 @@ def find_chrome_executable() -> Optional[str]:
     playwright_patterns = [
         # macOS Playwright cache
         os.path.expanduser("~/Library/Caches/ms-playwright/chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
-        os.path.expanduser("~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium"),
+        os.path.expanduser(
+            "~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium"
+        ),
         # Linux Playwright cache
         os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"),
         # Windows Playwright cache
         os.path.expandvars(r"%LOCALAPPDATA%\ms-playwright\chromium-*\chrome-win\chrome.exe"),
-        os.path.expanduser(r"~\AppData\Local\ms-playwright\chromium-*\chrome-win\chrome.exe")
+        os.path.expanduser(r"~\AppData\Local\ms-playwright\chromium-*\chrome-win\chrome.exe"),
     ]
     for pattern in playwright_patterns:
         matches = glob.glob(pattern)
@@ -106,6 +117,7 @@ def find_chrome_executable() -> Optional[str]:
 
     return None
 
+
 GOOGLE_TARGET_URLS = {
     "blank": "about:blank",
     "google_search": "https://www.google.com",
@@ -115,5 +127,5 @@ GOOGLE_TARGET_URLS = {
     "youtube": "https://www.youtube.com",
     "whoer_check": "https://whoer.net",
     "browserleaks": "https://browserleaks.com/ip",
-    "iphey": "https://iphey.com"
+    "iphey": "https://iphey.com",
 }

@@ -1,16 +1,14 @@
 """
 Tests for Account Provisioner, TOTP RFC 6238 Generator, and Dual-Mode Posting Engine.
 """
+
 import json
 import tempfile
 from pathlib import Path
+
 import pytest
 
-from nazak.core.account_provisioner import (
-    parse_account_string,
-    generate_totp_rfc6238,
-    AccountProvisioner
-)
+from nazak.core.account_provisioner import AccountProvisioner, generate_totp_rfc6238, parse_account_string
 from nazak.core.profile_manager import ProfileManager
 from nazak.models.profile import BrowserProfile
 
@@ -61,13 +59,13 @@ def test_batch_import_and_create_profiles():
             raw_text=raw,
             group_name="Retriv_2024",
             posting_mode="browser_stealth",
-            proxy_list=["http://user:pass@1.2.3.4:8080"]
+            proxy_list=["http://user:pass@1.2.3.4:8080"],
         )
 
         assert len(created) == 2
         assert created[0].group == "Retriv_2024"
         assert created[0].proxy.raw == "http://user:pass@1.2.3.4:8080"
-        
+
         notes = json.loads(created[0].google.notes)
         assert notes["account_email"] == "alpha@gmail.com"
         assert notes["totp_secret"] == "JBSWY3DPEHPK3PXP"
@@ -95,9 +93,7 @@ def test_data1_file_provisioning():
         prov = AccountProvisioner(pm, Path(td))
 
         profiles = prov.batch_import_and_create_profiles(
-            raw_text=raw_text,
-            group_name="DarkStore_Batch",
-            posting_mode="browser_stealth"
+            raw_text=raw_text, group_name="DarkStore_Batch", posting_mode="browser_stealth"
         )
 
         assert len(profiles) == 1
@@ -106,9 +102,8 @@ def test_data1_file_provisioning():
         assert notes["account_email"] == "mlikhonkhan78@gmail.com"
         assert notes["account_password"] == "Gomie8383888"
         assert notes["totp_secret"] == "qq6rxgbtkfetme7digqvl27kkechle5i"
-        
+
         # Test live TOTP generation on real darkstore secret
         code = generate_totp_rfc6238(notes["totp_secret"])
         assert len(code) == 6
         assert code.isdigit()
-

@@ -2,17 +2,24 @@
 Fluent Real-Time Action Synchronizer & Window Tile Dialog.
 Windows 11 Fluent Iconography & Zero-Emoji Architecture.
 """
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QFrame
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QVBoxLayout
 from qfluentwidgets import (
-    ComboBox, CheckBox, Slider, PrimaryPushButton, PushButton,
-    SimpleCardWidget, InfoBar, InfoBarPosition, FluentIcon
+    CheckBox,
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    Slider,
 )
 
 from ...core.synchronizer import tile_windows_win32
 from ..style import FLUENT_DARK_QSS
+
 
 class SynchronizerDialog(QDialog):
     def __init__(self, profile_manager, browser_launcher, synchronizer_mgr=None, parent=None):
@@ -36,7 +43,10 @@ class SynchronizerDialog(QDialog):
         lbl_title.setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 700;")
         main_layout.addWidget(lbl_title)
 
-        lbl_desc = QLabel("Позволяет управлять одним главным профилем и дублировать клики, ввод текста и скролл во все дочерние профили с защитой от детекта.", self)
+        lbl_desc = QLabel(
+            "Позволяет управлять одним главным профилем и дублировать клики, ввод текста и скролл во все дочерние профили с защитой от детекта.",
+            self,
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         main_layout.addWidget(lbl_desc)
 
@@ -82,7 +92,9 @@ class SynchronizerDialog(QDialog):
         l_w.addLayout(h_w_head)
 
         self.list_workers = QListWidget(card_workers)
-        self.list_workers.setStyleSheet("background: #18181b; border: 1px solid #27272a; border-radius: 6px; color: #ffffff; padding: 4px;")
+        self.list_workers.setStyleSheet(
+            "background: #18181b; border: 1px solid #27272a; border-radius: 6px; color: #ffffff; padding: 4px;"
+        )
         for p in profiles:
             item = QListWidgetItem(f"{p.name} [{p.group or 'No Group'}]")
             item.setData(Qt.ItemDataRole.UserRole, p.id)
@@ -149,11 +161,21 @@ class SynchronizerDialog(QDialog):
     def on_tile_windows(self):
         pids = list(self.browser_launcher.profile_pids.values())
         if not pids:
-            InfoBar.warning("Нет запущенных окон", "Запустите профили перед выравниванием окон по сетке", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Нет запущенных окон",
+                "Запустите профили перед выравниванием окон по сетке",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
             return
         ok = tile_windows_win32(pids)
         if ok:
-            InfoBar.success("Сетка готова", f"Выровнено {len(pids)} окон на рабочем столе", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success(
+                "Сетка готова",
+                f"Выровнено {len(pids)} окон на рабочем столе",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
         else:
             InfoBar.info("Сетка", "Окна успешно перерасположены", parent=self, position=InfoBarPosition.TOP)
 
@@ -166,15 +188,20 @@ class SynchronizerDialog(QDialog):
             return
 
         if not workers:
-            InfoBar.warning("Ошибка", "Выберите хотя бы один ведомый профиль (Worker)", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Ошибка", "Выберите хотя бы один ведомый профиль (Worker)", parent=self, position=InfoBarPosition.TOP
+            )
             return
 
         if self.synchronizer_mgr:
             self.synchronizer_mgr.start_session(
-                master_profile_id=master_id,
-                worker_profile_ids=workers,
-                humanize_jitter=self.chk_jitter.isChecked()
+                master_profile_id=master_id, worker_profile_ids=workers, humanize_jitter=self.chk_jitter.isChecked()
             )
 
-        InfoBar.success("Синхронизация активна", f"Синхронизируются {len(workers)} ведомых профилей с Master ({master_id})", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Синхронизация активна",
+            f"Синхронизируются {len(workers)} ведомых профилей с Master ({master_id})",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
         self.accept()

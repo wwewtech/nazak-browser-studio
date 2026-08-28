@@ -2,10 +2,12 @@
 Automated Google Account & Profile Warmup Engine.
 Generates human search paths, natural organic navigation, and history/cookie accumulation.
 """
-import random
+
 import asyncio
-import time
-from typing import List, Dict, Any, Optional
+import random
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
 
 WARMUP_NICHES = {
     "ecommerce": [
@@ -15,7 +17,7 @@ WARMUP_NICHES = {
         "buy macbook air m3 best price",
         "portable power bank 20000mah fast charge",
         "4k gaming monitor 144hz comparison",
-        "smart home zigbee motion sensors"
+        "smart home zigbee motion sensors",
     ],
     "finance": [
         "sp500 etf index performance 2026",
@@ -23,7 +25,7 @@ WARMUP_NICHES = {
         "how to calculate compound interest formula",
         "real estate investment trust dividend yields",
         "term life insurance quotes calculator",
-        "credit card reward points strategies"
+        "credit card reward points strategies",
     ],
     "tech": [
         "python 3.13 new features and performance",
@@ -31,47 +33,50 @@ WARMUP_NICHES = {
         "fastapi vs django rest framework benchmarks",
         "chrome extensions manifest v3 background workers",
         "webrtc stun turn server configuration",
-        "kubernetes cluster monitoring grafana prometheus"
+        "kubernetes cluster monitoring grafana prometheus",
     ],
     "travel": [
         "best places to visit in switzerland summer",
         "flights from new york to london direct",
         "hotel booking tips cancel anytime",
         "travel insurance coverage international trip",
-        "scenic train routes in europe alps"
+        "scenic train routes in europe alps",
     ],
     "crypto": [
         "bitcoin halving cycle history and price chart",
         "ethereum layer 2 rollup gas fees comparison",
         "hardware wallet security ledger vs trezor",
-        "decentralized finance liquidity pool yields"
-    ]
+        "decentralized finance liquidity pool yields",
+    ],
 }
+
 
 class WarmupPlan:
     """
     Structured warmup execution plan for a browser profile.
     """
+
     def __init__(self, profile_id: str, niche: str = "ecommerce", steps_count: int = 5):
         self.profile_id = profile_id
         self.niche = niche if niche in WARMUP_NICHES else "ecommerce"
         self.steps_count = min(max(steps_count, 1), 20)
         self.queries = self._select_queries()
 
-    def _select_queries(self) -> List[str]:
+    def _select_queries(self) -> list[str]:
         pool = WARMUP_NICHES[self.niche]
         return random.sample(pool, min(self.steps_count, len(pool)))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "profile_id": self.profile_id,
             "niche": self.niche,
             "steps_count": len(self.queries),
             "search_queries": self.queries,
-            "estimated_duration_minutes": len(self.queries) * 1.5
+            "estimated_duration_minutes": len(self.queries) * 1.5,
         }
 
-def generate_warmup_urls(queries: List[str]) -> List[str]:
+
+def generate_warmup_urls(queries: list[str]) -> list[str]:
     """Generates direct Google search URLs from query list."""
     urls = []
     for q in queries:
@@ -79,29 +84,24 @@ def generate_warmup_urls(queries: List[str]) -> List[str]:
         urls.append(f"https://www.google.com/search?q={encoded}&hl=en")
     return urls
 
-from dataclasses import dataclass, field
-import uuid
 
 @dataclass
 class ScenarioStep:
     action: str  # "open_url", "google_search", "human_scroll", "dwell", "click_internal_link", "watch_youtube", "accept_cookie_dialog"
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = field(default_factory=dict)
     description: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "action": self.action,
-            "params": self.params,
-            "description": self.description
-        }
+    def to_dict(self) -> dict[str, Any]:
+        return {"action": self.action, "params": self.params, "description": self.description}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ScenarioStep":
+    def from_dict(cls, data: dict[str, Any]) -> "ScenarioStep":
         return cls(
             action=data.get("action", "open_url"),
             params=data.get("params", {}),
-            description=data.get("description", "")
+            description=data.get("description", ""),
         )
+
 
 @dataclass
 class WarmupScenario:
@@ -109,20 +109,20 @@ class WarmupScenario:
     name: str = "Custom Scenario"
     description: str = ""
     niche: str = "ecommerce"
-    steps: List[ScenarioStep] = field(default_factory=list)
+    steps: list[ScenarioStep] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
             "description": self.description,
             "niche": self.niche,
             "steps": [s.to_dict() for s in self.steps],
-            "total_steps": len(self.steps)
+            "total_steps": len(self.steps),
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WarmupScenario":
+    def from_dict(cls, data: dict[str, Any]) -> "WarmupScenario":
         steps_raw = data.get("steps", [])
         steps = [ScenarioStep.from_dict(s) if isinstance(s, dict) else s for s in steps_raw]
         return cls(
@@ -130,24 +130,33 @@ class WarmupScenario:
             name=data.get("name", "Custom Scenario"),
             description=data.get("description", ""),
             niche=data.get("niche", "ecommerce"),
-            steps=steps
+            steps=steps,
         )
 
-BUILTIN_SCENARIOS: List[WarmupScenario] = [
+
+BUILTIN_SCENARIOS: list[WarmupScenario] = [
     WarmupScenario(
         id="scen_ecom_trust",
         name="E-Commerce & Google Ads Trust Booster",
         description="Organic Google searches, product pages visits, and natural dwell times to maximize Cookie Trust Score",
         niche="ecommerce",
         steps=[
-            ScenarioStep("google_search", {"query": "best noise cancelling headphones 2026 review"}, "Search Google for top retail electronics"),
-            ScenarioStep("human_scroll", {"duration_sec": 4, "direction": "down"}, "Natural scroll through SERP results"),
+            ScenarioStep(
+                "google_search",
+                {"query": "best noise cancelling headphones 2026 review"},
+                "Search Google for top retail electronics",
+            ),
+            ScenarioStep(
+                "human_scroll", {"duration_sec": 4, "direction": "down"}, "Natural scroll through SERP results"
+            ),
             ScenarioStep("dwell", {"min_sec": 3, "max_sec": 7}, "Simulate reading organic search results"),
-            ScenarioStep("open_url", {"url": "https://www.amazon.com/s?k=wireless+headphones"}, "Visit Amazon product catalog"),
+            ScenarioStep(
+                "open_url", {"url": "https://www.amazon.com/s?k=wireless+headphones"}, "Visit Amazon product catalog"
+            ),
             ScenarioStep("human_scroll", {"duration_sec": 6, "direction": "down"}, "Browse product listings"),
             ScenarioStep("accept_cookie_dialog", {}, "Accept cookie consent dialog"),
-            ScenarioStep("dwell", {"min_sec": 5, "max_sec": 10}, "Dwell on marketplace page")
-        ]
+            ScenarioStep("dwell", {"min_sec": 5, "max_sec": 10}, "Dwell on marketplace page"),
+        ],
     ),
     WarmupScenario(
         id="scen_youtube_viewer",
@@ -156,11 +165,17 @@ BUILTIN_SCENARIOS: List[WarmupScenario] = [
         niche="tech",
         steps=[
             ScenarioStep("open_url", {"url": "https://www.youtube.com"}, "Navigate to YouTube homepage"),
-            ScenarioStep("human_scroll", {"duration_sec": 5, "direction": "down"}, "Scroll YouTube homepage recommendations"),
-            ScenarioStep("google_search", {"query": "site:youtube.com tech review 2026"}, "Search top tech review videos"),
-            ScenarioStep("watch_youtube", {"watch_seconds": 15, "topic": "technology"}, "Watch video session with natural pauses"),
-            ScenarioStep("dwell", {"min_sec": 4, "max_sec": 8}, "Finish session and persist cookies")
-        ]
+            ScenarioStep(
+                "human_scroll", {"duration_sec": 5, "direction": "down"}, "Scroll YouTube homepage recommendations"
+            ),
+            ScenarioStep(
+                "google_search", {"query": "site:youtube.com tech review 2026"}, "Search top tech review videos"
+            ),
+            ScenarioStep(
+                "watch_youtube", {"watch_seconds": 15, "topic": "technology"}, "Watch video session with natural pauses"
+            ),
+            ScenarioStep("dwell", {"min_sec": 4, "max_sec": 8}, "Finish session and persist cookies"),
+        ],
     ),
     WarmupScenario(
         id="scen_crypto_web3",
@@ -169,10 +184,14 @@ BUILTIN_SCENARIOS: List[WarmupScenario] = [
         niche="crypto",
         steps=[
             ScenarioStep("open_url", {"url": "https://coinmarketcap.com"}, "Open CoinMarketCap crypto rankings"),
-            ScenarioStep("human_scroll", {"duration_sec": 8, "direction": "down"}, "Inspect top 100 cryptocurrencies table"),
-            ScenarioStep("google_search", {"query": "bitcoin halving historical price cycle 2026"}, "Search deep crypto analysis"),
-            ScenarioStep("dwell", {"min_sec": 6, "max_sec": 12}, "Read analytics article")
-        ]
+            ScenarioStep(
+                "human_scroll", {"duration_sec": 8, "direction": "down"}, "Inspect top 100 cryptocurrencies table"
+            ),
+            ScenarioStep(
+                "google_search", {"query": "bitcoin halving historical price cycle 2026"}, "Search deep crypto analysis"
+            ),
+            ScenarioStep("dwell", {"min_sec": 6, "max_sec": 12}, "Read analytics article"),
+        ],
     ),
     WarmupScenario(
         id="scen_finance_banking",
@@ -180,18 +199,26 @@ BUILTIN_SCENARIOS: List[WarmupScenario] = [
         description="Accumulates highest Tier-1 advertising cookies in banking, credit, and ETF investments",
         niche="finance",
         steps=[
-            ScenarioStep("google_search", {"query": "best high yield savings accounts rates 2026"}, "Google search for banking rates"),
-            ScenarioStep("human_scroll", {"duration_sec": 5, "direction": "down"}, "Scroll organic financial comparisons"),
+            ScenarioStep(
+                "google_search",
+                {"query": "best high yield savings accounts rates 2026"},
+                "Google search for banking rates",
+            ),
+            ScenarioStep(
+                "human_scroll", {"duration_sec": 5, "direction": "down"}, "Scroll organic financial comparisons"
+            ),
             ScenarioStep("open_url", {"url": "https://www.investopedia.com"}, "Read Investopedia financial guides"),
-            ScenarioStep("dwell", {"min_sec": 8, "max_sec": 15}, "Accumulate high-CPC finance tracking cookies")
-        ]
-    )
+            ScenarioStep("dwell", {"min_sec": 8, "max_sec": 15}, "Accumulate high-CPC finance tracking cookies"),
+        ],
+    ),
 ]
+
 
 class ScenarioExecutor:
     """
     Executes warmup scenarios across isolated browser profiles with concurrency control.
     """
+
     def __init__(self, browser_launcher, profile_manager):
         self.browser_launcher = browser_launcher
         self.profile_manager = profile_manager
@@ -241,11 +268,8 @@ class ScenarioExecutor:
         return True
 
     async def run_scenario_on_profile(
-        self,
-        scenario: WarmupScenario,
-        profile_id: str,
-        progress_callback: Optional[Any] = None
-    ) -> Dict[str, Any]:
+        self, scenario: WarmupScenario, profile_id: str, progress_callback: Any | None = None
+    ) -> dict[str, Any]:
         """Runs all steps in a scenario on a single profile."""
         prof = self.profile_manager.get_profile(profile_id)
         if not prof:
@@ -265,16 +289,16 @@ class ScenarioExecutor:
             "scenario_name": scenario.name,
             "total_steps": len(scenario.steps),
             "completed_steps": len(results),
-            "success": all(r["success"] for r in results)
+            "success": all(r["success"] for r in results),
         }
 
     async def run_batch_warmup(
         self,
         scenario: WarmupScenario,
-        profile_ids: List[str],
+        profile_ids: list[str],
         max_concurrency: int = 3,
-        progress_callback: Optional[Any] = None
-    ) -> Dict[str, Any]:
+        progress_callback: Any | None = None,
+    ) -> dict[str, Any]:
         """Executes a scenario across multiple profiles with concurrency throttling."""
         self.is_running = True
         sem = asyncio.Semaphore(max(1, min(max_concurrency, 10)))
@@ -296,8 +320,7 @@ class ScenarioExecutor:
                 "scenario": scenario.name,
                 "total_profiles": len(profile_ids),
                 "successful": sum(1 for o in formatted if o.get("success")),
-                "results": formatted
+                "results": formatted,
             }
         finally:
             self.is_running = False
-

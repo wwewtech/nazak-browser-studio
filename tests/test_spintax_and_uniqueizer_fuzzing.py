@@ -1,7 +1,10 @@
-import pytest
 from pathlib import Path
-from nazak.core.spintax import parse_spintax, format_video_metadata
+
+import pytest
+
+from nazak.core.spintax import format_video_metadata, parse_spintax
 from nazak.core.video_uniquifier import VideoUniquifier, find_ffmpeg
+
 
 def test_spintax_deep_3_levels():
     template = "{A|{B|{C|D}}}"
@@ -10,12 +13,14 @@ def test_spintax_deep_3_levels():
         results.add(parse_spintax(template))
     assert results == {"A", "B", "C", "D"}
 
+
 def test_spintax_multiple_blocks():
     template = "{Top|Best} VPN for {Windows|Mac|Android} in {2026|2027}"
     res = parse_spintax(template)
     assert any(w in res for w in ("Top", "Best"))
     assert any(w in res for w in ("Windows", "Mac", "Android"))
     assert any(w in res for w in ("2026", "2027"))
+
 
 def test_spintax_empty_choice_handling():
     template = "Download {now|} free"
@@ -24,12 +29,14 @@ def test_spintax_empty_choice_handling():
         results.add(parse_spintax(template))
     assert "Download now free" in results or "Download  free" in results
 
+
 def test_spintax_preserves_placeholders():
     template = "{Fast|Secure} VPN: {tg} code {promo} {year}"
     res = parse_spintax(template)
     assert "{tg}" in res
     assert "{promo}" in res
     assert "{year}" in res
+
 
 def test_format_video_metadata_substitutions():
     meta = format_video_metadata(
@@ -38,36 +45,38 @@ def test_format_video_metadata_substitutions():
         profile_name="Profile Alpha",
         profile_id="p1",
         tg_channel="@my_tg_bot",
-        promo_code="SAVE99"
+        promo_code="SAVE99",
     )
     assert "@my_tg_bot" in meta["description"]
     assert "SAVE99" in meta["description"]
     assert "2026" in meta["title"]
 
+
 def test_title_length_limit():
     long_title = "A" * 150
     meta = format_video_metadata(
-        title_template=long_title,
-        description_template="desc",
-        profile_name="p",
-        profile_id="p1"
+        title_template=long_title, description_template="desc", profile_name="p", profile_id="p1"
     )
     assert len(meta["title"]) <= 95
+
 
 def test_spintax_unclosed_brace_tolerance():
     malformed = "Normal text {unclosed bracket without pipe"
     res = parse_spintax(malformed)
     assert "Normal text" in res
 
+
 def test_spintax_unmatched_closing_brace():
     malformed = "Text with } extra closing brace"
     res = parse_spintax(malformed)
     assert "extra closing brace" in res
 
+
 def test_spintax_special_characters_inside_options():
     template = "{50% OFF!|Special $10 Deal!|#1 Rated}"
     res = parse_spintax(template)
     assert res in ("50% OFF!", "Special $10 Deal!", "#1 Rated")
+
 
 def test_spintax_cyrillic_text():
     template = "{Лучший|Топ|Рабочий} {Впн|VPN} для {Ютуб|YouTube}"
@@ -76,10 +85,12 @@ def test_spintax_cyrillic_text():
         results.add(parse_spintax(template))
     assert len(results) >= 4
 
+
 def test_find_ffmpeg_returns_valid_string():
     path = find_ffmpeg()
     assert path is not None
     assert isinstance(path, str)
+
 
 def test_video_uniquifier_nonexistent_source(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path)
@@ -88,12 +99,14 @@ def test_video_uniquifier_nonexistent_source(tmp_path):
     assert path is None
     assert "not found" in err.lower()
 
+
 def test_video_uniquifier_batch_empty_list(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path)
     src = tmp_path / "src.mp4"
     src.write_bytes(b"DATA" * 50)
     results = uniq.batch_uniquify(src, [])
     assert results == {}
+
 
 def test_video_uniquifier_batch_multiple_profiles(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path / "out")
@@ -105,6 +118,7 @@ def test_video_uniquifier_batch_multiple_profiles(tmp_path):
     assert res["p2"][0] is True
     assert res["p3"][0] is True
 
+
 def test_video_uniquifier_output_filenames(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path)
     src = tmp_path / "my_clip.mp4"
@@ -113,16 +127,20 @@ def test_video_uniquifier_output_filenames(tmp_path):
     assert ok is True
     assert "prof_07_unique_my_clip.mp4" in str(out_path)
 
+
 def test_spintax_empty_string():
     assert parse_spintax("") == ""
 
+
 def test_spintax_whitespace_string():
     assert parse_spintax("   ") == "   "
+
 
 def test_format_video_metadata_default_tags():
     meta = format_video_metadata("Title", "Desc", "Prof", "id1")
     assert "#shorts" in meta["tags"]
     assert "#vpn" in meta["tags"]
+
 
 def test_format_video_metadata_random_promo_code():
     meta1 = format_video_metadata("Title", "Desc {promo}", "Prof", "id1")
@@ -130,6 +148,7 @@ def test_format_video_metadata_random_promo_code():
     # Both should have valid promo codes
     assert "PROMO" in meta1["description"]
     assert "PROMO" in meta2["description"]
+
 
 def test_video_uniquifier_is_ffmpeg_available():
     uniq = VideoUniquifier()

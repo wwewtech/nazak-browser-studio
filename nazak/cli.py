@@ -1,10 +1,10 @@
 """
 Rich Command Line Interface for Nazak Browser Studio.
 """
-import sys
-import os
+
 import asyncio
-from typing import Optional
+import os
+import sys
 
 if sys.platform == "win32":
     try:
@@ -14,8 +14,8 @@ if sys.platform == "win32":
         pass
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 # Add paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,19 +26,25 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 try:
-    from nazak.config import PROFILES_FILE, PROFILES_DIR, EXTENSIONS_DIR, find_chrome_executable, DEFAULT_HOST, DEFAULT_PORT
-    from nazak.models.profile import ProfileStatus
-    from nazak.core.profile_manager import ProfileManager
+    from nazak.config import (
+        EXTENSIONS_DIR,
+        PROFILES_DIR,
+        PROFILES_FILE,
+        find_chrome_executable,
+    )
     from nazak.core.browser_launcher import BrowserLauncher
+    from nazak.core.profile_manager import ProfileManager
     from nazak.core.proxy_checker import check_proxy_health
+    from nazak.models.profile import ProfileStatus
 except ImportError:
-    from config import PROFILES_FILE, PROFILES_DIR, EXTENSIONS_DIR, find_chrome_executable, DEFAULT_HOST, DEFAULT_PORT
-    from models.profile import ProfileStatus
-    from core.profile_manager import ProfileManager
+    from config import EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE, find_chrome_executable
     from core.browser_launcher import BrowserLauncher
+    from core.profile_manager import ProfileManager
     from core.proxy_checker import check_proxy_health
+    from models.profile import ProfileStatus
 
 console = Console()
+
 
 def run_cli():
     args = sys.argv[1:]
@@ -79,8 +85,11 @@ def run_cli():
         console.print(f"[red]Неизвестная команда: {cmd}[/red]")
         print_help()
 
+
 def print_help():
-    console.print(Panel("""
+    console.print(
+        Panel(
+            """
 [bold yellow]Nazak Browser Studio - CLI Инструмент[/bold yellow]
 
 [bold]Команды:[/bold]
@@ -90,7 +99,11 @@ def print_help():
   [green]check <id>[/green]               - Полная диагностика прокси, Google и изоляции
   [green]check-all[/green]                - Диагностика всех профилей
   [green]info[/green]                     - Информация о системе и пути к Chrome
-    """, title="Справка"))
+    """,
+            title="Справка",
+        )
+    )
+
 
 def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
     profiles = pm.list_profiles()
@@ -107,7 +120,7 @@ def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
         running = bl.is_profile_running(p.id)
         status = "[bold green]АКТИВЕН[/bold green]" if running else "[dim]ОСТАНОВЛЕН[/dim]"
         proxy_str = p.proxy.to_display_string() if not p.proxy.is_direct() else "Прямое"
-        
+
         hc = p.last_health_check
         ping_str = f"{hc.ping_ms} мс" if hc and hc.ping_ms else "-"
         g_status = "[green]✓ Готов[/green]" if (hc and hc.google and hc.google.all_ok) else "[dim]Не проверен[/dim]"
@@ -116,7 +129,8 @@ def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
 
     console.print(table)
 
-def launch_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str, custom_url: Optional[str] = None):
+
+def launch_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str, custom_url: str | None = None):
     profile = pm.get_profile(profile_id)
     if not profile:
         console.print(f"[red]Профиль '{profile_id}' не найден![/red]")
@@ -131,6 +145,7 @@ def launch_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str,
     else:
         console.print(f"[bold red]✕ Ошибка запуска: {err}[/bold red]")
 
+
 def stop_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str):
     profile = pm.get_profile(profile_id)
     if not profile:
@@ -142,6 +157,7 @@ def stop_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str):
     pm.update_profile(profile)
     console.print(f"[bold green]✓ Профиль '{profile.name}' остановлен.[/bold green]")
 
+
 def check_profile_cli(pm: ProfileManager, profile_id: str):
     profile = pm.get_profile(profile_id)
     if not profile:
@@ -152,7 +168,7 @@ def check_profile_cli(pm: ProfileManager, profile_id: str):
     profile.last_health_check = res
     pm.update_profile(profile)
 
-    console.print(f"[bold]Результаты диагностики:[/bold]")
+    console.print("[bold]Результаты диагностики:[/bold]")
     console.print(f" • Статус: {res.status.value.upper()}")
     console.print(f" • Пинг: {res.ping_ms} ms")
     console.print(f" • IP: {res.ip} ({res.country}, {res.city})")
@@ -163,6 +179,7 @@ def check_profile_cli(pm: ProfileManager, profile_id: str):
     console.print(f" • YouTube: {'[green]OK[/green]' if res.google.youtube else '[red]FAIL[/red]'}")
     console.print(f" • Изоляция диска: {'[green]OK[/green]' if res.data_isolation_ok else '[red]FAIL[/red]'}")
 
+
 def check_all_cli(pm: ProfileManager):
     profiles = pm.list_profiles()
     console.print(f"[cyan]Запуск проверки всех {len(profiles)} профилей...[/cyan]")
@@ -170,13 +187,20 @@ def check_all_cli(pm: ProfileManager):
         check_profile_cli(pm, p.id)
         console.print("-" * 40)
 
+
 def show_system_info():
     chrome_exe = find_chrome_executable()
-    console.print(Panel(f"""
-[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or '[red]Не найден[/red]'}
-[bold]Profiles Directory:[/bold] {str(PROFILES_DIR.resolve())}
-[bold]Extensions Directory:[/bold] {str(EXTENSIONS_DIR.resolve())}
-    """, title="Системная конфигурация"))
+    console.print(
+        Panel(
+            f"""
+[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or "[red]Не найден[/red]"}
+[bold]Profiles Directory:[/bold] {PROFILES_DIR.resolve()!s}
+[bold]Extensions Directory:[/bold] {EXTENSIONS_DIR.resolve()!s}
+    """,
+            title="Системная конфигурация",
+        )
+    )
+
 
 if __name__ == "__main__":
     run_cli()

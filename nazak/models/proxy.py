@@ -2,11 +2,14 @@
 Proxy data models, parsing, validation, and serialization.
 Supports HTTP, HTTPS, SOCKS4, SOCKS5 with robust parsing and auth handling.
 """
-from enum import Enum
+
 import re
-from typing import Optional, Any, List, Dict
-from urllib.parse import urlparse, quote, unquote
-from pydantic import BaseModel, Field
+from enum import Enum
+from typing import Any
+from urllib.parse import quote, unquote
+
+from pydantic import BaseModel
+
 
 class ProxyType(str, Enum):
     DIRECT = "direct"
@@ -14,6 +17,7 @@ class ProxyType(str, Enum):
     HTTPS = "https"
     SOCKS4 = "socks4"
     SOCKS5 = "socks5"
+
 
 def sanitize_port(port_val: Any, default: int = 8080) -> int:
     try:
@@ -24,21 +28,23 @@ def sanitize_port(port_val: Any, default: int = 8080) -> int:
         pass
     return default
 
+
 class ProxyConfig(BaseModel):
     """
     Structured proxy configuration supporting HTTP(S) and SOCKS4/5 with optional auth.
     """
+
     type: ProxyType = ProxyType.DIRECT
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    rotation_url: Optional[str] = None
-    raw: Optional[str] = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    rotation_url: str | None = None
+    raw: str | None = None
     active: bool = True
 
     @classmethod
-    def parse(cls, raw_str: Optional[str]) -> "ProxyConfig":
+    def parse(cls, raw_str: str | None) -> "ProxyConfig":
         """
         Parses proxy strings in all common industry formats:
         - direct / none / empty
@@ -74,7 +80,7 @@ class ProxyConfig(BaseModel):
             for proto in (":http://", ":https://"):
                 if proto in text:
                     idx = text.rfind(proto)
-                    rotation_url = text[idx + 1:].strip()
+                    rotation_url = text[idx + 1 :].strip()
                     text = text[:idx].strip()
                     break
 
@@ -99,7 +105,15 @@ class ProxyConfig(BaseModel):
                 port = sanitize_port(ipv6_match.group(2), 8080)
                 user = ipv6_match.group(3)
                 pwd = ipv6_match.group(4)
-                return cls(type=default_scheme, host=host, port=port, username=user, password=pwd, rotation_url=rotation_url, raw=raw_str)
+                return cls(
+                    type=default_scheme,
+                    host=host,
+                    port=port,
+                    username=user,
+                    password=pwd,
+                    rotation_url=rotation_url,
+                    raw=raw_str,
+                )
 
         # Case 1: user:pass@host:port
         if "@" in text:
@@ -110,8 +124,18 @@ class ProxyConfig(BaseModel):
 
             host_parts = net_part.split(":")
             host = host_parts[0]
-            port = sanitize_port(host_parts[1] if len(host_parts) > 1 else None, 1080 if default_scheme == ProxyType.SOCKS5 else 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password=password, rotation_url=rotation_url, raw=raw_str)
+            port = sanitize_port(
+                host_parts[1] if len(host_parts) > 1 else None, 1080 if default_scheme == ProxyType.SOCKS5 else 8080
+            )
+            return cls(
+                type=default_scheme,
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                rotation_url=rotation_url,
+                raw=raw_str,
+            )
 
         # Case 2: Multi-part colon separated (host:port, host:port:user:pass, user:pass:host:port, host:port:user)
         parts = text.split(":")
@@ -122,19 +146,37 @@ class ProxyConfig(BaseModel):
             else:
                 host, port_str, username, password = parts
             port = sanitize_port(port_str, 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password=password, rotation_url=rotation_url, raw=raw_str)
+            return cls(
+                type=default_scheme,
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                rotation_url=rotation_url,
+                raw=raw_str,
+            )
         elif len(parts) == 3:
             # host:port:username (password empty)
             host, port_str, username = parts
             port = sanitize_port(port_str, 8080)
-            return cls(type=default_scheme, host=host, port=port, username=username, password="", rotation_url=rotation_url, raw=raw_str)
+            return cls(
+                type=default_scheme,
+                host=host,
+                port=port,
+                username=username,
+                password="",
+                rotation_url=rotation_url,
+                raw=raw_str,
+            )
         elif len(parts) == 2:
             host, port_str = parts
             port = sanitize_port(port_str, 8080)
             return cls(type=default_scheme, host=host, port=port, rotation_url=rotation_url, raw=raw_str)
         elif len(parts) == 1 and parts[0]:
             h = parts[0].strip()
-            if h.lower() in ("direct", "none", "null", "false", "no", "local", "invalid") or ("." not in h and h.lower() != "localhost"):
+            if h.lower() in ("direct", "none", "null", "false", "no", "local", "invalid") or (
+                "." not in h and h.lower() != "localhost"
+            ):
                 return cls(type=ProxyType.DIRECT, rotation_url=rotation_url, raw=raw_str)
             host = h
             port = 1080 if default_scheme == ProxyType.SOCKS5 else 8080
@@ -148,7 +190,7 @@ class ProxyConfig(BaseModel):
     def has_auth(self) -> bool:
         return bool(self.username and self.password)
 
-    def to_chrome_proxy_arg(self) -> Optional[str]:
+    def to_chrome_proxy_arg(self) -> str | None:
         """
         Returns string for Chrome --proxy-server flag.
         Format: protocol://host:port
@@ -158,7 +200,7 @@ class ProxyConfig(BaseModel):
         proto = "socks5" if self.type == ProxyType.SOCKS5 else ("socks4" if self.type == ProxyType.SOCKS4 else "http")
         return f"{proto}://{self.host}:{self.port}"
 
-    def to_httpx_url(self) -> Optional[str]:
+    def to_httpx_url(self) -> str | None:
         """
         Returns connection URL for HTTPX / Requests client with URL-safe encoded credentials.
         """

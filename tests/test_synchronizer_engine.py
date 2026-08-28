@@ -1,15 +1,17 @@
 """
 Unit Tests for Action Synchronizer and Window Tile Engine.
 """
-import pytest
+
 from unittest.mock import MagicMock
-from nazak.core.synchronizer import SynchronizerSession, SynchronizerManager, tile_windows_win32
+
+import pytest
+
+from nazak.core.synchronizer import SynchronizerManager, SynchronizerSession, tile_windows_win32
+
 
 def test_synchronizer_session_init_and_state():
     session = SynchronizerSession(
-        master_profile_id="master_1",
-        worker_profile_ids=["master_1", "worker_a", "worker_b"],
-        humanize_jitter=True
+        master_profile_id="master_1", worker_profile_ids=["master_1", "worker_a", "worker_b"], humanize_jitter=True
     )
     # Ensure master is filtered out from workers
     assert session.master_profile_id == "master_1"
@@ -20,6 +22,7 @@ def test_synchronizer_session_init_and_state():
     d = session.to_dict()
     assert d["master_profile_id"] == "master_1"
     assert len(d["worker_profile_ids"]) == 2
+
 
 def test_synchronizer_manager_lifecycle():
     mock_launcher = MagicMock()
@@ -38,6 +41,7 @@ def test_synchronizer_manager_lifecycle():
     assert stopped is not None
     assert stopped.active is False
     assert mgr.get_status()["active"] is False
+
 
 def test_tile_windows_empty_handling():
     # Calling tile_windows with empty list returns False safely without crash

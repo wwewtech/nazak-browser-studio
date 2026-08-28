@@ -1,6 +1,8 @@
 import time
-from nazak.models.profile import BrowserProfile, ProfileStatus
+
 from nazak.core.process_monitor import ProcessMonitor
+from nazak.models.profile import BrowserProfile, ProfileStatus
+
 
 class MockProfileManager:
     def __init__(self, profiles):
@@ -14,6 +16,7 @@ class MockProfileManager:
             if item.id == p.id:
                 self.profiles[i] = p
 
+
 class MockBrowserLauncher:
     def __init__(self, running_map):
         self.running_map = running_map
@@ -21,12 +24,14 @@ class MockBrowserLauncher:
     def is_profile_running(self, profile_id):
         return self.running_map.get(profile_id, False)
 
+
 def test_process_monitor_detects_exit():
     p1 = BrowserProfile(id="p1", name="Profile 1", status=ProfileStatus.RUNNING, pid=1234)
     pm = MockProfileManager([p1])
-    bl = MockBrowserLauncher({"p1": False}) # Process has exited
+    bl = MockBrowserLauncher({"p1": False})  # Process has exited
 
     events = []
+
     def callback(pid, status):
         events.append((pid, status))
 

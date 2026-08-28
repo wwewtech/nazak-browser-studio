@@ -3,18 +3,22 @@ Minimalist Executive Splash Screen for Nazak Browser Studio PRO.
 Zero AI-slop: No fake telemetry logs, no fake window chrome.
 Pure monolithic brand emblem, Swiss typography, and smooth indeterminate hairline loader.
 """
+
 from pathlib import Path
-from PyQt6.QtWidgets import QSplashScreen, QWidget, QVBoxLayout, QLabel, QGraphicsDropShadowEffect, QProgressBar
-from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QLinearGradient, QBrush, QPen, QPainterPath, QPolygonF
-from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
+
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QProgressBar, QSplashScreen, QVBoxLayout, QWidget
 
 from ..config import DATA_DIR
+
 
 class NazakSplashScreen(QSplashScreen):
     """
     Monolithic Executive Splash Screen.
     Presents the mathematical brand prism, bespoke Swiss typography, and clean hairline loader.
     """
+
     def __init__(self):
         # 460 x 280 Frameless Card
         w, h = 460, 280
@@ -47,38 +51,44 @@ class NazakSplashScreen(QSplashScreen):
         S = s * 0.08
         D = s * 0.28
 
-        poly_left = QPolygonF([
-            QPointF(cx - G/2 - W, cy - H/2 + S),
-            QPointF(cx - G/2,     cy - H/2),
-            QPointF(cx - G/2,     cy + H/2 - S),
-            QPointF(cx - G/2 - W, cy + H/2),
-        ])
+        poly_left = QPolygonF(
+            [
+                QPointF(cx - G / 2 - W, cy - H / 2 + S),
+                QPointF(cx - G / 2, cy - H / 2),
+                QPointF(cx - G / 2, cy + H / 2 - S),
+                QPointF(cx - G / 2 - W, cy + H / 2),
+            ]
+        )
 
-        poly_right = QPolygonF([
-            QPointF(cx + G/2,     cy - H/2 + S),
-            QPointF(cx + G/2 + W, cy - H/2),
-            QPointF(cx + G/2 + W, cy + H/2 - S),
-            QPointF(cx + G/2,     cy + H/2),
-        ])
+        poly_right = QPolygonF(
+            [
+                QPointF(cx + G / 2, cy - H / 2 + S),
+                QPointF(cx + G / 2 + W, cy - H / 2),
+                QPointF(cx + G / 2 + W, cy + H / 2 - S),
+                QPointF(cx + G / 2, cy + H / 2),
+            ]
+        )
 
-        poly_diag = QPolygonF([
-            QPointF(cx - G/2,     cy - H/2),
-            QPointF(cx - G/2,     cy - H/2 + D),
-            QPointF(cx + G/2,     cy + H/2),
-            QPointF(cx + G/2,     cy + H/2 - D),
-        ])
+        poly_diag = QPolygonF(
+            [
+                QPointF(cx - G / 2, cy - H / 2),
+                QPointF(cx - G / 2, cy - H / 2 + D),
+                QPointF(cx + G / 2, cy + H / 2),
+                QPointF(cx + G / 2, cy + H / 2 - D),
+            ]
+        )
 
-        g_left = QLinearGradient(cx - G/2 - W, cy - H/2, cx - G/2, cy + H/2)
+        g_left = QLinearGradient(cx - G / 2 - W, cy - H / 2, cx - G / 2, cy + H / 2)
         g_left.setColorAt(0.0, QColor(255, 255, 255))
         g_left.setColorAt(0.5, QColor(245, 248, 255))
         g_left.setColorAt(1.0, QColor(215, 220, 230))
 
-        g_diag = QLinearGradient(cx - G/2, cy - H/2, cx + G/2, cy + H/2)
+        g_diag = QLinearGradient(cx - G / 2, cy - H / 2, cx + G / 2, cy + H / 2)
         g_diag.setColorAt(0.0, QColor(59, 130, 246))
         g_diag.setColorAt(0.5, QColor(37, 99, 235))
         g_diag.setColorAt(1.0, QColor(29, 78, 216))
 
-        g_right = QLinearGradient(cx + G/2, cy - H/2, cx + G/2 + W, cy + H/2)
+        g_right = QLinearGradient(cx + G / 2, cy - H / 2, cx + G / 2 + W, cy + H / 2)
         g_right.setColorAt(0.0, QColor(235, 240, 248))
         g_right.setColorAt(1.0, QColor(165, 170, 180))
 

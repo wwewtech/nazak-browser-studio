@@ -6,16 +6,16 @@ Performs:
 3. Google Reachability Suite (Search, Accounts Login, Ads, YouTube)
 4. Profile Data Isolation & Disk Integrity check
 """
-import asyncio
-import socket
-import time
-from pathlib import Path
-from typing import Optional, Dict, Tuple
-import httpx
-from datetime import datetime, timezone
 
-from ..models.proxy import ProxyConfig, ProxyType
-from ..models.health import HealthCheckResult, HealthStatus, GoogleReachability
+import asyncio
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
+
+from ..models.health import GoogleReachability, HealthCheckResult, HealthStatus
+from ..models.proxy import ProxyConfig
 
 GOOGLE_ENDPOINTS = {
     "google_main": "https://www.google.com/generate_204",
@@ -24,14 +24,12 @@ GOOGLE_ENDPOINTS = {
     "youtube": "https://www.youtube.com/generate_204",
 }
 
-async def measure_tcp_ping(host: str, port: int, timeout_sec: float = 3.0) -> Optional[float]:
+
+async def measure_tcp_ping(host: str, port: int, timeout_sec: float = 3.0) -> float | None:
     """Measures raw TCP handshake latency in milliseconds."""
     t0 = time.perf_counter()
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout_sec
-        )
+        _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout_sec)
         writer.close()
         await writer.wait_closed()
         latency = (time.perf_counter() - t0) * 1000.0
@@ -39,7 +37,8 @@ async def measure_tcp_ping(host: str, port: int, timeout_sec: float = 3.0) -> Op
     except Exception:
         return None
 
-def check_profile_data_isolation(profile_dir: Optional[Path]) -> Tuple[bool, Optional[str]]:
+
+def check_profile_data_isolation(profile_dir: Path | None) -> tuple[bool, str | None]:
     """Validates that profile directory exists, is writable, and is not corrupted/locked."""
     if not profile_dir:
         return True, None
@@ -50,20 +49,16 @@ def check_profile_data_isolation(profile_dir: Optional[Path]) -> Tuple[bool, Opt
         test_file.unlink(missing_ok=True)
         return True, None
     except Exception as e:
-        return False, f"Profile directory error: {str(e)}"
+        return False, f"Profile directory error: {e!s}"
+
 
 async def check_proxy_health(
-    proxy: ProxyConfig,
-    profile_dir: Optional[Path] = None,
-    timeout_sec: float = 8.0
+    proxy: ProxyConfig, profile_dir: Path | None = None, timeout_sec: float = 8.0
 ) -> HealthCheckResult:
     """
     Executes the full diagnostic suite for a proxy configuration.
     """
-    result = HealthCheckResult(
-        status=HealthStatus.CHECKING,
-        checked_at=datetime.now(timezone.utc).isoformat()
-    )
+    result = HealthCheckResult(status=HealthStatus.CHECKING, checked_at=datetime.now(timezone.utc).isoformat())
 
     # 1. Check Profile Data Isolation
     isolation_ok, isolation_err = check_profile_data_isolation(profile_dir)
@@ -84,13 +79,15 @@ async def check_proxy_health(
             result.ping_ms = ping_ms
             if ping_ms is None:
                 result.status = HealthStatus.DEAD
-                result.error_message = f"Failed to connect to proxy {proxy.host}:{proxy.port} (TCP Connection timed out)"
+                result.error_message = (
+                    f"Failed to connect to proxy {proxy.host}:{proxy.port} (TCP Connection timed out)"
+                )
                 return result
 
         proxy_url = proxy.to_httpx_url()
 
     # Create HTTPX client with proxy settings
-    transport = httpx.AsyncHTTPTransport(retries=1)
+    httpx.AsyncHTTPTransport(retries=1)
     client_kwargs = {
         "timeout": httpx.Timeout(timeout_sec, connect=5.0),
         "follow_redirects": True,
@@ -101,7 +98,7 @@ async def check_proxy_health(
             ),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
-        }
+        },
     }
     if proxy_url:
         client_kwargs["proxy"] = proxy_url
@@ -109,7 +106,9 @@ async def check_proxy_health(
     async with httpx.AsyncClient(**client_kwargs) as client:
         # 2. IP & Geo Location Check
         try:
-            geo_resp = await client.get("http://ip-api.com/json/?fields=status,message,country,countryCode,regionName,city,isp,as,query,timezone,lat,lon")
+            geo_resp = await client.get(
+                "http://ip-api.com/json/?fields=status,message,country,countryCode,regionName,city,isp,as,query,timezone,lat,lon"
+            )
             if geo_resp.status_code == 200:
                 geo_data = geo_resp.json()
                 if geo_data.get("status") == "success":
@@ -132,7 +131,7 @@ async def check_proxy_health(
                 if ip_resp.status_code == 200:
                     result.ip = ip_resp.json().get("ip")
             except Exception:
-                result.error_message = f"Proxy routing error: {str(e)}"
+                result.error_message = f"Proxy routing error: {e!s}"
 
         if not result.ip and not proxy.is_direct():
             result.status = HealthStatus.DEAD
@@ -142,7 +141,7 @@ async def check_proxy_health(
 
         # 3. Google Reachability Suite
         google_reach = GoogleReachability()
-        latencies: Dict[str, float] = {}
+        latencies: dict[str, float] = {}
 
         async def check_endpoint(key: str, url: str):
             t0 = time.perf_counter()
@@ -168,10 +167,10 @@ async def check_proxy_health(
 
         google_reach.latencies_ms = latencies
         google_reach.all_ok = bool(
-            google_reach.google_main and 
-            google_reach.google_accounts and 
-            google_reach.google_ads and 
-            google_reach.youtube
+            google_reach.google_main
+            and google_reach.google_accounts
+            and google_reach.google_ads
+            and google_reach.youtube
         )
         result.google = google_reach
 

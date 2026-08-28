@@ -2,20 +2,28 @@
 Fluent Profile Editor & Hardware Fingerprint Customizer Dialog.
 Fluent Iconography Architecture.
 """
-import uuid
+
 import random
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QWidget, QFrame, QLabel
-)
+import uuid
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    LineEdit, ComboBox, SwitchButton, PrimaryPushButton, PushButton,
-    SimpleCardWidget, InfoBar, InfoBarPosition, FluentIcon
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    SwitchButton,
 )
 
-from ...models.profile import BrowserProfile, FingerprintConfig, ProxyConfig, ProxyType, GoogleSettings
 from ...core.fingerprint_generator import GPU_PRESETS, SCREEN_RESOLUTIONS, generate_random_fingerprint
+from ...models.profile import BrowserProfile, FingerprintConfig, GoogleSettings, ProxyConfig, ProxyType
 from ..style import FLUENT_DARK_QSS
+
 
 class ProfileEditDialog(QDialog):
     def __init__(self, profile=None, profile_manager=None, parent=None):
@@ -23,7 +31,7 @@ class ProfileEditDialog(QDialog):
         self.profile = profile
         self.profile_manager = profile_manager
         self.is_create_mode = profile is None
-        
+
         self.setWindowTitle("Новый профиль" if self.is_create_mode else f"Настройка: {profile.name}")
         self.resize(700, 680)
         self.setMinimumSize(660, 620)
@@ -36,7 +44,9 @@ class ProfileEditDialog(QDialog):
         main_layout.setContentsMargins(24, 20, 24, 20)
 
         # Title
-        title_text = "Создание изолированного профиля" if self.is_create_mode else f"Настройка профиля: {self.profile.name}"
+        title_text = (
+            "Создание изолированного профиля" if self.is_create_mode else f"Настройка профиля: {self.profile.name}"
+        )
         lbl_title = QLabel(title_text, self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 17px; font-weight: 700;")
         main_layout.addWidget(lbl_title)
@@ -44,7 +54,7 @@ class ProfileEditDialog(QDialog):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setSpacing(12)
@@ -54,11 +64,11 @@ class ProfileEditDialog(QDialog):
         card_base = SimpleCardWidget(container)
         l_base = QVBoxLayout(card_base)
         l_base.setContentsMargins(16, 12, 16, 12)
-        
+
         lbl_b = QLabel("Основная информация", card_base)
         lbl_b.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_base.addWidget(lbl_b)
-        
+
         self.input_name = LineEdit(card_base)
         self.input_name.setPlaceholderText("Имя профиля, например 01 • Google Ads USA")
         if self.profile:
@@ -78,11 +88,11 @@ class ProfileEditDialog(QDialog):
         card_proxy = SimpleCardWidget(container)
         l_proxy = QVBoxLayout(card_proxy)
         l_proxy.setContentsMargins(16, 12, 16, 12)
-        
+
         lbl_p = QLabel("Настройка прокси HTTP / HTTPS / SOCKS5", card_proxy)
         lbl_p.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_proxy.addWidget(lbl_p)
-        
+
         self.input_proxy_raw = LineEdit(card_proxy)
         self.input_proxy_raw.setPlaceholderText("host:port:user:pass или socks5://user:pass@host:port (или direct)")
         if self.profile and self.profile.proxy.raw:
@@ -96,22 +106,22 @@ class ProfileEditDialog(QDialog):
         card_fp = SimpleCardWidget(container)
         l_fp = QVBoxLayout(card_fp)
         l_fp.setContentsMargins(16, 14, 16, 14)
-        
+
         h_fp_title = QHBoxLayout()
         lbl_fp = QLabel("Изоляция железа и цифровой отпечаток", card_fp)
         lbl_fp.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_fp_title.addWidget(lbl_fp)
         h_fp_title.addStretch()
-        
+
         self.btn_randomize = PushButton(FluentIcon.SYNC, "Сгенерировать отпечаток", card_fp)
-        
+
         self.btn_randomize.clicked.connect(self.on_randomize_fp)
         h_fp_title.addWidget(self.btn_randomize)
         l_fp.addLayout(h_fp_title)
 
         grid_fp = QGridLayout()
         grid_fp.setVerticalSpacing(8)
-        
+
         # GPU Preset
         lbl_g = QLabel("Видеокарта (GPU):", card_fp)
         lbl_g.setStyleSheet("color: #d4d4d8; font-size: 11px;")
@@ -219,7 +229,7 @@ class ProfileEditDialog(QDialog):
         idx = self.combo_screen.findText(f"{fp.screen_width} × {fp.screen_height}")
         if idx >= 0:
             self.combo_screen.setCurrentIndex(idx)
-            
+
         self.switch_canvas.setChecked(bool(fp.canvas_noise))
         self.switch_audio.setChecked(bool(fp.audio_noise))
         self.switch_port_scan.setChecked(bool(fp.block_port_scanning))
@@ -238,11 +248,16 @@ class ProfileEditDialog(QDialog):
         idx_screen = self.combo_screen.findText(f"{new_fp.screen_width} × {new_fp.screen_height}")
         if idx_screen >= 0:
             self.combo_screen.setCurrentIndex(idx_screen)
-            
+
         self.switch_canvas.setChecked(bool(new_fp.canvas_noise))
         self.switch_audio.setChecked(bool(new_fp.audio_noise))
         self.switch_port_scan.setChecked(bool(new_fp.block_port_scanning))
-        InfoBar.success("Отпечаток сгенерирован", "Подобран согласованный набор характеристик железа", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Отпечаток сгенерирован",
+            "Подобран согласованный набор характеристик железа",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
 
     def on_save(self):
         name = self.input_name.text().strip()
@@ -258,7 +273,7 @@ class ProfileEditDialog(QDialog):
         fp.webgl_unmasked_renderer = self.combo_gpu.currentText()
         fp.hardware_concurrency = self.combo_cores.currentData() or 16
         fp.device_memory = self.combo_ram.currentData() or 32
-        
+
         scr_data = self.combo_screen.currentData()
         if scr_data:
             fp.screen_width = scr_data["width"]
@@ -274,12 +289,7 @@ class ProfileEditDialog(QDialog):
         if self.is_create_mode:
             new_id = f"prof_{uuid.uuid4().hex[:8]}"
             prof = BrowserProfile(
-                id=new_id,
-                name=name,
-                group=group,
-                proxy=proxy_conf,
-                fingerprint=fp,
-                google=GoogleSettings()
+                id=new_id, name=name, group=group, proxy=proxy_conf, fingerprint=fp, google=GoogleSettings()
             )
             self.profile_manager.create_profile(prof)
         else:

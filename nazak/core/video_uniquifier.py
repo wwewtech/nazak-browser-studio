@@ -8,14 +8,15 @@ Deeply alters video and audio fingerprint (Content ID) using FFmpeg:
 - Audio pitch/tempo shift (1.5% frequency shift)
 - Frame rate micro-jitter
 """
+
 import os
+import random
 import shutil
 import subprocess
-import random
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
 
-def find_ffmpeg() -> Optional[str]:
+
+def find_ffmpeg() -> str | None:
     """
     Locates FFmpeg executable across Windows, macOS (Homebrew / MacPorts), and Linux.
     """
@@ -44,13 +45,16 @@ def find_ffmpeg() -> Optional[str]:
             return str(c.resolve())
     return None
 
+
 class VideoUniquifier:
     """
     Handles processing and uniqueizing MP4 videos per target profile.
     """
-    def __init__(self, output_dir: Optional[Path] = None):
+
+    def __init__(self, output_dir: Path | None = None):
         if output_dir is None:
             from ..config import DATA_DIR
+
             self.output_dir = DATA_DIR / "videos" / "output"
         else:
             self.output_dir = output_dir
@@ -61,11 +65,8 @@ class VideoUniquifier:
         return self.ffmpeg_path is not None
 
     def uniquify_video(
-        self,
-        source_path: Path,
-        profile_id: str,
-        profile_index: int = 1
-    ) -> Tuple[bool, Optional[Path], Optional[str]]:
+        self, source_path: Path, profile_id: str, profile_index: int = 1
+    ) -> tuple[bool, Path | None, str | None]:
         """
         Creates a uniqueized copy of source_path for a specific profile.
         Returns: (success, output_path, error_message)
@@ -90,7 +91,7 @@ class VideoUniquifier:
         brightness = round(random.uniform(-0.02, 0.03), 3)
         saturation = round(random.uniform(1.02, 1.06), 3)
         noise_level = random.randint(1, 3)
-        
+
         # Audio pitch factor (shifts frequencies by 1-2%)
         pitch_factor = round(random.uniform(1.012, 1.025), 4)
         sample_rate = 44100
@@ -105,32 +106,36 @@ class VideoUniquifier:
             f"eq=contrast={contrast}:brightness={brightness}:saturation={saturation},"
             f"noise=alls={noise_level}:allf=t"
         )
-        af_filter = f"asetrate={mod_rate},aresample={sample_rate},atempo={round(1.0/pitch_factor, 4)}"
+        af_filter = f"asetrate={mod_rate},aresample={sample_rate},atempo={round(1.0 / pitch_factor, 4)}"
 
         cmd = [
             self.ffmpeg_path,
             "-y",
-            "-i", str(source_path),
-            "-vf", vf_filter,
-            "-af", af_filter,
-            "-r", fps,
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "21",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-map_metadata", "-1",
-            str(out_path)
+            "-i",
+            str(source_path),
+            "-vf",
+            vf_filter,
+            "-af",
+            af_filter,
+            "-r",
+            fps,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "21",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-map_metadata",
+            "-1",
+            str(out_path),
         ]
 
         try:
-            res = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 1000:
                 return True, out_path, None
             else:
@@ -142,10 +147,8 @@ class VideoUniquifier:
             return True, out_path, f"FFmpeg execution error: {e}"
 
     def batch_uniquify(
-        self,
-        source_path: Path,
-        profile_ids: List[str]
-    ) -> Dict[str, Tuple[bool, Optional[Path], Optional[str]]]:
+        self, source_path: Path, profile_ids: list[str]
+    ) -> dict[str, tuple[bool, Path | None, str | None]]:
         """
         Processes source video for multiple profiles concurrently.
         """

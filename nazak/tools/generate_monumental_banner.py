@@ -2,18 +2,29 @@
 Monumental Executive Brand Banner Generator for Nazak Browser Studio.
 Zero grid lines. Massive, bold display typography. High-impact Swiss aesthetic.
 """
+
 import sys
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import (
-    QImage, QPainter, QColor, QPen, QBrush, QLinearGradient,
-    QPainterPath, QFont, QPolygonF, QFontMetrics
-)
-from PyQt6.QtCore import Qt, QPointF, QRectF
+
 from PIL import Image
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QImage,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
+)
+from PyQt6.QtWidgets import QApplication
+
 
 def generate_monumental_banner():
-    app = QApplication.instance() or QApplication(sys.argv)
+    _app = QApplication.instance() or QApplication(sys.argv)
     assets_dir = Path("D:/nazak/data/assets")
     assets_dir.mkdir(parents=True, exist_ok=True)
 
@@ -29,43 +40,49 @@ def generate_monumental_banner():
         D = s * 0.28
 
         # 1. Left Vertical Monolith
-        poly_left = QPolygonF([
-            QPointF(cx - G/2 - W, cy - H/2 + S),
-            QPointF(cx - G/2,     cy - H/2),
-            QPointF(cx - G/2,     cy + H/2 - S),
-            QPointF(cx - G/2 - W, cy + H/2),
-        ])
+        poly_left = QPolygonF(
+            [
+                QPointF(cx - G / 2 - W, cy - H / 2 + S),
+                QPointF(cx - G / 2, cy - H / 2),
+                QPointF(cx - G / 2, cy + H / 2 - S),
+                QPointF(cx - G / 2 - W, cy + H / 2),
+            ]
+        )
 
         # 2. Right Vertical Monolith
-        poly_right = QPolygonF([
-            QPointF(cx + G/2,     cy - H/2 + S),
-            QPointF(cx + G/2 + W, cy - H/2),
-            QPointF(cx + G/2 + W, cy + H/2 - S),
-            QPointF(cx + G/2,     cy + H/2),
-        ])
+        poly_right = QPolygonF(
+            [
+                QPointF(cx + G / 2, cy - H / 2 + S),
+                QPointF(cx + G / 2 + W, cy - H / 2),
+                QPointF(cx + G / 2 + W, cy + H / 2 - S),
+                QPointF(cx + G / 2, cy + H / 2),
+            ]
+        )
 
         # 3. Seamless Diagonal Shutter
-        poly_diag = QPolygonF([
-            QPointF(cx - G/2,     cy - H/2),
-            QPointF(cx - G/2,     cy - H/2 + D),
-            QPointF(cx + G/2,     cy + H/2),
-            QPointF(cx + G/2,     cy + H/2 - D),
-        ])
+        poly_diag = QPolygonF(
+            [
+                QPointF(cx - G / 2, cy - H / 2),
+                QPointF(cx - G / 2, cy - H / 2 + D),
+                QPointF(cx + G / 2, cy + H / 2),
+                QPointF(cx + G / 2, cy + H / 2 - D),
+            ]
+        )
 
         # Left Facet: Pure Satin White to Platinum
-        g_left = QLinearGradient(cx - G/2 - W, cy - H/2, cx - G/2, cy + H/2)
+        g_left = QLinearGradient(cx - G / 2 - W, cy - H / 2, cx - G / 2, cy + H / 2)
         g_left.setColorAt(0.0, QColor(255, 255, 255))
         g_left.setColorAt(0.5, QColor(245, 248, 255))
         g_left.setColorAt(1.0, QColor(215, 220, 230))
 
         # Diagonal: Deep Electric Cobalt Blue
-        g_diag = QLinearGradient(cx - G/2, cy - H/2, cx + G/2, cy + H/2)
+        g_diag = QLinearGradient(cx - G / 2, cy - H / 2, cx + G / 2, cy + H / 2)
         g_diag.setColorAt(0.0, QColor(59, 130, 246))
         g_diag.setColorAt(0.5, QColor(37, 99, 235))
         g_diag.setColorAt(1.0, QColor(29, 78, 216))
 
         # Right Facet: Titanium Silver to Graphite
-        g_right = QLinearGradient(cx + G/2, cy - H/2, cx + G/2 + W, cy + H/2)
+        g_right = QLinearGradient(cx + G / 2, cy - H / 2, cx + G / 2 + W, cy + H / 2)
         g_right.setColorAt(0.0, QColor(235, 240, 248))
         g_right.setColorAt(1.0, QColor(165, 170, 180))
 
@@ -85,7 +102,7 @@ def generate_monumental_banner():
 
         # 1px hairline light reflection on seam
         p.setPen(QPen(QColor(255, 255, 255, 180), s * 0.008))
-        p.drawLine(QPointF(cx - G/2, cy - H/2), QPointF(cx - G/2, cy + H/2 - S))
+        p.drawLine(QPointF(cx - G / 2, cy - H / 2), QPointF(cx - G / 2, cy + H / 2 - S))
 
     # -------------------------------------------------------------------------
     # High-Impact Banner (1280x420) — Monumental Swiss Craft
@@ -159,6 +176,7 @@ def generate_monumental_banner():
     p.end()
     banner.save(str(assets_dir / "banner.png"))
     print("Saved refined monumental banner!")
+
 
 if __name__ == "__main__":
     generate_monumental_banner()

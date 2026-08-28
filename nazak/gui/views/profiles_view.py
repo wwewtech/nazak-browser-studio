@@ -2,28 +2,36 @@
 Fluent Profiles Dashboard View.
 Windows 11 Fluent Iconography & Zero-Emoji Typography Architecture.
 """
+
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Optional
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QFrame, QLabel
-)
-from PyQt6.QtCore import Qt, pyqtSignal as Signal, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal as Signal
+from PyQt6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    SearchLineEdit, PrimaryPushButton, PushButton,
-    SubtitleLabel, BodyLabel, CaptionLabel, SimpleCardWidget,
-    InfoBar, InfoBarPosition, ComboBox, FluentIcon
+    BodyLabel,
+    CaptionLabel,
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    PrimaryPushButton,
+    PushButton,
+    SearchLineEdit,
+    SimpleCardWidget,
+    SubtitleLabel,
 )
 
-from ..dialogs.profile_edit_dialog import ProfileEditDialog
-from ..dialogs.cookie_dialog import CookieManagerDialog
-from ..dialogs.batch_cookie_dialog import BatchCookieDialog
-from ..dialogs.mass_generate_dialog import MassGenerateDialog
-from ..dialogs.synchronizer_dialog import SynchronizerDialog
-from ..workers import ProxyCheckWorker, CheckAllProxiesWorker
-from ...models.profile import BrowserProfile, ProfileStatus
-from ...models.health import HealthStatus
 from ...core.browser_launcher import find_chrome_executable
+from ...models.health import HealthStatus
+from ...models.profile import BrowserProfile, ProfileStatus
+from ..dialogs.batch_cookie_dialog import BatchCookieDialog
+from ..dialogs.cookie_dialog import CookieManagerDialog
+from ..dialogs.mass_generate_dialog import MassGenerateDialog
+from ..dialogs.profile_edit_dialog import ProfileEditDialog
+from ..dialogs.synchronizer_dialog import SynchronizerDialog
+from ..workers import CheckAllProxiesWorker, ProxyCheckWorker
+
 
 class ProfileCard(SimpleCardWidget):
     launch_clicked = Signal(str)
@@ -60,13 +68,22 @@ class ProfileCard(SimpleCardWidget):
         # 2. Hardware Specs Chip (Clean Monospace Telemetry)
         fp = self.profile.fingerprint
         gpu_raw = (fp.webgl_unmasked_renderer or fp.webgl_renderer or "Integrated GPU") if fp else "Integrated GPU"
-        gpu_short = str(gpu_raw).replace("(R)", "").replace("(TM)", "").replace("NVIDIA GeForce ", "").replace("AMD Radeon ", "").replace("Graphics", "").replace("  ", " ").strip()
+        gpu_short = (
+            str(gpu_raw)
+            .replace("(R)", "")
+            .replace("(TM)", "")
+            .replace("NVIDIA GeForce ", "")
+            .replace("AMD Radeon ", "")
+            .replace("Graphics", "")
+            .replace("  ", " ")
+            .strip()
+        )
         cores = fp.hardware_concurrency if fp else 16
         ram = fp.device_memory if fp else 32
         w = fp.screen_width if fp else 1920
         h = fp.screen_height if fp else 1080
         hw_text = f"GPU: {gpu_short}  •  {cores} ядер  •  {ram} ГБ  •  {w}×{h}"
-        
+
         lbl_hw = QLabel(hw_text, self)
         lbl_hw.setStyleSheet(
             "background-color: #22222a; color: #d4d4d8; font-size: 11px; "
@@ -78,7 +95,7 @@ class ProfileCard(SimpleCardWidget):
         # 3. Network & Proxy Diagnostic Chip
         proxy = self.profile.proxy
         proxy_str = f"{proxy.host}:{proxy.port}" if proxy.host else "Прямое подключение"
-        
+
         diag_str = "Не проверен"
         diag_color = "#71717a"
         if self.profile.last_health_check:
@@ -181,13 +198,13 @@ class ProfilesView(QWidget):
         # 1. Header & Metrics Bar
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        
+
         lbl_title = QLabel("Управление профилями браузера", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
-        
+
         lbl_desc = QLabel("100% аппаратная изоляция железа, защита от сканирования портов и чистые сессии", self)
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        
+
         v_title.addWidget(lbl_title)
         v_title.addWidget(lbl_desc)
         h_head.addLayout(v_title)
@@ -308,7 +325,7 @@ class ProfilesView(QWidget):
         selected_group = self.combo_group.currentText()
 
         profiles = self.profile_manager.list_profiles()
-        
+
         self.lbl_metric_total.setText(str(len(profiles)))
         running_cnt = sum(1 for p in profiles if self.browser_launcher.is_profile_running(p.id))
         self.lbl_metric_active.setText(str(running_cnt))
@@ -352,7 +369,9 @@ class ProfilesView(QWidget):
         diag = ProfileEditDialog(profile=None, profile_manager=self.profile_manager, parent=self)
         if diag.exec():
             self.refresh_profiles()
-            InfoBar.success("Профиль создан", "Новый изолированный профиль добавлен", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success(
+                "Профиль создан", "Новый изолированный профиль добавлен", parent=self, position=InfoBarPosition.TOP
+            )
 
     def on_edit_profile(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)
@@ -360,7 +379,9 @@ class ProfilesView(QWidget):
             diag = ProfileEditDialog(profile=prof, profile_manager=self.profile_manager, parent=self)
             if diag.exec():
                 self.refresh_profiles()
-                InfoBar.success("Профиль обновлен", f"Настройки '{prof.name}' сохранены", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.success(
+                    "Профиль обновлен", f"Настройки '{prof.name}' сохранены", parent=self, position=InfoBarPosition.TOP
+                )
 
     def on_open_cookies(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)
@@ -372,10 +393,15 @@ class ProfilesView(QWidget):
         prof = self.profile_manager.get_profile(profile_id)
         if not prof:
             return
-            
+
         chrome_exe = find_chrome_executable()
         if not chrome_exe:
-            InfoBar.error("Chromium не найден", "Установите Google Chrome или Edge для запуска профилей", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.error(
+                "Chromium не найден",
+                "Установите Google Chrome или Edge для запуска профилей",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         ok, pid, err = self.browser_launcher.launch(prof)
@@ -384,9 +410,13 @@ class ProfilesView(QWidget):
             prof.pid = pid
             self.profile_manager.update_profile(prof)
             self.refresh_profiles()
-            InfoBar.success("Браузер запущен", f"Профиль '{prof.name}' • PID {pid}", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success(
+                "Браузер запущен", f"Профиль '{prof.name}' • PID {pid}", parent=self, position=InfoBarPosition.TOP
+            )
         else:
-            InfoBar.error("Ошибка запуска", err or "Не удалось запустить Chromium", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.error(
+                "Ошибка запуска", err or "Не удалось запустить Chromium", parent=self, position=InfoBarPosition.TOP
+            )
 
     def on_stop_profile(self, profile_id: str):
         self.browser_launcher.stop(profile_id)
@@ -396,7 +426,12 @@ class ProfilesView(QWidget):
             prof.pid = None
             self.profile_manager.update_profile(prof)
         self.refresh_profiles()
-        InfoBar.info("Профиль остановлен", f"Браузер '{prof.name if prof else profile_id}' закрыт", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.info(
+            "Профиль остановлен",
+            f"Браузер '{prof.name if prof else profile_id}' закрыт",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
 
     def on_stop_all(self):
         for p in self.profile_manager.list_profiles():
@@ -405,19 +440,19 @@ class ProfilesView(QWidget):
             p.pid = None
             self.profile_manager.update_profile(p)
         self.refresh_profiles()
-        InfoBar.info("Все остановлены", "Все запущенные процессы браузера завершены", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.info(
+            "Все остановлены", "Все запущенные процессы браузера завершены", parent=self, position=InfoBarPosition.TOP
+        )
 
     def on_check_single_proxy(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)
         if not prof:
             return
-        
+
         InfoBar.info("Проверка...", f"Тестирование связи для {prof.name}", parent=self, position=InfoBarPosition.TOP)
-        
+
         self.check_worker = ProxyCheckWorker(
-            profile_id=profile_id,
-            proxy_config=prof.proxy,
-            profile_dir=self.profile_manager.profiles_dir / profile_id
+            profile_id=profile_id, proxy_config=prof.proxy, profile_dir=self.profile_manager.profiles_dir / profile_id
         )
         self.check_worker.finished_signal.connect(self._on_single_check_done)
         self.check_worker.start()
@@ -433,17 +468,27 @@ class ProfilesView(QWidget):
                 prof.fingerprint.timezone = res.timezone_name
             self.profile_manager.update_profile(prof)
             self.refresh_profiles()
-            
+
             if res.status == HealthStatus.HEALTHY:
                 city_str = f" • {res.city}" if res.city else ""
-                InfoBar.success("Прокси в норме", f"{prof.name}: Google OK{city_str} • {res.ping_ms or 1} ms", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.success(
+                    "Прокси в норме",
+                    f"{prof.name}: Google OK{city_str} • {res.ping_ms or 1} ms",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
             else:
-                InfoBar.warning("Внимание", f"{prof.name}: {res.error_message or 'Сбои сервисов'}", parent=self, position=InfoBarPosition.TOP)
+                InfoBar.warning(
+                    "Внимание",
+                    f"{prof.name}: {res.error_message or 'Сбои сервисов'}",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
 
     def on_check_all_proxies(self):
         profs = self.profile_manager.list_profiles()
         InfoBar.info("Запуск проверки", f"Проверка {len(profs)} прокси...", parent=self, position=InfoBarPosition.TOP)
-        
+
         self.all_worker = CheckAllProxiesWorker(profs, self.profile_manager.profiles_dir)
         self.all_worker.finished_signal.connect(self._on_all_checks_done)
         self.all_worker.start()
@@ -461,7 +506,12 @@ class ProfilesView(QWidget):
         cloned = self.profile_manager.clone_profile(profile_id)
         if cloned:
             self.refresh_profiles()
-            InfoBar.success("Профиль клонирован", f"Создана копия '{cloned.name}' с новыми отпечатками", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success(
+                "Профиль клонирован",
+                f"Создана копия '{cloned.name}' с новыми отпечатками",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
 
     def on_delete_profile(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)

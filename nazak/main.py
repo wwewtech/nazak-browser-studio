@@ -2,11 +2,12 @@
 Nazak Browser Studio PRO - Main Application Entry Point.
 Supports Pure Desktop Fluent GUI (no console), Web Mode, and CLI.
 """
-import sys
-import os
+
 import argparse
-import webbrowser
+import os
+import sys
 import traceback
+import webbrowser
 from pathlib import Path
 
 # Add project root to sys.path if not present
@@ -18,13 +19,14 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 try:
-    from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
     from nazak.api.server import app as fastapi_app
     from nazak.cli import run_cli
+    from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
 except ImportError:
-    from config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
     from api.server import app as fastapi_app
     from cli import run_cli
+    from config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
+
 
 # Robust SafeStream redirection for pure windowed GUI without console
 class SafeStream:
@@ -43,14 +45,23 @@ class SafeStream:
     def flush(self):
         pass
 
+
 if sys.stdout is None:
     sys.stdout = SafeStream(LOGS_DIR / "stdout.log")
 if sys.stderr is None:
     sys.stderr = SafeStream(LOGS_DIR / "stderr.log")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Nazak Browser Studio PRO - Windows 11 Multi-Profile Anti-Detect Browser")
-    parser.add_argument("--mode", choices=["gui", "web", "cli"], default="gui", help="Launch mode: gui (pure desktop window), web (browser UI), cli (terminal)")
+    parser = argparse.ArgumentParser(
+        description="Nazak Browser Studio PRO - Windows 11 Multi-Profile Anti-Detect Browser"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["gui", "web", "cli"],
+        default="gui",
+        help="Launch mode: gui (pure desktop window), web (browser UI), cli (terminal)",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, help="Server host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (default: 8899)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser in web mode")
@@ -59,7 +70,7 @@ def main():
         run_cli()
         return
 
-    args, unknown = parser.parse_known_args()
+    args, _unknown = parser.parse_known_args()
 
     if args.mode == "gui":
         try:
@@ -68,7 +79,7 @@ def main():
             except ImportError:
                 from gui.main_window import launch_gui
             launch_gui(host=args.host, port=args.port)
-        except Exception as e:
+        except Exception:
             # Write crash log
             crash_file = LOGS_DIR / "crash.log"
             try:
@@ -77,7 +88,7 @@ def main():
                     traceback.print_exc(file=f)
             except Exception:
                 pass
-            
+
             # Fallback to web mode if Qt fails
             start_web_mode(args.host, args.port, not args.no_browser)
 
@@ -87,8 +98,10 @@ def main():
     elif args.mode == "cli":
         run_cli()
 
+
 def start_web_mode(host: str, port: int, open_browser: bool = True):
     import uvicorn
+
     if open_browser:
         try:
             webbrowser.open(f"http://{host}:{port}")
@@ -96,6 +109,7 @@ def start_web_mode(host: str, port: int, open_browser: bool = True):
             pass
 
     uvicorn.run(fastapi_app, host=host, port=port, log_level="warning", access_log=False)
+
 
 if __name__ == "__main__":
     main()

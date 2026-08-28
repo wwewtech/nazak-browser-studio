@@ -2,9 +2,10 @@
 Spintax Parser & SEO Title/Description Template Engine for YouTube Shorts.
 Supports nested spintax like {Лучший|Топ|Рабочий {впн|vpn}} and placeholders {tg}, {promo}, {year}.
 """
-import re
+
 import random
-from typing import Dict, Any, Optional
+import re
+
 
 def parse_spintax(text: str) -> str:
     """
@@ -22,11 +23,12 @@ def parse_spintax(text: str) -> str:
             if "|" in content:
                 options = content.split("|")
                 chosen = random.choice(options)
-                text = text[:match.start()] + chosen + text[match.end():]
+                text = text[: match.start()] + chosen + text[match.end() :]
                 replaced = True
         if not replaced:
             break
     return text
+
 
 def format_video_metadata(
     title_template: str,
@@ -34,8 +36,8 @@ def format_video_metadata(
     profile_name: str,
     profile_id: str,
     tg_channel: str = "@your_vpn_bot",
-    promo_code: Optional[str] = None
-) -> Dict[str, str]:
+    promo_code: str | None = None,
+) -> dict[str, str]:
     """
     Generates unique, spun title and description with dynamic placeholders.
     """
@@ -62,5 +64,5 @@ def format_video_metadata(
     return {
         "title": spun_title.strip(),
         "description": spun_desc.strip(),
-        "tags": ["#shorts", "#vpn", "#впн", "#ютуб", "#shortsyoutube", "#tech"]
+        "tags": ["#shorts", "#vpn", "#впн", "#ютуб", "#shortsyoutube", "#tech"],
     }

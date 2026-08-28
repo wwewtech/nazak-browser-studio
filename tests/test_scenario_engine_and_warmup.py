@@ -1,12 +1,14 @@
 """
 Unit Tests for Scenario Engine and Autonomous Multi-Step Warmup.
 """
-import pytest
+
 from unittest.mock import MagicMock
-from nazak.core.warmup_engine import (
-    ScenarioStep, WarmupScenario, ScenarioExecutor, BUILTIN_SCENARIOS
-)
+
+import pytest
+
+from nazak.core.warmup_engine import BUILTIN_SCENARIOS, ScenarioExecutor, ScenarioStep, WarmupScenario
 from nazak.models.profile import BrowserProfile, ProxyConfig
+
 
 def test_scenario_step_serialization():
     step = ScenarioStep("open_url", {"url": "https://www.google.com"}, "Navigate to Google")
@@ -17,6 +19,7 @@ def test_scenario_step_serialization():
     recovered = ScenarioStep.from_dict(d)
     assert recovered.action == "open_url"
     assert recovered.description == "Navigate to Google"
+
 
 def test_warmup_scenario_presets():
     assert len(BUILTIN_SCENARIOS) >= 4
@@ -34,7 +37,9 @@ def test_warmup_scenario_presets():
     assert reconstructed.id == scen.id
     assert len(reconstructed.steps) == len(scen.steps)
 
+
 import asyncio
+
 
 def test_scenario_executor_step_execution():
     async def _run():
@@ -59,11 +64,7 @@ def test_scenario_executor_step_execution():
         assert ok2 is True
 
         # 3. Full Scenario run
-        custom_scen = WarmupScenario(
-            id="quick_test",
-            name="Quick Test",
-            steps=[step1, step2]
-        )
+        custom_scen = WarmupScenario(id="quick_test", name="Quick Test", steps=[step1, step2])
         res = await executor.run_scenario_on_profile(custom_scen, "scen_p1")
         assert res["success"] is True
         assert res["completed_steps"] == 2

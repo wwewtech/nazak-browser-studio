@@ -1,16 +1,16 @@
 """
 Suite 3: Account Provisioner, TOTP RFC 6238, OAuth & Token Refresh Edge Cases (20 Tests).
 """
-import pytest
-import json
-import time
-import tempfile
-from unittest.mock import patch, MagicMock
-from pathlib import Path
 
-from nazak.core.account_provisioner import (
-    generate_totp_rfc6238, parse_account_string, AccountProvisioner
-)
+import json
+import tempfile
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from nazak.core.account_provisioner import AccountProvisioner, generate_totp_rfc6238, parse_account_string
 from nazak.core.profile_manager import ProfileManager
 
 
@@ -27,6 +27,7 @@ def temp_provisioner():
 # -------------------------------------------------------------
 # 1. TOTP RFC 6238 Engine Tolerances (6 Tests)
 # -------------------------------------------------------------
+
 
 def test_totp_rfc6238_reference_key():
     """Generates standard 6-digit TOTP code for standard base32 key."""
@@ -49,11 +50,11 @@ def test_totp_rfc6238_spaces_and_lowercase():
 def test_totp_rfc6238_padding_variations():
     """Keys of different non-standard unpadded Base32 lengths are padded correctly."""
     keys = [
-        "MZXW6YTBOI",                   # 10 chars
-        "MZXW6YTBOI======",              # 16 chars padded
-        "JBSWY3DPEHPK3PXP",              # 16 chars
-        "KVKFKRCPNZQUYMLXOVYDSQKJ",      # 24 chars
-        "qq6rxgbtkfetme7digqvl27kkechle5i" # 32 chars
+        "MZXW6YTBOI",  # 10 chars
+        "MZXW6YTBOI======",  # 16 chars padded
+        "JBSWY3DPEHPK3PXP",  # 16 chars
+        "KVKFKRCPNZQUYMLXOVYDSQKJ",  # 24 chars
+        "qq6rxgbtkfetme7digqvl27kkechle5i",  # 32 chars
     ]
     for k in keys:
         code = generate_totp_rfc6238(k)
@@ -89,6 +90,7 @@ def test_totp_rfc6238_custom_digits():
 # 2. OAuth URL Builder & Parser Edge Cases (4 Tests)
 # -------------------------------------------------------------
 
+
 def test_oauth_url_scope_and_access_type(temp_provisioner):
     """OAuth URL includes youtube.upload scope and offline access."""
     prov, _ = temp_provisioner
@@ -102,8 +104,7 @@ def test_oauth_url_custom_redirect_uri(temp_provisioner):
     """Custom redirect URI is included in authorization URL."""
     prov, _ = temp_provisioner
     url = prov.build_oauth_auth_url(
-        client_id="my-client-id.apps.googleusercontent.com",
-        redirect_uri="http://127.0.0.1:8899/oauth2callback"
+        client_id="my-client-id.apps.googleusercontent.com", redirect_uri="http://127.0.0.1:8899/oauth2callback"
     )
     assert "redirect_uri=http://127.0.0.1:8899/oauth2callback" in url
 
@@ -127,6 +128,7 @@ def test_parse_account_string_basic_colon():
 # -------------------------------------------------------------
 # 3. Batch Account Creation & Profile Generation (6 Tests)
 # -------------------------------------------------------------
+
 
 def test_account_provisioner_empty_batch(temp_provisioner):
     """Empty batch raw_text returns an empty list without raising."""
@@ -192,6 +194,7 @@ def test_account_provisioner_profile_id_uniqueness(temp_provisioner):
 # 4. Token Operations Mock Testing (4 Tests)
 # -------------------------------------------------------------
 
+
 def test_account_provisioner_random_fingerprint_generated(temp_provisioner):
     """Created profiles have valid hardware fingerprint with GPU, Screen, CPU, RAM."""
     prov, _ = temp_provisioner
@@ -207,11 +210,9 @@ def test_account_provisioner_refresh_token_mock_success(temp_provisioner):
     """Mock successful refresh token HTTP call."""
     prov, _ = temp_provisioner
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "access_token": "ya29.a0AfH6SMTestToken123",
-        "expires_in": 3600,
-        "token_type": "Bearer"
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"access_token": "ya29.a0AfH6SMTestToken123", "expires_in": 3600, "token_type": "Bearer"}
+    ).encode("utf-8")
     mock_response.__enter__.return_value = mock_response
 
     with patch("urllib.request.build_opener") as mock_opener:
@@ -220,9 +221,7 @@ def test_account_provisioner_refresh_token_mock_success(temp_provisioner):
         mock_opener.return_value = mock_instance
 
         tokens = prov.refresh_access_token(
-            refresh_token="1//04TestRefreshToken",
-            client_id="client_id_123",
-            client_secret="client_sec_123"
+            refresh_token="1//04TestRefreshToken", client_id="client_id_123", client_secret="client_sec_123"
         )
         assert tokens is not None
         assert tokens["access_token"] == "ya29.a0AfH6SMTestToken123"
@@ -237,11 +236,7 @@ def test_account_provisioner_refresh_token_mock_failure(temp_provisioner):
         mock_instance.open.side_effect = Exception("Connection Refused")
         mock_opener.return_value = mock_instance
 
-        tokens = prov.refresh_access_token(
-            refresh_token="bad_token",
-            client_id="cid",
-            client_secret="csec"
-        )
+        tokens = prov.refresh_access_token(refresh_token="bad_token", client_id="cid", client_secret="csec")
         assert tokens is None
 
 
@@ -249,11 +244,9 @@ def test_account_provisioner_exchange_oauth_code_mock_success(temp_provisioner):
     """Mock exchanging authorization code for access and refresh tokens."""
     prov, _ = temp_provisioner
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "access_token": "ya29.fresh_access_token",
-        "refresh_token": "1//04_fresh_refresh_token",
-        "expires_in": 3599
-    }).encode("utf-8")
+    mock_response.read.return_value = json.dumps(
+        {"access_token": "ya29.fresh_access_token", "refresh_token": "1//04_fresh_refresh_token", "expires_in": 3599}
+    ).encode("utf-8")
     mock_response.__enter__.return_value = mock_response
 
     with patch("urllib.request.build_opener") as mock_opener:
@@ -261,10 +254,6 @@ def test_account_provisioner_exchange_oauth_code_mock_success(temp_provisioner):
         mock_instance.open.return_value = mock_response
         mock_opener.return_value = mock_instance
 
-        tokens = prov.exchange_oauth_code_for_tokens(
-            code="4/0AWgavdfTestCode",
-            client_id="cid",
-            client_secret="csec"
-        )
+        tokens = prov.exchange_oauth_code_for_tokens(code="4/0AWgavdfTestCode", client_id="cid", client_secret="csec")
         assert tokens is not None
         assert tokens["refresh_token"] == "1//04_fresh_refresh_token"

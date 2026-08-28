@@ -1,9 +1,12 @@
-import pytest
 from pathlib import Path
+
+import pytest
+
+from nazak.config import find_chrome_executable
+from nazak.core.browser_launcher import BrowserLauncher
 from nazak.models.profile import BrowserProfile, FingerprintConfig
 from nazak.models.proxy import ProxyConfig
-from nazak.core.browser_launcher import BrowserLauncher
-from nazak.config import find_chrome_executable
+
 
 def test_build_chrome_arguments(tmp_path):
     pdir = tmp_path / "profiles"
@@ -14,7 +17,7 @@ def test_build_chrome_arguments(tmp_path):
         id="test_args_prof",
         name="Arg Test Profile",
         proxy=ProxyConfig.parse("http://127.0.0.1:8080"),
-        fingerprint=FingerprintConfig(screen_width=1920, screen_height=1080, language="en-US")
+        fingerprint=FingerprintConfig(screen_width=1920, screen_height=1080, language="en-US"),
     )
 
     fake_chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"

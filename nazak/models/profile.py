@@ -1,13 +1,16 @@
 """
 Browser profile definitions, comprehensive hardware fingerprints, and isolation settings.
 """
-from enum import Enum
+
 import uuid
-from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+from enum import Enum
+
 from pydantic import BaseModel, Field
-from .proxy import ProxyConfig, ProxyType
+
 from .health import HealthCheckResult
+from .proxy import ProxyConfig
+
 
 class ProfileStatus(str, Enum):
     STOPPED = "stopped"
@@ -15,47 +18,59 @@ class ProfileStatus(str, Enum):
     RUNNING = "running"
     ERROR = "error"
 
+
 class MediaDeviceInfo(BaseModel):
     """Spoofed audio/video device."""
+
     kind: str  # audioinput, audiooutput, videoinput
     label: str
     device_id: str
     group_id: str
 
+
 class BatterySpoofConfig(BaseModel):
     """Spoofed Battery Status API."""
+
     charging: bool = True
-    charging_time: Optional[float] = 0.0
-    discharging_time: Optional[float] = None
+    charging_time: float | None = 0.0
+    discharging_time: float | None = None
     level: float = 1.0
+
 
 class GeolocationSpoofConfig(BaseModel):
     """Spoofed Geolocation API matching proxy location."""
+
     enabled: bool = True
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    latitude: float | None = None
+    longitude: float | None = None
     accuracy: float = 15.0
+
 
 class FingerprintConfig(BaseModel):
     """
     Complete, deeply isolated hardware, system and browser fingerprint specification.
     Shields 100% of real host PC characteristics.
     """
+
     # 1. OS & User-Agent
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
     )
     platform: str = "Win32"
-    app_version: str = "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+    app_version: str = (
+        "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+    )
     vendor: str = "Google Inc."
-    
+
     # 2. Client Hints (User-Agent Data)
-    brands: List[Dict[str, str]] = Field(default_factory=lambda: [
-        {"brand": "Not(A:Brand", "version": "99"},
-        {"brand": "Google Chrome", "version": "133"},
-        {"brand": "Chromium", "version": "133"}
-    ])
+    brands: list[dict[str, str]] = Field(
+        default_factory=lambda: [
+            {"brand": "Not(A:Brand", "version": "99"},
+            {"brand": "Google Chrome", "version": "133"},
+            {"brand": "Chromium", "version": "133"},
+        ]
+    )
     platform_version: str = "15.0.0"
     architecture: str = "x86"
     bitness: str = "64"
@@ -78,7 +93,7 @@ class FingerprintConfig(BaseModel):
 
     # 5. Locale & Timezone
     language: str = "en-US,en;q=0.9"
-    languages: List[str] = Field(default_factory=lambda: ["en-US", "en"])
+    languages: list[str] = Field(default_factory=lambda: ["en-US", "en"])
     timezone: str = "America/New_York"
     timezone_offset: int = 300  # minutes
 
@@ -89,14 +104,28 @@ class FingerprintConfig(BaseModel):
     webgl_unmasked_renderer: str = "NVIDIA GeForce RTX 3080"
     max_texture_size: int = 16384
     max_renderbuffer_size: int = 16384
-    max_viewport_dims: List[int] = Field(default_factory=lambda: [16384, 16384])
+    max_viewport_dims: list[int] = Field(default_factory=lambda: [16384, 16384])
 
     # 7. Hardware Peripherals & Media Devices (Mocks real mics, webcams, speakers)
-    media_devices: List[MediaDeviceInfo] = Field(default_factory=lambda: [
-        MediaDeviceInfo(kind="audioinput", label="Default - Microphone (High Definition Audio Device)", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex),
-        MediaDeviceInfo(kind="audiooutput", label="Default - Speakers (Realtek(R) Audio)", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex),
-        MediaDeviceInfo(kind="videoinput", label="HD Pro Webcam C920", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex)
-    ])
+    media_devices: list[MediaDeviceInfo] = Field(
+        default_factory=lambda: [
+            MediaDeviceInfo(
+                kind="audioinput",
+                label="Default - Microphone (High Definition Audio Device)",
+                device_id=uuid.uuid4().hex,
+                group_id=uuid.uuid4().hex,
+            ),
+            MediaDeviceInfo(
+                kind="audiooutput",
+                label="Default - Speakers (Realtek(R) Audio)",
+                device_id=uuid.uuid4().hex,
+                group_id=uuid.uuid4().hex,
+            ),
+            MediaDeviceInfo(
+                kind="videoinput", label="HD Pro Webcam C920", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex
+            ),
+        ]
+    )
 
     # 8. Anti-Fingerprint Noise Injections
     canvas_noise: bool = True
@@ -104,7 +133,7 @@ class FingerprintConfig(BaseModel):
     audio_noise: bool = True
     audio_noise_seed: float = Field(default_factory=lambda: 0.000001)
     client_rects_noise: bool = True
-    
+
     # 9. Hardware APIs Shielding
     battery: BatterySpoofConfig = Field(default_factory=BatterySpoofConfig)
     geolocation: GeolocationSpoofConfig = Field(default_factory=GeolocationSpoofConfig)
@@ -112,20 +141,24 @@ class FingerprintConfig(BaseModel):
     block_port_scanning: bool = True
     block_sensors: bool = True
 
+
 class GoogleSettings(BaseModel):
     """
     Settings tailored specifically for Google Account Automation & Ads campaigns.
     """
-    target_account_email: Optional[str] = None
+
+    target_account_email: str | None = None
     auto_open_page: str = "google_login"
-    custom_url: Optional[str] = None
-    tags: List[str] = Field(default_factory=lambda: ["Google Ads"])
-    notes: Optional[str] = None
+    custom_url: str | None = None
+    tags: list[str] = Field(default_factory=lambda: ["Google Ads"])
+    notes: str | None = None
+
 
 class BrowserProfile(BaseModel):
     """
     Primary Profile Entity encapsulating isolated storage, proxy, and full digital fingerprint.
     """
+
     id: str = Field(default_factory=lambda: f"prof_{uuid.uuid4().hex[:8]}")
     name: str = "Profile"
     group: str = "General"
@@ -133,10 +166,10 @@ class BrowserProfile(BaseModel):
     fingerprint: FingerprintConfig = Field(default_factory=FingerprintConfig)
     google: GoogleSettings = Field(default_factory=GoogleSettings)
     status: ProfileStatus = ProfileStatus.STOPPED
-    pid: Optional[int] = None
-    last_launched_at: Optional[str] = None
+    pid: int | None = None
+    last_launched_at: str | None = None
     total_runtime_seconds: int = 0
-    last_health_check: Optional[HealthCheckResult] = None
+    last_health_check: HealthCheckResult | None = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 

@@ -1,18 +1,19 @@
 """
 Nazak Models module export.
 """
+
+from .health import GoogleReachability, HealthCheckResult, HealthStatus
+from .profile import BrowserProfile, FingerprintConfig, GoogleSettings, ProfileStatus
 from .proxy import ProxyConfig, ProxyType
-from .health import HealthStatus, GoogleReachability, HealthCheckResult
-from .profile import BrowserProfile, ProfileStatus, FingerprintConfig, GoogleSettings
 
 __all__ = [
+    "BrowserProfile",
+    "FingerprintConfig",
+    "GoogleReachability",
+    "GoogleSettings",
+    "HealthCheckResult",
+    "HealthStatus",
+    "ProfileStatus",
     "ProxyConfig",
     "ProxyType",
-    "HealthStatus",
-    "GoogleReachability",
-    "HealthCheckResult",
-    "BrowserProfile",
-    "ProfileStatus",
-    "FingerprintConfig",
-    "GoogleSettings",
 ]

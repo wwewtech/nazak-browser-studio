@@ -1,17 +1,24 @@
 """
 Unit & Integration Tests for Batch Cookie Importer & Exporter Engine.
 """
+
 import json
 import zipfile
 from pathlib import Path
+
 import pytest
 
 from nazak.core.cookie_manager import (
-    parse_bulk_cookie_input, parse_cookie_files_from_dir, parse_cookie_files_from_zip,
-    create_cookies_zip_archive, parse_any_cookies, cookies_to_netscape
+    cookies_to_netscape,
+    create_cookies_zip_archive,
+    parse_any_cookies,
+    parse_bulk_cookie_input,
+    parse_cookie_files_from_dir,
+    parse_cookie_files_from_zip,
 )
 from nazak.core.profile_manager import ProfileManager
-from nazak.models.profile import BrowserProfile, ProxyConfig, FingerprintConfig
+from nazak.models.profile import BrowserProfile, FingerprintConfig, ProxyConfig
+
 
 def test_parse_bulk_cookie_delimited_text():
     raw = """
@@ -32,10 +39,11 @@ def test_parse_bulk_cookie_delimited_text():
     assert parsed["Profile Beta"][0]["name"] == "HSID"
     assert "Profile Gamma" in parsed
 
+
 def test_parse_bulk_cookie_json_map():
     raw_dict = {
         "prof_01": [{"name": "c1", "value": "v1", "domain": ".site.com", "path": "/"}],
-        "prof_02": [{"name": "c2", "value": "v2", "domain": ".site.com", "path": "/"}]
+        "prof_02": [{"name": "c2", "value": "v2", "domain": ".site.com", "path": "/"}],
     }
     raw_str = json.dumps(raw_dict)
     parsed = parse_bulk_cookie_input(raw_str)
@@ -44,12 +52,15 @@ def test_parse_bulk_cookie_json_map():
     assert "prof_02" in parsed
     assert parsed["prof_01"][0]["name"] == "c1"
 
+
 def test_parse_cookie_files_from_dir(tmp_path):
     dir_path = tmp_path / "cookie_folder"
     dir_path.mkdir()
 
     file1 = dir_path / "Account_USA_01.json"
-    file1.write_text(json.dumps([{"name": "SID", "value": "usa_1", "domain": ".google.com", "path": "/"}]), encoding="utf-8")
+    file1.write_text(
+        json.dumps([{"name": "SID", "value": "usa_1", "domain": ".google.com", "path": "/"}]), encoding="utf-8"
+    )
 
     file2 = dir_path / "Account_UK_02.txt"
     file2.write_text(".google.com\tTRUE\t/\tTRUE\t0\tHSID\tuk_2\n", encoding="utf-8")
@@ -64,6 +75,7 @@ def test_parse_cookie_files_from_dir(tmp_path):
     assert parsed["Account_USA_01"][0]["value"] == "usa_1"
     assert parsed["Account_UK_02"][0]["value"] == "uk_2"
 
+
 def test_parse_cookie_files_from_zip(tmp_path):
     zip_path = tmp_path / "cookies_bundle.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -77,10 +89,11 @@ def test_parse_cookie_files_from_zip(tmp_path):
     assert parsed["Farm_01"][0]["value"] == "t1"
     assert parsed["Farm_02"][0]["value"] == "t2"
 
+
 def test_create_cookies_zip_archive_roundtrip():
     cookie_map = {
         "profile_1": [{"name": "A", "value": "1", "domain": ".a.com", "path": "/"}],
-        "profile_2": [{"name": "B", "value": "2", "domain": ".b.com", "path": "/"}]
+        "profile_2": [{"name": "B", "value": "2", "domain": ".b.com", "path": "/"}],
     }
     zip_bytes = create_cookies_zip_archive(cookie_map, format_type="json")
     assert len(zip_bytes) > 0
@@ -89,6 +102,7 @@ def test_create_cookies_zip_archive_roundtrip():
     assert len(parsed) == 2
     assert "profile_1" in parsed
     assert "profile_2" in parsed
+
 
 def test_batch_import_and_export_cookies_in_profile_manager(tmp_path):
     profiles_file = tmp_path / "profiles.json"
@@ -103,7 +117,7 @@ def test_batch_import_and_export_cookies_in_profile_manager(tmp_path):
     cookie_import_map = {
         "Target Alpha": [{"name": "SID", "value": "alpha_secret", "domain": ".google.com", "path": "/"}],
         "Target Beta": [{"name": "SID", "value": "beta_secret", "domain": ".google.com", "path": "/"}],
-        "Brand New Auto Profile": [{"name": "SID", "value": "new_secret", "domain": ".google.com", "path": "/"}]
+        "Brand New Auto Profile": [{"name": "SID", "value": "new_secret", "domain": ".google.com", "path": "/"}],
     }
 
     res = pm.batch_import_cookies(cookie_import_map, auto_create_missing=True, group="Bulk Tests")

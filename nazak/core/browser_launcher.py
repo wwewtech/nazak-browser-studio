@@ -1,41 +1,44 @@
 """
 Chrome Browser Process Launcher with Total Host Isolation & Flag Engineering.
 """
-import os
-import sys
-import subprocess
-import psutil
-from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Any
 
-from ..config import find_chrome_executable, PROFILES_DIR, EXTENSIONS_DIR, GOOGLE_TARGET_URLS
-from ..models.profile import BrowserProfile, ProfileStatus
+import json
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+import psutil
+
+from ..config import EXTENSIONS_DIR, GOOGLE_TARGET_URLS, PROFILES_DIR, find_chrome_executable
+from ..models.profile import BrowserProfile
 from .extension_generator import generate_profile_extension
 
-import socket
-import urllib.request
-import json
-import time
 
 def get_free_port() -> int:
     """Finds an available TCP port on localhost."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
+        s.bind(("127.0.0.1", 0))
         s.listen(1)
         return s.getsockname()[1]
+
 
 class BrowserLauncher:
     """
     Manages spawning, isolating, and terminating Chrome browser profile instances.
     Guarantees 100% isolation from host PC environment.
     """
+
     def __init__(self, profiles_dir: Path = PROFILES_DIR, extensions_dir: Path = EXTENSIONS_DIR):
         self.profiles_dir = profiles_dir
         self.extensions_dir = extensions_dir
-        self.active_processes: Dict[str, subprocess.Popen] = {}
-        self.profile_pids: Dict[str, int] = {}
-        self.profile_cdp_ports: Dict[str, int] = {}
-        self.profile_cdp_ws: Dict[str, str] = {}
+        self.active_processes: dict[str, subprocess.Popen] = {}
+        self.profile_pids: dict[str, int] = {}
+        self.profile_cdp_ports: dict[str, int] = {}
+        self.profile_cdp_ws: dict[str, str] = {}
 
     def is_profile_running(self, profile_id: str) -> bool:
         """Checks if profile process is currently alive."""
@@ -64,13 +67,7 @@ class BrowserLauncher:
         """
         Removes Chromium SingletonLock and socket artifacts to prevent startup lock errors.
         """
-        lock_files = [
-            "SingletonLock",
-            "SingletonCookie",
-            "SingletonSocket",
-            "lockfile",
-            "parent.lock"
-        ]
+        lock_files = ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile", "parent.lock"]
         for name in lock_files:
             f = user_data_dir / name
             try:
@@ -80,12 +77,8 @@ class BrowserLauncher:
                 pass
 
     def build_chrome_args(
-        self,
-        profile: BrowserProfile,
-        chrome_exe: str,
-        custom_url: Optional[str] = None,
-        cdp_port: Optional[int] = None
-    ) -> Tuple[List[str], Optional[str]]:
+        self, profile: BrowserProfile, chrome_exe: str, custom_url: str | None = None, cdp_port: int | None = None
+    ) -> tuple[list[str], str | None]:
         """
         Constructs the strict isolation command line arguments for Chromium launch.
         """
@@ -99,7 +92,7 @@ class BrowserLauncher:
 
         args = [
             chrome_exe,
-            f"--user-data-dir={str(user_data_path)}",
+            f"--user-data-dir={user_data_path!s}",
             "--profile-directory=Default",
             "--no-first-run",
             "--no-default-browser-check",
@@ -151,11 +144,8 @@ class BrowserLauncher:
         return args, ext_path
 
     def launch(
-        self,
-        profile: BrowserProfile,
-        custom_url: Optional[str] = None,
-        cdp_port: Optional[int] = None
-    ) -> Tuple[bool, Optional[int], Optional[str]]:
+        self, profile: BrowserProfile, custom_url: str | None = None, cdp_port: int | None = None
+    ) -> tuple[bool, int | None, str | None]:
         """
         Launches the browser for the given profile.
         Returns: (success, pid, error_message)
@@ -168,8 +158,8 @@ class BrowserLauncher:
             return False, None, "Google Chrome or Chromium executable not found on system"
 
         try:
-            args, ext_path = self.build_chrome_args(profile, chrome_exe, custom_url, cdp_port=cdp_port)
-            
+            args, _ext_path = self.build_chrome_args(profile, chrome_exe, custom_url, cdp_port=cdp_port)
+
             creation_flags = 0
             if sys.platform == "win32":
                 # CREATE_NO_WINDOW (0x08000000) and CREATE_NEW_PROCESS_GROUP (0x00000200)
@@ -181,7 +171,7 @@ class BrowserLauncher:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                close_fds=(sys.platform != "win32")
+                close_fds=(sys.platform != "win32"),
             )
 
             self.active_processes[profile.id] = proc
@@ -191,9 +181,9 @@ class BrowserLauncher:
             return True, proc.pid, None
 
         except Exception as e:
-            return False, None, f"Failed to launch Chrome: {str(e)}"
+            return False, None, f"Failed to launch Chrome: {e!s}"
 
-    def resolve_cdp_ws_url(self, port: int, timeout_sec: float = 5.0) -> Optional[str]:
+    def resolve_cdp_ws_url(self, port: int, timeout_sec: float = 5.0) -> str | None:
         """
         Queries Chromium's /json/version endpoint to obtain the WebSocket debugger URL.
         """
@@ -212,7 +202,7 @@ class BrowserLauncher:
                 time.sleep(0.15)
         return None
 
-    def get_cdp_info(self, profile_id: str) -> Optional[Dict[str, Any]]:
+    def get_cdp_info(self, profile_id: str) -> dict[str, Any] | None:
         """Returns CDP port and WebSocket URL if profile is running with CDP enabled."""
         if not self.is_profile_running(profile_id):
             return None
@@ -225,15 +215,12 @@ class BrowserLauncher:
         return {
             "port": port,
             "ws_endpoint": ws or f"ws://127.0.0.1:{port}/devtools/browser",
-            "http_endpoint": f"http://127.0.0.1:{port}"
+            "http_endpoint": f"http://127.0.0.1:{port}",
         }
 
     def launch_with_cdp(
-        self,
-        profile: BrowserProfile,
-        custom_url: Optional[str] = None,
-        port: Optional[int] = None
-    ) -> Tuple[bool, Optional[int], Optional[int], Optional[str], Optional[str]]:
+        self, profile: BrowserProfile, custom_url: str | None = None, port: int | None = None
+    ) -> tuple[bool, int | None, int | None, str | None, str | None]:
         """
         Launches profile with an assigned CDP remote debugging port and resolves its WebSocket URL.
         Returns: (success, pid, port, ws_endpoint, error_message)
@@ -244,11 +231,14 @@ class BrowserLauncher:
             return False, None, None, None, err
 
         self.profile_cdp_ports[profile.id] = assigned_port
-        ws_url = self.resolve_cdp_ws_url(assigned_port, timeout_sec=6.0) or f"ws://127.0.0.1:{assigned_port}/devtools/browser"
+        ws_url = (
+            self.resolve_cdp_ws_url(assigned_port, timeout_sec=6.0)
+            or f"ws://127.0.0.1:{assigned_port}/devtools/browser"
+        )
         self.profile_cdp_ws[profile.id] = ws_url
         return True, pid, assigned_port, ws_url, None
 
-    def stop(self, profile_id: str) -> Tuple[bool, Optional[str]]:
+    def stop(self, profile_id: str) -> tuple[bool, str | None]:
         """
         Terminates the browser process associated with the profile.
         """
@@ -274,9 +264,7 @@ class BrowserLauncher:
             if pid and sys.platform == "win32":
                 try:
                     subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        ["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                 except Exception:
                     pass

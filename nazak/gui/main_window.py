@@ -1,20 +1,22 @@
-import sys
-import os
-import time
-import threading
 import ctypes
-import uvicorn
+import os
+import sys
+import threading
+import time
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QTimer
 
-from ..config import DEFAULT_HOST, DEFAULT_PORT, PROFILES_FILE, PROFILES_DIR, EXTENSIONS_DIR, DATA_DIR
-from ..core.profile_manager import ProfileManager
-from ..core.browser_launcher import BrowserLauncher
+import uvicorn
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication
+
 from ..api.server import app as fastapi_app
+from ..config import DATA_DIR, DEFAULT_HOST, DEFAULT_PORT, EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE
+from ..core.browser_launcher import BrowserLauncher
+from ..core.profile_manager import ProfileManager
 from .app_window import NazakFluentMainWindow
 from .splash import NazakSplashScreen
+
 
 class ServerThread(threading.Thread):
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
@@ -26,11 +28,7 @@ class ServerThread(threading.Thread):
     def run(self):
         try:
             config = uvicorn.Config(
-                app=fastapi_app,
-                host=self.host,
-                port=self.port,
-                log_level="error",
-                access_log=False
+                app=fastapi_app, host=self.host, port=self.port, log_level="error", access_log=False
             )
             self.server = uvicorn.Server(config)
             self.server.run()
@@ -41,6 +39,7 @@ class ServerThread(threading.Thread):
     def stop(self):
         if self.server:
             self.server.should_exit = True
+
 
 def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
     # Set Windows 10/11 Taskbar App ID so icon displays properly
@@ -55,9 +54,7 @@ def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
     server_thread.start()
 
     # 2. Enable High DPI Scaling for crisp typography
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     # 3. Start Qt Application
     app = QApplication.instance()

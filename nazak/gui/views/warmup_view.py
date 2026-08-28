@@ -2,21 +2,43 @@
 Fluent Google Account Warmup Bot View.
 Fluent Vector Iconography & Zero-Emoji Architecture.
 """
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QLabel, QFrame,
-    QTableWidget, QTableWidgetItem, QHeaderView
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
-    ComboBox, Slider, PrimaryPushButton, PushButton, CheckBox,
-    SimpleCardWidget, TableWidget, InfoBar, InfoBarPosition, FluentIcon
+    CheckBox,
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    Slider,
+    TableWidget,
 )
 
 from ...core.warmup_engine import (
-    WarmupPlan, generate_warmup_urls, WARMUP_NICHES,
-    BUILTIN_SCENARIOS, WarmupScenario, ScenarioStep
+    BUILTIN_SCENARIOS,
+    WARMUP_NICHES,
+    ScenarioStep,
+    WarmupPlan,
+    WarmupScenario,
+    generate_warmup_urls,
 )
 from ...models.profile import ProfileStatus
+
 
 class WarmupView(QWidget):
     def __init__(self, profile_manager, browser_launcher, parent=None):
@@ -36,10 +58,13 @@ class WarmupView(QWidget):
         v_title = QVBoxLayout()
         lbl_title = QLabel("Конструктор сценариев & Органический автопрогрев", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
-        
-        lbl_desc = QLabel("Многошаговые органические маршруты (Google Search, YouTube Shorts, E-Commerce) и накопление Cookie Trust Score", self)
+
+        lbl_desc = QLabel(
+            "Многошаговые органические маршруты (Google Search, YouTube Shorts, E-Commerce) и накопление Cookie Trust Score",
+            self,
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        
+
         v_title.addWidget(lbl_title)
         v_title.addWidget(lbl_desc)
         h_head.addLayout(v_title)
@@ -67,7 +92,7 @@ class WarmupView(QWidget):
         card_set = SimpleCardWidget(container)
         l_set = QVBoxLayout(card_set)
         l_set.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_w1 = QLabel("Параметры и сценарий прогревочной сессии", card_set)
         lbl_w1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_set.addWidget(lbl_w1)
@@ -79,7 +104,7 @@ class WarmupView(QWidget):
         lbl_p = QLabel("Целевой профиль:", card_set)
         lbl_p.setStyleSheet("color: #d4d4d8; font-size: 12px;")
         grid.addWidget(lbl_p, 0, 0)
-        
+
         self.combo_profile = ComboBox(card_set)
         self.populate_profiles()
         grid.addWidget(self.combo_profile, 0, 1)
@@ -99,7 +124,7 @@ class WarmupView(QWidget):
         lbl_n = QLabel("Тематическая ниша поиска:", card_set)
         lbl_n.setStyleSheet("color: #d4d4d8; font-size: 12px;")
         grid.addWidget(lbl_n, 2, 0)
-        
+
         self.combo_niche = ComboBox(card_set)
         self.combo_niche.addItem("E-Commerce & Ритейл • Электроника, Одежда", userData="ecommerce")
         self.combo_niche.addItem("Финансы & Инвестиции • ETF, Акции, Вклады", userData="finance")
@@ -116,7 +141,7 @@ class WarmupView(QWidget):
         card_preview = SimpleCardWidget(container)
         l_prev = QVBoxLayout(card_preview)
         l_prev.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_w2 = QLabel("Шаги выбранного сценария", card_preview)
         lbl_w2.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_prev.addWidget(lbl_w2)
@@ -138,22 +163,28 @@ class WarmupView(QWidget):
         card_telemetry = SimpleCardWidget(container)
         l_tel = QVBoxLayout(card_telemetry)
         l_tel.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_w3 = QLabel("Метрики доверия и параметров прогрева", card_telemetry)
         lbl_w3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_tel.addWidget(lbl_w3)
 
         h_chips = QHBoxLayout()
         lbl_c1 = QLabel("Задержка действий: 4.5с – 12.0с", card_telemetry)
-        lbl_c1.setStyleSheet("background: #22222a; color: #a1a1aa; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
+        lbl_c1.setStyleSheet(
+            "background: #22222a; color: #a1a1aa; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
+        )
         h_chips.addWidget(lbl_c1)
 
         lbl_c2 = QLabel("Сохранение куки: Включено", card_telemetry)
-        lbl_c2.setStyleSheet("background: #22222a; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
+        lbl_c2.setStyleSheet(
+            "background: #22222a; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
+        )
         h_chips.addWidget(lbl_c2)
 
         lbl_c3 = QLabel("Прирост Trust Score: +18 баллов", card_telemetry)
-        lbl_c3.setStyleSheet("background: #22222a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px;")
+        lbl_c3.setStyleSheet(
+            "background: #22222a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
+        )
         h_chips.addWidget(lbl_c3)
         h_chips.addStretch()
         l_tel.addLayout(h_chips)
@@ -237,9 +268,16 @@ class WarmupView(QWidget):
             prof.status = ProfileStatus.RUNNING
             prof.pid = proc_id
             self.profile_manager.update_profile(prof)
-            InfoBar.success("Сценарий запущен", f"Профиль '{prof.name}' выполняет сценарий '{selected_scenario.name}'", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.success(
+                "Сценарий запущен",
+                f"Профиль '{prof.name}' выполняет сценарий '{selected_scenario.name}'",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
         else:
-            InfoBar.error("Ошибка запуска", err or "Не удалось запустить браузер", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.error(
+                "Ошибка запуска", err or "Не удалось запустить браузер", parent=self, position=InfoBarPosition.TOP
+            )
 
     def on_stop_warmup(self):
         pid = self.combo_profile.currentData()

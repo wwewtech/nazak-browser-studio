@@ -3,15 +3,11 @@ Ultra-Realistic Hardware & Digital Fingerprint Generator.
 Generates fully consistent hardware specifications (GPU, CPU, RAM, Screen, Client Hints, Media Devices, Audio/Canvas Seeds)
 guaranteeing complete spoofing and isolation of the host PC characteristics.
 """
+
 import random
 import uuid
-from typing import Dict, Any, List, Optional
-from ..models.profile import (
-    FingerprintConfig,
-    MediaDeviceInfo,
-    BatterySpoofConfig,
-    GeolocationSpoofConfig
-)
+
+from ..models.profile import BatterySpoofConfig, FingerprintConfig, GeolocationSpoofConfig, MediaDeviceInfo
 
 # Realistic GPU combinations
 GPU_PRESETS = [
@@ -22,7 +18,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "NVIDIA GeForce RTX 4090",
         "cores": [16, 24, 32],
         "ram": [32, 64],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (NVIDIA)",
@@ -31,7 +27,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "NVIDIA GeForce RTX 4080",
         "cores": [12, 16, 24],
         "ram": [32, 64],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (NVIDIA)",
@@ -40,7 +36,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "NVIDIA GeForce RTX 3080",
         "cores": [8, 12, 16],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (NVIDIA)",
@@ -49,7 +45,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "NVIDIA GeForce RTX 3070",
         "cores": [8, 12, 16],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (NVIDIA)",
@@ -58,7 +54,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "NVIDIA GeForce RTX 3060",
         "cores": [6, 8, 12],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (AMD)",
@@ -67,7 +63,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "AMD Radeon RX 7800 XT",
         "cores": [8, 12, 16],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (AMD)",
@@ -76,7 +72,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "AMD Radeon RX 6700 XT",
         "cores": [8, 12, 16],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (Intel)",
@@ -85,7 +81,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "Intel(R) UHD Graphics 770",
         "cores": [6, 8, 12],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (Intel)",
@@ -94,7 +90,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "Intel(R) Arc(TM) Graphics",
         "cores": [8, 14, 16],
         "ram": [16, 32],
-        "os": ["windows"]
+        "os": ["windows"],
     },
     {
         "vendor": "Google Inc. (Apple)",
@@ -103,7 +99,7 @@ GPU_PRESETS = [
         "unmasked_renderer": "Apple M3 Max GPU",
         "cores": [14, 16],
         "ram": [36, 64],
-        "os": ["mac"]
+        "os": ["mac"],
     },
     {
         "vendor": "Google Inc. (Apple)",
@@ -112,8 +108,8 @@ GPU_PRESETS = [
         "unmasked_renderer": "Apple M2 Pro GPU",
         "cores": [10, 12],
         "ram": [16, 32],
-        "os": ["mac"]
-    }
+        "os": ["mac"],
+    },
 ]
 
 # Realistic Screen Resolutions with standard aspect ratios
@@ -125,7 +121,7 @@ SCREEN_RESOLUTIONS = [
     {"width": 1440, "height": 900, "avail_w": 1440, "avail_h": 860, "dpr": 1.0},
     {"width": 1680, "height": 1050, "avail_w": 1680, "avail_h": 1010, "dpr": 1.0},
     {"width": 1920, "height": 1200, "avail_w": 1920, "avail_h": 1160, "dpr": 1.0},
-    {"width": 1366, "height": 768, "avail_w": 1366, "avail_h": 728, "dpr": 1.0}
+    {"width": 1366, "height": 768, "avail_w": 1366, "avail_h": 728, "dpr": 1.0},
 ]
 
 USER_AGENTS_WINDOWS = [
@@ -158,11 +154,13 @@ TIMEZONES = [
     ("Australia/Sydney", -600),
 ]
 
+
 def calculate_tz_offset(tz_name: str) -> int:
     """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset()."""
     try:
+        from datetime import datetime
         from zoneinfo import ZoneInfo
-        from datetime import datetime, timezone
+
         now = datetime.now(ZoneInfo(tz_name))
         offset_sec = now.utcoffset().total_seconds()
         # In JS: UTC-5 (New York) is +300, UTC+3 (Moscow) is -180
@@ -173,10 +171,9 @@ def calculate_tz_offset(tz_name: str) -> int:
             return matching_tz[0][1]
         return 300
 
+
 def generate_random_fingerprint(
-    os_type: str = "windows",
-    target_timezone: Optional[str] = None,
-    language: str = "en-US,en;q=0.9"
+    os_type: str = "windows", target_timezone: str | None = None, language: str = "en-US,en;q=0.9"
 ) -> FingerprintConfig:
     """
     Generates a completely randomized, statistically coherent hardware and digital fingerprint.
@@ -205,7 +202,7 @@ def generate_random_fingerprint(
     else:
         tz_name, tz_offset = random.choice(TIMEZONES)
 
-    langs_list = [l.strip().split(";")[0] for l in language.split(",") if l.strip()]
+    langs_list = [lang.strip().split(";")[0] for lang in language.split(",") if lang.strip()]
 
     # Extract chrome version
     c_ver = "133"
@@ -218,7 +215,7 @@ def generate_random_fingerprint(
     brands = [
         {"brand": "Not(A:Brand", "version": "99"},
         {"brand": "Google Chrome", "version": c_ver},
-        {"brand": "Chromium", "version": c_ver}
+        {"brand": "Chromium", "version": c_ver},
     ]
 
     media_devs = [
@@ -226,27 +223,20 @@ def generate_random_fingerprint(
             kind="audioinput",
             label="Microphone (High Definition Audio Device)",
             device_id=uuid.uuid4().hex,
-            group_id=uuid.uuid4().hex
+            group_id=uuid.uuid4().hex,
         ),
         MediaDeviceInfo(
             kind="audiooutput",
             label="Speakers (Realtek High Definition Audio)",
             device_id=uuid.uuid4().hex,
-            group_id=uuid.uuid4().hex
+            group_id=uuid.uuid4().hex,
         ),
         MediaDeviceInfo(
-            kind="videoinput",
-            label="HD WebCam Pro",
-            device_id=uuid.uuid4().hex,
-            group_id=uuid.uuid4().hex
-        )
+            kind="videoinput", label="HD WebCam Pro", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex
+        ),
     ]
 
-    battery = BatterySpoofConfig(
-        charging=True,
-        level=random.choice([0.95, 0.98, 1.0]),
-        charging_time=0
-    )
+    battery = BatterySpoofConfig(charging=True, level=random.choice([0.95, 0.98, 1.0]), charging_time=0)
 
     return FingerprintConfig(
         user_agent=ua,
@@ -280,5 +270,5 @@ def generate_random_fingerprint(
         battery=battery,
         geolocation=GeolocationSpoofConfig(enabled=True),
         webrtc_policy="disable_non_proxied_udp",
-        block_port_scanning=True
+        block_port_scanning=True,
     )

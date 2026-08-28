@@ -3,21 +3,38 @@ Accounts & Provisioning View.
 Batch importer for marketplace Gmail accounts (Login:Pass:2FA:Recovery),
 fingerprint auto-provisioning, TOTP token telemetry, and dual-mode posting setup (Browser Stealth vs OAuth API).
 """
+
 import json
 import time
-from typing import Optional, List
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QHeaderView,
-    QTableWidgetItem, QAbstractItemView
-)
+from typing import Optional
+
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QScrollArea,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
-    SimpleCardWidget, PrimaryPushButton, PushButton, LineEdit,
-    TextEdit, ComboBox, TableWidget, SubtitleLabel, BodyLabel,
-    CaptionLabel, FluentIcon, InfoBar, InfoBarPosition
+    BodyLabel,
+    CaptionLabel,
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    SubtitleLabel,
+    TableWidget,
+    TextEdit,
 )
 
-from ...core.account_provisioner import AccountProvisioner, parse_account_string, generate_totp_rfc6238
+from ...core.account_provisioner import AccountProvisioner, generate_totp_rfc6238, parse_account_string
 from ...models.profile import BrowserProfile, ProfileStatus
 
 
@@ -48,10 +65,16 @@ class AccountsView(QWidget):
         titles_layout.setSpacing(4)
 
         self.title_label = SubtitleLabel("Импорт и подготовка аккаунтов", self)
-        self.title_label.setStyleSheet("font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 22px; font-weight: 700; color: #ffffff;")
-        
-        self.desc_label = CaptionLabel("Пакетный импорт Gmail (Login:Pass:2FA:Recovery), создание отпечатков железа и авто-активация", self)
-        self.desc_label.setStyleSheet("font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 12px; color: #a1a1aa;")
+        self.title_label.setStyleSheet(
+            "font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 22px; font-weight: 700; color: #ffffff;"
+        )
+
+        self.desc_label = CaptionLabel(
+            "Пакетный импорт Gmail (Login:Pass:2FA:Recovery), создание отпечатков железа и авто-активация", self
+        )
+        self.desc_label.setStyleSheet(
+            "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 12px; color: #a1a1aa;"
+        )
 
         titles_layout.addWidget(self.title_label)
         titles_layout.addWidget(self.desc_label)
@@ -74,7 +97,9 @@ class AccountsView(QWidget):
         lbl_t1 = CaptionLabel("ВСЕГО ИМПОРТИРОВАНО", self.card_total)
         lbl_t1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
         self.lbl_val_total = BodyLabel("0", self.card_total)
-        self.lbl_val_total.setStyleSheet("font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 24px; font-weight: 700; color: #ffffff;")
+        self.lbl_val_total.setStyleSheet(
+            "font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 24px; font-weight: 700; color: #ffffff;"
+        )
         l_total.addWidget(lbl_t1)
         l_total.addWidget(self.lbl_val_total)
 
@@ -84,7 +109,9 @@ class AccountsView(QWidget):
         lbl_m1 = CaptionLabel("РЕЖИМ ПОСТИНГА", self.card_mode)
         lbl_m1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
         self.lbl_val_mode = BodyLabel("Браузерный Stealth • YouTube Studio", self.card_mode)
-        self.lbl_val_mode.setStyleSheet("font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #38bdf8;")
+        self.lbl_val_mode.setStyleSheet(
+            "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #38bdf8;"
+        )
         l_mode.addWidget(lbl_m1)
         l_mode.addWidget(self.lbl_val_mode)
 
@@ -94,7 +121,9 @@ class AccountsView(QWidget):
         lbl_s1 = CaptionLabel("СТАТУС ИЗОЛЯЦИИ", self.card_status)
         lbl_s1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
         self.lbl_val_status = BodyLabel("100% Аппаратная маскировка", self.card_status)
-        self.lbl_val_status.setStyleSheet("font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #22c55e;")
+        self.lbl_val_status.setStyleSheet(
+            "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #22c55e;"
+        )
         l_stat.addWidget(lbl_s1)
         l_stat.addWidget(self.lbl_val_status)
 
@@ -136,10 +165,9 @@ class AccountsView(QWidget):
         lbl_pm = CaptionLabel("Режим постинга:", config_card)
         lbl_pm.setStyleSheet("color: #a1a1aa; font-weight: 600;")
         self.cmb_mode = ComboBox(config_card)
-        self.cmb_mode.addItems([
-            "Браузерный Stealth • YouTube Studio (Без лимитов API)",
-            "YouTube Data API v3 • Google Cloud OAuth 2.0"
-        ])
+        self.cmb_mode.addItems(
+            ["Браузерный Stealth • YouTube Studio (Без лимитов API)", "YouTube Data API v3 • Google Cloud OAuth 2.0"]
+        )
         self.cmb_mode.currentIndexChanged.connect(self.on_mode_changed)
 
         ctrl_layout.addWidget(lbl_grp)
@@ -155,9 +183,9 @@ class AccountsView(QWidget):
         # 4. Table of Provisioned Accounts
         self.table = TableWidget(self)
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels([
-            "Email / Профиль", "Группа", "2FA Ключ", "Текущий 2FA Код", "Режим", "Действия"
-        ])
+        self.table.setHorizontalHeaderLabels(
+            ["Email / Профиль", "Группа", "2FA Ключ", "Текущий 2FA Код", "Режим", "Действия"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -188,7 +216,7 @@ class AccountsView(QWidget):
                 content="Вставьте хотя бы одну строку в формате login:pass:2fa:recovery.",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
-                duration=3500
+                duration=3500,
             )
             return
 
@@ -196,9 +224,7 @@ class AccountsView(QWidget):
         mode = "browser_stealth" if self.cmb_mode.currentIndex() == 0 else "oauth_api"
 
         created = self.provisioner.batch_import_and_create_profiles(
-            raw_text=raw_text,
-            group_name=group,
-            posting_mode=mode
+            raw_text=raw_text, group_name=group, posting_mode=mode
         )
 
         if created:
@@ -209,7 +235,7 @@ class AccountsView(QWidget):
                 content=f"Создано {len(created)} изолированных профилей с аппаратными отпечатками железа!",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
-                duration=4000
+                duration=4000,
             )
         else:
             InfoBar.error(
@@ -217,16 +243,21 @@ class AccountsView(QWidget):
                 content="Не удалось распознать формат строк. Проверьте разделители (login:pass:2fa:recovery).",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
-                duration=4000
+                duration=4000,
             )
 
     def refresh_table(self):
         profiles = self.profile_manager.list_profiles()
         imported = [
-            p for p in profiles 
-            if "Imported" in p.group or "Retriv" in p.group or "DarkStore" in p.group or "2FA" in p.google.tags or bool(p.google.notes and "account_email" in p.google.notes)
+            p
+            for p in profiles
+            if "Imported" in p.group
+            or "Retriv" in p.group
+            or "DarkStore" in p.group
+            or "2FA" in p.google.tags
+            or bool(p.google.notes and "account_email" in p.google.notes)
         ]
-        
+
         self.lbl_val_total.setText(str(len(imported)))
         self.table.setRowCount(len(imported))
 
@@ -295,7 +326,7 @@ class AccountsView(QWidget):
                     content=f"Профиль {profile.name} открыт в изолированном окне (PID {pid}).",
                     parent=self,
                     position=InfoBarPosition.TOP_RIGHT,
-                    duration=3000
+                    duration=3000,
                 )
             else:
                 InfoBar.error(
@@ -303,7 +334,7 @@ class AccountsView(QWidget):
                     content=err or "Не удалось запустить браузер",
                     parent=self,
                     position=InfoBarPosition.TOP_RIGHT,
-                    duration=4000
+                    duration=4000,
                 )
         except Exception as e:
             InfoBar.error(
@@ -311,5 +342,5 @@ class AccountsView(QWidget):
                 content=str(e),
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
-                duration=4000
+                duration=4000,
             )

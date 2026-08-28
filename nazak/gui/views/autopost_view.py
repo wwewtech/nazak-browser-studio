@@ -2,18 +2,37 @@
 Fluent YouTube Shorts Stealth Autoposter View.
 Fluent Iconography & Zero-Emoji Architecture.
 """
+
 from pathlib import Path
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QFileDialog, QTableWidgetItem, QLabel, QFrame
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
-    LineEdit, TextEdit, PrimaryPushButton, PushButton,
-    SimpleCardWidget, TableWidget, CheckBox, InfoBar, InfoBarPosition, FluentIcon
+    CheckBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    TableWidget,
+    TextEdit,
 )
 
-from ..workers import AutopostBatchWorker
 from ...core.spintax import format_video_metadata, parse_spintax
+from ..workers import AutopostBatchWorker
+
 
 class AutopostView(QWidget):
     def __init__(self, profile_manager, browser_launcher, parent=None):
@@ -35,10 +54,13 @@ class AutopostView(QWidget):
         v_title = QVBoxLayout()
         lbl_title = QLabel("Автопостинг YouTube Shorts", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
-        
-        lbl_desc = QLabel("Автономная уникализация видео через FFmpeg, генерация спинтакс-заголовков и публикация Shorts через CDP", self)
+
+        lbl_desc = QLabel(
+            "Автономная уникализация видео через FFmpeg, генерация спинтакс-заголовков и публикация Shorts через CDP",
+            self,
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        
+
         v_title.addWidget(lbl_title)
         v_title.addWidget(lbl_desc)
         h_head.addLayout(v_title)
@@ -62,7 +84,7 @@ class AutopostView(QWidget):
         card_src = SimpleCardWidget(container)
         l_src = QVBoxLayout(card_src)
         l_src.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_s1 = QLabel("Исходный видеоролик и воронка", card_src)
         lbl_s1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_src.addWidget(lbl_s1)
@@ -88,13 +110,13 @@ class AutopostView(QWidget):
         card_spin = SimpleCardWidget(container)
         l_spin = QVBoxLayout(card_spin)
         l_spin.setContentsMargins(16, 14, 16, 14)
-        
+
         h_spin_head = QHBoxLayout()
         lbl_s2 = QLabel("Спинтакс-шаблоны метаданных", card_spin)
         lbl_s2.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_spin_head.addWidget(lbl_s2)
         h_spin_head.addStretch()
-        
+
         btn_preview = PushButton(FluentIcon.SYNC, "Сгенерировать примеры", card_spin)
         btn_preview.clicked.connect(self.on_preview_spintax)
         h_spin_head.addWidget(btn_preview)
@@ -107,12 +129,16 @@ class AutopostView(QWidget):
 
         self.input_desc = TextEdit(card_spin)
         self.input_desc.setMaximumHeight(75)
-        self.input_desc.setText("{Скачать быстрый VPN без ограничений:|Как смотреть ютуб в 4K в РФ:} {tg}\nПромокод на скидку: {promo}\n\n#shorts #vpn #впн #ютуб")
+        self.input_desc.setText(
+            "{Скачать быстрый VPN без ограничений:|Как смотреть ютуб в 4K в РФ:} {tg}\nПромокод на скидку: {promo}\n\n#shorts #vpn #впн #ютуб"
+        )
         self.input_desc.textChanged.connect(self.on_preview_spintax)
         l_spin.addWidget(self.input_desc)
 
         self.lbl_preview_sample = QLabel("", card_spin)
-        self.lbl_preview_sample.setStyleSheet("color: #38bdf8; font-family: monospace; font-size: 11px; background: #22222a; padding: 8px 12px; border-radius: 6px; border: 1px solid #2e2e3a;")
+        self.lbl_preview_sample.setStyleSheet(
+            "color: #38bdf8; font-family: monospace; font-size: 11px; background: #22222a; padding: 8px 12px; border-radius: 6px; border: 1px solid #2e2e3a;"
+        )
         l_spin.addWidget(self.lbl_preview_sample)
         layout.addWidget(card_spin)
 
@@ -120,13 +146,13 @@ class AutopostView(QWidget):
         card_profs = SimpleCardWidget(container)
         l_profs = QVBoxLayout(card_profs)
         l_profs.setContentsMargins(16, 14, 16, 14)
-        
+
         h_prof_head = QHBoxLayout()
         lbl_s3 = QLabel("Выбор аккаунтов для публикации", card_profs)
         lbl_s3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_prof_head.addWidget(lbl_s3)
         h_prof_head.addStretch()
-        
+
         btn_all = PushButton("Выбрать все", card_profs)
         btn_all.clicked.connect(lambda: self.toggle_all_checkboxes(True))
         h_prof_head.addWidget(btn_all)
@@ -151,7 +177,7 @@ class AutopostView(QWidget):
         card_table = SimpleCardWidget(container)
         l_table = QVBoxLayout(card_table)
         l_table.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_s4 = QLabel("Журнал очереди автопостинга", card_table)
         lbl_s4.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_table.addWidget(lbl_s4)
@@ -170,7 +196,7 @@ class AutopostView(QWidget):
         # Launch Button with Fluent Icon
         h_bot = QHBoxLayout()
         h_bot.addStretch()
-        
+
         self.btn_start_bottom = PrimaryPushButton(FluentIcon.SEND, "Запустить автопостинг", self)
         self.btn_start_bottom.setMinimumWidth(240)
         self.btn_start_bottom.clicked.connect(self.on_start_autopost)
@@ -187,7 +213,9 @@ class AutopostView(QWidget):
         d_tmpl = self.input_desc.toPlainText()
         tg = self.input_tg.text()
         sample = format_video_metadata(t_tmpl, d_tmpl, "Profile 01", "prof_01", tg)
-        self.lbl_preview_sample.setText(f"Превью заголовка: {sample['title']}\nПревью описания: {sample['description'].splitlines()[0]}")
+        self.lbl_preview_sample.setText(
+            f"Превью заголовка: {sample['title']}\nПревью описания: {sample['description'].splitlines()[0]}"
+        )
 
     def toggle_all_checkboxes(self, checked: bool):
         for cb in self.profile_checkboxes.values():
@@ -224,13 +252,18 @@ class AutopostView(QWidget):
             source_video_path=vpath,
             title_template=self.input_title.text(),
             description_template=self.input_desc.toPlainText(),
-            tg_channel=self.input_tg.text()
+            tg_channel=self.input_tg.text(),
         )
         self.worker.job_update_signal.connect(self.on_job_update)
         self.worker.batch_finished_signal.connect(self.on_batch_finished)
         self.worker.start()
 
-        InfoBar.success("Очередь запущена", f"Автопостинг начат для {len(selected_ids)} профилей", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Очередь запущена",
+            f"Автопостинг начат для {len(selected_ids)} профилей",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
 
     def on_job_update(self, profile_id: str, status: str, message: str):
         for row in range(self.table.rowCount()):
@@ -249,4 +282,6 @@ class AutopostView(QWidget):
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(True)
             btn.setText("Запустить автопостинг")
-        InfoBar.success("Очередь завершена", f"Обработано {len(results)} публикаций", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Очередь завершена", f"Обработано {len(results)} публикаций", parent=self, position=InfoBarPosition.TOP
+        )

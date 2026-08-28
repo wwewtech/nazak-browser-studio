@@ -1,0 +1,188 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nazak-browser-studio"
+version = "1.4.1"
+description = "Next-Generation Hardware-Isolated Anti-Detect Browser, Local CDP Automation REST API & YouTube Shorts Autoposter"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Nazak Digital / wwewtech", email = "dev@nazak.io" }
+]
+keywords = [
+    "antidetect", "browser", "automation", "cdp", "playwright",
+    "pyqt6", "qfluentwidgets", "selenium", "fingerprinting", "proxy"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Testing :: Traffic Generation",
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "httpx[socks]>=0.27.0",
+    "requests[socks]>=2.31.0",
+    "PySocks>=1.7.1",
+    "psutil>=5.9.0",
+    "PyQt6>=6.7.0",
+    "qfluentwidgets>=1.7.0",
+    "rich>=13.7.0",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "pre-commit>=3.7.0",
+    "pyinstaller>=6.10.0",
+]
+
+[project.scripts]
+nazak = "nazak.main:main"
+
+[project.urls]
+Homepage = "https://github.com/wwewtech/nazak-browser-studio"
+Documentation = "https://github.com/wwewtech/nazak-browser-studio/blob/main/docs/API_REFERENCE.md"
+Repository = "https://github.com/wwewtech/nazak-browser-studio.git"
+Issues = "https://github.com/wwewtech/nazak-browser-studio/issues"
+Changelog = "https://github.com/wwewtech/nazak-browser-studio/releases"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nazak*"]
+
+# -----------------------------------------------------------------------------
+# Ruff Configuration (High-Performance Linter & Formatter)
+# -----------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "dist_installer",
+    ".venv",
+    "venv",
+    "data",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",    # line length handled by formatter
+    "B008",    # function call in argument defaults (FastAPI Depends)
+    "SIM105",  # contextlib.suppress instead of try-except-pass
+    "SIM108",  # ternary operator instead of if-else
+    "RUF012",  # mutable class attributes (Pydantic / Qt compatibility)
+    "RUF001",  # ambiguous unicode character (Cyrillic strings in UI)
+    "RUF002",  # ambiguous unicode character in docstrings
+    "RUF003",  # ambiguous unicode character in comments
+    "RUF006",  # store reference to asyncio.create_task
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nazak"]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "F841",    # unused variables in test assertions
+    "E402",    # module level import not at top
+    "F401",    # unused imports in test fixtures
+    "B011",    # assert False
+    "RUF059",  # unused unpacked variable
+    "RUF015",  # next(iter())
+    "UP007",   # Union type annotations in older test signatures
+]
+"nazak/tools/*" = ["E402", "F401"]
+"nazak/main.py" = ["E402"]
+"nazak/gui/*" = ["E402", "F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# -----------------------------------------------------------------------------
+# Pytest Configuration
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-p no:asyncio --strict-markers -ra"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# -----------------------------------------------------------------------------
+# Coverage Configuration
+# -----------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["nazak"]
+omit = [
+    "nazak/tools/*",
+    "tests/*",
+    "nazak/gui/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass",
+    "except ImportError:",
+]
+
+# -----------------------------------------------------------------------------
+# MyPy Configuration (Static Type Checker)
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = false
+disallow_untyped_defs = false
+exclude = [
+    "build/",
+    "dist/",
+    "tests/",
+    "nazak/tools/",
+]

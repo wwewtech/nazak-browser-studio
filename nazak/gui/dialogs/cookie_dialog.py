@@ -2,14 +2,22 @@
 Fluent Cookie Manager & Cache Cleaner Dialog.
 Fluent Iconography Architecture.
 """
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
 from qfluentwidgets import (
-    TextEdit, PrimaryPushButton, PushButton, InfoBar, InfoBarPosition, SimpleCardWidget, FluentIcon
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    TextEdit,
 )
 
-from ...core.cookie_manager import parse_any_cookies, cookies_to_netscape
+from ...core.cookie_manager import cookies_to_netscape, parse_any_cookies
 from ..style import FLUENT_DARK_QSS
+
 
 class CookieManagerDialog(QDialog):
     def __init__(self, profile, profile_manager, parent=None):
@@ -30,19 +38,22 @@ class CookieManagerDialog(QDialog):
         lbl_title.setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 700;")
         layout.addWidget(lbl_title)
 
-        lbl_desc = QLabel("Вставьте куки в формате JSON • Cookie-Editor, EditThisCookie или Netscape HTTP Cookie File.", self)
+        lbl_desc = QLabel(
+            "Вставьте куки в формате JSON • Cookie-Editor, EditThisCookie или Netscape HTTP Cookie File.", self
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         layout.addWidget(lbl_desc)
 
         self.cookie_editor = TextEdit(self)
         self.cookie_editor.setPlaceholderText('[{"name": "SID", "value": "...", "domain": ".google.com", "path": "/"}]')
-        
+
         # Pre-populate with existing cookies if available
         existing_cookies = self.profile_manager.load_profile_cookies(self.profile.id)
         if existing_cookies:
             import json
+
             self.cookie_editor.setText(json.dumps(existing_cookies, indent=2, ensure_ascii=False))
-            
+
         layout.addWidget(self.cookie_editor)
 
         btn_layout = QHBoxLayout()
@@ -72,14 +83,26 @@ class CookieManagerDialog(QDialog):
 
         cookies = parse_any_cookies(text)
         if not cookies:
-            InfoBar.error("Ошибка парсинга", "Не удалось распознать формат JSON или Netscape", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.error(
+                "Ошибка парсинга",
+                "Не удалось распознать формат JSON или Netscape",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
             return
 
         # Persist cookies to profile storage
         self.profile_manager.save_profile_cookies(self.profile.id, cookies)
-        InfoBar.success("Куки импортированы", f"Успешно сохранено {len(cookies)} записей в профиль!", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Куки импортированы",
+            f"Успешно сохранено {len(cookies)} записей в профиль!",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
         self.accept()
 
     def on_clear_cache(self):
         self.profile_manager.clear_profile_cache(self.profile.id)
-        InfoBar.success("Кэш очищен", "Кэш браузера и Service Workers удалены", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Кэш очищен", "Кэш браузера и Service Workers удалены", parent=self, position=InfoBarPosition.TOP
+        )

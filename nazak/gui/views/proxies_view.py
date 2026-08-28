@@ -2,19 +2,26 @@
 Fluent Proxy Bulk Manager & Diagnostics Inspector View.
 Fluent Vector Iconography & Zero-Emoji Architecture.
 """
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QScrollArea, QLabel, QHeaderView
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QHeaderView, QLabel, QScrollArea, QTableWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    TextEdit, LineEdit, PrimaryPushButton, PushButton,
-    SimpleCardWidget, TableWidget, InfoBar, InfoBarPosition, FluentIcon
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    TableWidget,
+    TextEdit,
 )
 
-from ..workers import CheckAllProxiesWorker
-from ...models.profile import BrowserProfile, ProxyConfig, GoogleSettings
 from ...core.fingerprint_generator import generate_random_fingerprint
 from ...models.health import HealthStatus
+from ...models.profile import BrowserProfile, GoogleSettings, ProxyConfig
+from ..workers import CheckAllProxiesWorker
+
 
 class ProxiesView(QWidget):
     def __init__(self, profile_manager, browser_launcher, parent=None):
@@ -33,10 +40,12 @@ class ProxiesView(QWidget):
         # Header
         lbl_title = QLabel("Прокси и пакетный импорт", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
-        
-        lbl_desc = QLabel("Массовый ввод прокси HTTP / HTTPS / SOCKS5 с автоматической генерацией аппаратных отпечатков", self)
+
+        lbl_desc = QLabel(
+            "Массовый ввод прокси HTTP / HTTPS / SOCKS5 с автоматической генерацией аппаратных отпечатков", self
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
-        
+
         main_layout.addWidget(lbl_title)
         main_layout.addWidget(lbl_desc)
 
@@ -44,7 +53,7 @@ class ProxiesView(QWidget):
         card_bulk = SimpleCardWidget(self)
         l_bulk = QVBoxLayout(card_bulk)
         l_bulk.setContentsMargins(16, 14, 16, 14)
-        
+
         lbl_b1 = QLabel("Вставьте список прокси — 1 строка для каждого нового профиля", card_bulk)
         lbl_b1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_bulk.addWidget(lbl_b1)
@@ -61,7 +70,7 @@ class ProxiesView(QWidget):
         h_bulk_actions.addWidget(self.input_group_name)
 
         btn_import = PrimaryPushButton(FluentIcon.FOLDER_ADD, "Импортировать и создать", card_bulk)
-        
+
         btn_import.clicked.connect(self.on_bulk_import)
         h_bulk_actions.addWidget(btn_import)
         l_bulk.addLayout(h_bulk_actions)
@@ -72,7 +81,7 @@ class ProxiesView(QWidget):
         card_table = SimpleCardWidget(self)
         l_table = QVBoxLayout(card_table)
         l_table.setContentsMargins(16, 14, 16, 14)
-        
+
         h_tbl_head = QHBoxLayout()
         lbl_t1 = QLabel("Таблица сетевой диагностики и доступности Google", card_table)
         lbl_t1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
@@ -86,10 +95,10 @@ class ProxiesView(QWidget):
 
         self.table = TableWidget(card_table)
         self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels([
-            "Профиль", "Прокси сервер", "Пинг", "Внешний IP • Страна", "Google Статус", "YouTube Доступ", "Смена IP"
-        ])
-        
+        self.table.setHorizontalHeaderLabels(
+            ["Профиль", "Прокси сервер", "Пинг", "Внешний IP • Страна", "Google Статус", "YouTube Доступ", "Смена IP"]
+        )
+
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
@@ -98,7 +107,7 @@ class ProxiesView(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
-        
+
         self.table.setColumnWidth(0, 200)
         self.table.setColumnWidth(1, 140)
         self.table.setColumnWidth(2, 70)
@@ -114,20 +123,20 @@ class ProxiesView(QWidget):
         self.table.setRowCount(len(profiles))
         for row, p in enumerate(profiles):
             self.table.setItem(row, 0, QTableWidgetItem(p.name))
-            
+
             proxy_str = p.proxy.raw or f"{p.proxy.host}:{p.proxy.port}" if p.proxy.host else "Прямое"
             self.table.setItem(row, 1, QTableWidgetItem(proxy_str))
 
             if p.last_health_check:
                 h = p.last_health_check
                 self.table.setItem(row, 2, QTableWidgetItem(f"{h.ping_ms or 1} мс"))
-                
+
                 country_part = f" • {h.country}" if h.country else ""
                 self.table.setItem(row, 3, QTableWidgetItem(f"{h.ip or '-'}{country_part}"))
-                
+
                 g_status = "Google OK" if h.status == HealthStatus.HEALTHY else "НЕДОСТУПЕН"
                 self.table.setItem(row, 4, QTableWidgetItem(g_status))
-                
+
                 yt_status = "Доступен" if h.google.youtube else "Блок"
                 self.table.setItem(row, 5, QTableWidgetItem(yt_status))
             else:
@@ -149,12 +158,20 @@ class ProxiesView(QWidget):
         if not prof or not prof.proxy.rotation_url:
             return
         import urllib.request
+
         try:
             req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
-            with urllib.request.urlopen(req, timeout=8.0) as resp:
-                InfoBar.success("IP изменен", f"Запрос на ротацию IP для '{prof.name}' успешно отправлен", parent=self, position=InfoBarPosition.TOP)
+            with urllib.request.urlopen(req, timeout=8.0):
+                InfoBar.success(
+                    "IP изменен",
+                    f"Запрос на ротацию IP для '{prof.name}' успешно отправлен",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                )
         except Exception as e:
-            InfoBar.warning("Ошибка ротации", f"Не удалось сменить IP: {str(e)}", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Ошибка ротации", f"Не удалось сменить IP: {e!s}", parent=self, position=InfoBarPosition.TOP
+            )
 
     def on_bulk_import(self):
         text = self.input_proxies.toPlainText().strip()
@@ -162,9 +179,9 @@ class ProxiesView(QWidget):
             InfoBar.warning("Пустой ввод", "Вставьте строки прокси в поле", parent=self, position=InfoBarPosition.TOP)
             return
 
-        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
         grp = self.input_group_name.text().strip() or "Imported"
-        
+
         created = 0
         start_idx = len(self.profile_manager.list_profiles()) + 1
         for idx, line in enumerate(lines, start=start_idx):
@@ -172,23 +189,24 @@ class ProxiesView(QWidget):
             fp = generate_random_fingerprint("windows")
             host_str = p_conf.host or "Direct"
             prof = BrowserProfile(
-                name=f"Profile {idx:02d} • {host_str}",
-                group=grp,
-                proxy=p_conf,
-                fingerprint=fp,
-                google=GoogleSettings()
+                name=f"Profile {idx:02d} • {host_str}", group=grp, proxy=p_conf, fingerprint=fp, google=GoogleSettings()
             )
             self.profile_manager.create_profile(prof)
             created += 1
 
         self.input_proxies.clear()
         self.refresh_table()
-        InfoBar.success("Успешный импорт", f"Создано {created} профилей с уникальными отпечатками", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Успешный импорт",
+            f"Создано {created} профилей с уникальными отпечатками",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
 
     def on_check_all(self):
         profs = self.profile_manager.list_profiles()
         InfoBar.info("Диагностика", f"Проверка {len(profs)} прокси...", parent=self, position=InfoBarPosition.TOP)
-        
+
         self.worker = CheckAllProxiesWorker(profs, self.profile_manager.profiles_dir)
         self.worker.finished_signal.connect(self.on_checks_done)
         self.worker.start()

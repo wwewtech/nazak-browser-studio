@@ -3,25 +3,22 @@ Undetectable Stealth YouTube Shorts Uploader.
 Connects via CDP to running anti-detect profiles with humanized Bezier mouse curves,
 natural keystroke typing, and automatic YouTube Studio workflow execution.
 """
+
 import asyncio
-import random
 import math
-import time
+import random
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Any
+
 
 class HumanCursor:
     """
     Generates realistic cubic Bezier curve trajectories with natural tremor.
     """
+
     @staticmethod
     def bezier_point(p0: float, p1: float, p2: float, p3: float, t: float) -> float:
-        return (
-            (1 - t) ** 3 * p0 +
-            3 * (1 - t) ** 2 * t * p1 +
-            3 * (1 - t) * t ** 2 * p2 +
-            t ** 3 * p3
-        )
+        return (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t**2 * p2 + t**3 * p3
 
     @classmethod
     async def move_to(cls, page, target_x: float, target_y: float, current_x: float = 100, current_y: float = 100):
@@ -48,6 +45,7 @@ class HumanCursor:
         await page.mouse.move(target_x, target_y)
         await asyncio.sleep(random.uniform(0.05, 0.12))
 
+
 async def human_type(element, text: str):
     """
     Types text character-by-character with randomized human intervals.
@@ -58,20 +56,18 @@ async def human_type(element, text: str):
             # Natural thinking pause
             await asyncio.sleep(random.uniform(0.25, 0.55))
 
+
 class YouTubeUploader:
     """
     Automated uploader executing stealth Shorts uploads via CDP.
     """
+
     def __init__(self, cdp_url: str):
         self.cdp_url = cdp_url
 
     async def upload_shorts(
-        self,
-        video_path: Path,
-        title: str,
-        description: str,
-        progress_callback: Optional[Any] = None
-    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        self, video_path: Path, title: str, description: str, progress_callback: Any | None = None
+    ) -> tuple[bool, str | None, str | None]:
         """
         Uploads a video to YouTube Studio.
         Returns: (success, published_video_url, error_message)
@@ -97,11 +93,17 @@ class YouTubeUploader:
                 current_url = page.url
                 if "accounts.google.com" in current_url or "ServiceLogin" in current_url:
                     await browser.close()
-                    return False, None, "Account session expired or not logged in. Please log in first via '⚡ Google' menu."
+                    return (
+                        False,
+                        None,
+                        "Account session expired or not logged in. Please log in first via '⚡ Google' menu.",
+                    )
 
                 # Dismiss 'Welcome to YouTube Studio' modal if present
                 try:
-                    continue_btn = page.locator("button:has-text('Continue'), button:has-text('Продолжить'), #continue-button").first
+                    continue_btn = page.locator(
+                        "button:has-text('Continue'), button:has-text('Продолжить'), #continue-button"
+                    ).first
                     if await continue_btn.is_visible(timeout=3000):
                         await continue_btn.click()
                         await asyncio.sleep(1.5)
@@ -110,7 +112,9 @@ class YouTubeUploader:
 
                 # Dismiss any tooltips
                 try:
-                    close_tip = page.locator("button:has-text('Close'), button:has-text('Dismiss'), button:has-text('Понятно')").first
+                    close_tip = page.locator(
+                        "button:has-text('Close'), button:has-text('Dismiss'), button:has-text('Понятно')"
+                    ).first
                     if await close_tip.is_visible(timeout=2000):
                         await close_tip.click()
                         await asyncio.sleep(1.0)
@@ -121,11 +125,15 @@ class YouTubeUploader:
                     await progress_callback("Locating upload controls...")
 
                 # 1. Click upload button (center dashboard button or CREATE menu)
-                center_upload = page.locator("button:has-text('Upload videos'), button:has-text('Добавить видео'), #upload-button, [aria-label*='Upload' i]").first
+                center_upload = page.locator(
+                    "button:has-text('Upload videos'), button:has-text('Добавить видео'), #upload-button, [aria-label*='Upload' i]"
+                ).first
                 if await center_upload.is_visible(timeout=3000):
                     await center_upload.click()
                 else:
-                    create_btn = page.locator("#create-icon, [aria-label='Create'], [aria-label='Создать'], button:has-text('CREATE'), button:has-text('СОЗДАТЬ')").first
+                    create_btn = page.locator(
+                        "#create-icon, [aria-label='Create'], [aria-label='Создать'], button:has-text('CREATE'), button:has-text('СОЗДАТЬ')"
+                    ).first
                     await create_btn.wait_for(state="visible", timeout=20000)
                     box = await create_btn.bounding_box()
                     if box:
@@ -135,7 +143,9 @@ class YouTubeUploader:
                         await create_btn.click()
                     await asyncio.sleep(1.5)
 
-                    upload_item = page.locator("#text-item-0, tp-yt-paper-item:has-text('Upload videos'), tp-yt-paper-item:has-text('Добавить видео')").first
+                    upload_item = page.locator(
+                        "#text-item-0, tp-yt-paper-item:has-text('Upload videos'), tp-yt-paper-item:has-text('Добавить видео')"
+                    ).first
                     await upload_item.click()
 
                 await asyncio.sleep(2.5)
@@ -153,7 +163,9 @@ class YouTubeUploader:
                     await progress_callback("Filling metadata (Title & Description)...")
 
                 # 4. Fill Title
-                title_box = page.locator("#title-textarea #textbox, [aria-label*='title' i], [aria-label*='название' i]").first
+                title_box = page.locator(
+                    "#title-textarea #textbox, [aria-label*='title' i], [aria-label*='название' i]"
+                ).first
                 await title_box.wait_for(state="visible", timeout=25000)
                 await title_box.click()
                 await page.keyboard.press("Control+A")
@@ -163,14 +175,18 @@ class YouTubeUploader:
                 await asyncio.sleep(1.2)
 
                 # 5. Fill Description
-                desc_box = page.locator("#description-textarea #textbox, [aria-label*='description' i], [aria-label*='описание' i]").first
+                desc_box = page.locator(
+                    "#description-textarea #textbox, [aria-label*='description' i], [aria-label*='описание' i]"
+                ).first
                 if await desc_box.is_visible():
                     await desc_box.click()
                     await human_type(desc_box, description)
                     await asyncio.sleep(1.0)
 
                 # 6. Select "Not Made for Kids"
-                not_kids_radio = page.locator("tp-yt-paper-radio-button[name='VIDEO_MADE_FOR_KIDS_NOT_MFK'], [name='VIDEO_MADE_FOR_KIDS_NOT_MFK']").first
+                not_kids_radio = page.locator(
+                    "tp-yt-paper-radio-button[name='VIDEO_MADE_FOR_KIDS_NOT_MFK'], [name='VIDEO_MADE_FOR_KIDS_NOT_MFK']"
+                ).first
                 if await not_kids_radio.is_visible():
                     await not_kids_radio.click()
                     await asyncio.sleep(1.0)
@@ -179,7 +195,7 @@ class YouTubeUploader:
                     await progress_callback("Advancing visibility steps...")
 
                 # 7. Advance through Next buttons (Elements, Checks, Visibility)
-                for step_idx in range(3):
+                for _step_idx in range(3):
                     next_btn = page.locator("#next-button").first
                     await next_btn.click()
                     await asyncio.sleep(2.0)
@@ -219,4 +235,4 @@ class YouTubeUploader:
                 return True, video_url or "https://youtube.com/shorts", None
 
             except Exception as e:
-                return False, None, f"YouTube upload error: {str(e)}"
+                return False, None, f"YouTube upload error: {e!s}"

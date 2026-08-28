@@ -1,7 +1,10 @@
-import pytest
 from pathlib import Path
+
+import pytest
+
 from nazak.core.profile_manager import ProfileManager
 from nazak.models.profile import BrowserProfile, ProfileStatus
+
 
 def test_default_10_profiles_provisioning(tmp_path):
     pfile = tmp_path / "profiles.json"
@@ -17,6 +20,7 @@ def test_default_10_profiles_provisioning(tmp_path):
     names = [p.name for p in profiles]
     assert len(set(names)) == 10
     assert "01 - Google Ads USA" in names[0]
+
 
 def test_profile_crud_and_clone(tmp_path):
     pfile = tmp_path / "profiles.json"

@@ -3,16 +3,24 @@ Fluent Mass Profile Generator Dialog.
 Generates N (1 to 500) hardware-isolated profiles with automatic proxy round-robin and realistic GPU/OS mixes.
 Windows 11 Fluent Iconography & Zero-Emoji Architecture.
 """
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel
-)
+
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
 from qfluentwidgets import (
-    LineEdit, TextEdit, ComboBox, Slider, PrimaryPushButton, PushButton,
-    SimpleCardWidget, InfoBar, InfoBarPosition, FluentIcon
+    ComboBox,
+    FluentIcon,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
+    PrimaryPushButton,
+    PushButton,
+    SimpleCardWidget,
+    Slider,
+    TextEdit,
 )
 
 from ..style import FLUENT_DARK_QSS
+
 
 class MassGenerateDialog(QDialog):
     def __init__(self, profile_manager, parent=None):
@@ -34,7 +42,10 @@ class MassGenerateDialog(QDialog):
         lbl_title.setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 700;")
         main_layout.addWidget(lbl_title)
 
-        lbl_desc = QLabel("Мгновенное создание фермы профилей с уникальными GPU, CPU, RAM, Audio/Canvas шумом и распределением прокси.", self)
+        lbl_desc = QLabel(
+            "Мгновенное создание фермы профилей с уникальными GPU, CPU, RAM, Audio/Canvas шумом и распределением прокси.",
+            self,
+        )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         main_layout.addWidget(lbl_desc)
 
@@ -57,7 +68,7 @@ class MassGenerateDialog(QDialog):
         self.slider_count.setRange(1, 100)
         self.slider_count.setValue(10)
         self.slider_count.valueChanged.connect(self.on_slider_changed)
-        
+
         self.lbl_count_val = QLabel("10 профилей", card_base)
         self.lbl_count_val.setStyleSheet("color: #38bdf8; font-weight: 700; font-size: 13px; min-width: 90px;")
         h_slider.addWidget(self.slider_count)
@@ -152,8 +163,13 @@ class MassGenerateDialog(QDialog):
             proxy_list=proxy_lines,
             os_mix=os_type,
             tags=["Mass Generated", group],
-            auto_open_page=target_page
+            auto_open_page=target_page,
         )
 
-        InfoBar.success("Успешно создано", f"Сгенерировано {len(created)} новых изолированных профилей!", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success(
+            "Успешно создано",
+            f"Сгенерировано {len(created)} новых изолированных профилей!",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
         self.accept()

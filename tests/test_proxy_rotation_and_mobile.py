@@ -1,15 +1,18 @@
 """
 Unit Tests for Mobile Proxy IP Rotation URLs.
 """
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-from nazak.models.proxy import ProxyConfig
 from nazak.api.server import app, profile_manager
 from nazak.models.profile import BrowserProfile
+from nazak.models.proxy import ProxyConfig
 
 client = TestClient(app)
+
 
 def test_proxy_parse_with_rotation_url():
     # 1. Pipe format
@@ -29,6 +32,7 @@ def test_proxy_parse_with_rotation_url():
     p3 = ProxyConfig.parse("9.9.9.9:8080:u:p:https://api.mobileproxy.ru/change")
     assert p3.host == "9.9.9.9"
     assert p3.rotation_url == "https://api.mobileproxy.ru/change"
+
 
 def test_rotate_proxy_endpoint():
     proxy = ProxyConfig.parse("1.2.3.4:8080:u:p:https://rotate.provider.com/new-ip")
