@@ -23,7 +23,7 @@
   <b>100% Free Dolphin{anty} Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Скачать готовый EXE (v1.4.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Документация](#-архитектура-и-возможности) • [🌐 **Полная REST API & Swagger Дока**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-local-automation-api--dolphinanty-parity) • [🚀 Быстрый старт](#-быстрый-старт) • [🧪 Тесты](#-тестовое-покрытие)
+[📥 **Скачать готовый EXE (v1.4.1 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Документация](#-архитектура-и-возможности) • [🌐 **Полная REST API & Swagger Дока**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-local-automation-api--dolphinanty-parity) • [🚀 Быстрый старт](#-быстрый-старт) • [🧪 Тесты](#-тестовое-покрытие)
 
 ---
 
