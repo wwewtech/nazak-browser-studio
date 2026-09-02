@@ -177,9 +177,10 @@ with sync_playwright() as p:
 
 ---
 
-### 🎬 9. YouTube Shorts Stealth Autoposter & Video Uniqueizer
+### 🎬 9. YouTube Shorts + Instagram Reels Stealth Autoposter & Video Uniqueizer
 - **Глубокая уникализация видео через FFmpeg**: `-map_metadata -1`, микро-кроп 3%, рескейл 1080x1920, кадр-шум, аудио питч-сдвиг.
-- **Спинтакс-генератор**: `{Лучший|Топ} Shorts для {РФ|Мира} ⚡ {tg} {promo}`.
+- **Спинтакс-генератор**: `{Лучший|Топ} Shorts/Reels для {РФ|Мира} ⚡ {tg} {promo}`.
+- **Две платформы в одном пайплайне**: YouTube Shorts и Instagram Reels с общим CDP-автопостингом, человеческим набором текста и управлением очередью профилей.
 - **Эмуляция человека по кривым Безье**: Физические траектории мыши и посимвольный ввод текста.
 
 ---

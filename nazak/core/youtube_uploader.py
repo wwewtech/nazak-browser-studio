@@ -7,8 +7,17 @@ natural keystroke typing, and automatic YouTube Studio workflow execution.
 import asyncio
 import math
 import random
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+
+async def notify_progress(progress_callback: Callable | None, message: str):
+    if not progress_callback:
+        return
+    result = progress_callback(message)
+    if asyncio.iscoroutine(result):
+        await result
 
 
 class HumanCursor:
@@ -83,8 +92,7 @@ class YouTubeUploader:
                 context = browser.contexts[0] if browser.contexts else await browser.new_context()
                 page = context.pages[0] if context.pages else await context.new_page()
 
-                if progress_callback:
-                    await progress_callback("Navigating to YouTube Studio...")
+                await notify_progress(progress_callback, "Navigating to YouTube Studio...")
 
                 await page.goto("https://studio.youtube.com", wait_until="domcontentloaded", timeout=60000)
                 await asyncio.sleep(3)
@@ -121,8 +129,7 @@ class YouTubeUploader:
                 except Exception:
                     pass
 
-                if progress_callback:
-                    await progress_callback("Locating upload controls...")
+                await notify_progress(progress_callback, "Locating upload controls...")
 
                 # 1. Click upload button (center dashboard button or CREATE menu)
                 center_upload = page.locator(
@@ -150,8 +157,7 @@ class YouTubeUploader:
 
                 await asyncio.sleep(2.5)
 
-                if progress_callback:
-                    await progress_callback(f"Selecting video file: {video_path.name}...")
+                await notify_progress(progress_callback, f"Selecting video file: {video_path.name}...")
 
                 # 3. File Input
                 file_input = page.locator("input[type='file']").first
@@ -159,8 +165,7 @@ class YouTubeUploader:
                 await file_input.set_input_files(str(video_path.resolve()))
                 await asyncio.sleep(5)
 
-                if progress_callback:
-                    await progress_callback("Filling metadata (Title & Description)...")
+                await notify_progress(progress_callback, "Filling metadata (Title & Description)...")
 
                 # 4. Fill Title
                 title_box = page.locator(
@@ -191,8 +196,7 @@ class YouTubeUploader:
                     await not_kids_radio.click()
                     await asyncio.sleep(1.0)
 
-                if progress_callback:
-                    await progress_callback("Advancing visibility steps...")
+                await notify_progress(progress_callback, "Advancing visibility steps...")
 
                 # 7. Advance through Next buttons (Elements, Checks, Visibility)
                 for _step_idx in range(3):
@@ -201,8 +205,7 @@ class YouTubeUploader:
                     await asyncio.sleep(2.0)
 
                 # 8. Set to "Public"
-                if progress_callback:
-                    await progress_callback("Setting public visibility...")
+                await notify_progress(progress_callback, "Setting public visibility...")
 
                 public_radio = page.locator("tp-yt-paper-radio-button[name='PUBLIC'], [name='PUBLIC']").first
                 await public_radio.wait_for(state="visible", timeout=15000)
@@ -210,8 +213,7 @@ class YouTubeUploader:
                 await asyncio.sleep(1.5)
 
                 # 9. Click PUBLISH / DONE
-                if progress_callback:
-                    await progress_callback("Publishing video...")
+                await notify_progress(progress_callback, "Publishing video...")
 
                 done_btn = page.locator("#done-button").first
                 await done_btn.click()
@@ -229,8 +231,7 @@ class YouTubeUploader:
                 await asyncio.sleep(2)
                 await browser.close()
 
-                if progress_callback:
-                    await progress_callback(f"Successfully published! URL: {video_url or 'Published'}")
+                await notify_progress(progress_callback, f"Successfully published! URL: {video_url or 'Published'}")
 
                 return True, video_url or "https://youtube.com/shorts", None
 

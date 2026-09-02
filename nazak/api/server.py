@@ -129,7 +129,7 @@ tags_metadata = [
     },
     {
         "name": "YouTube Shorts Autoposter",
-        "description": "Autonomous YouTube Shorts upload queue with FFmpeg video uniqueizer and Bezier human motorics.",
+        "description": "Autonomous YouTube Shorts and Instagram Reels upload queue with FFmpeg video uniqueizer and Bezier human motorics.",
     },
     {
         "name": "System",
@@ -195,6 +195,7 @@ class BatchActionRequest(BaseModel):
 class AutopostBatchRequest(BaseModel):
     profile_ids: list[str]
     source_video_path: str | None = None
+    platform: str = "youtube_shorts"
     title_template: str = "{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 ⚡ #shorts"
     description_template: str = (
         "⚡ Скачать быстрый VPN без ограничений: {tg}\n🎁 Промокод на скидку: {promo}\n\n#shorts #vpn #впн"
@@ -871,7 +872,7 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
 
 
 @app.post(
-    "/api/autopost/launch", tags=["YouTube Shorts Autoposter"], summary="Launch autonomous YouTube Shorts upload queue"
+    "/api/autopost/launch", tags=["YouTube Shorts Autoposter"], summary="Launch autonomous YouTube Shorts or Instagram Reels upload queue"
 )
 async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: BackgroundTasks):
     if upload_queue_mgr.is_running:
@@ -879,6 +880,7 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
             status_code=400, detail="An upload batch is already running. Please wait or cancel it first."
         )
 
+    normalized_platform = req.platform if req.platform in {"youtube_shorts", "instagram_reels"} else "youtube_shorts"
     src_path = Path(req.source_video_path) if req.source_video_path else (DATA_DIR / "videos" / "source.mp4")
     if not src_path.exists():
         # Create a dummy demo video if none exists so user can test immediately
@@ -893,8 +895,13 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
         description_template=req.description_template,
         tg_channel=req.tg_channel,
         delay_between_accounts_sec=req.delay_seconds,
+        platform=normalized_platform,
     )
-    return {"success": True, "message": f"Autopost started for {len(req.profile_ids)} profiles in background"}
+    return {
+        "success": True,
+        "platform": normalized_platform,
+        "message": f"Autopost started for {len(req.profile_ids)} profiles in background",
+    }
 
 
 @app.post("/api/autopost/cancel", tags=["YouTube Shorts Autoposter"], summary="Cancel running autopost queue")

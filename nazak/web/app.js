@@ -742,6 +742,7 @@ async function previewAutopostSpintax() {
   const title = document.getElementById("autopost-title-template").value;
   const desc = document.getElementById("autopost-desc-template").value;
   const tg = document.getElementById("autopost-tg").value;
+  const platform = document.getElementById("autopost-platform").value;
   const ids = Array.from(autopostSelectedProfiles);
 
   if (ids.length === 0) { alert("Выберите хотя бы один профиль"); return; }
@@ -750,7 +751,7 @@ async function previewAutopostSpintax() {
     const res = await fetch("/api/autopost/preview-spintax", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile_ids: ids, title_template: title, description_template: desc, tg_channel: tg })
+      body: JSON.stringify({ profile_ids: ids, platform: platform, title_template: title, description_template: desc, tg_channel: tg })
     });
     const data = await res.json();
     const box = document.getElementById("autopost-spintax-preview-box");
@@ -773,6 +774,7 @@ async function startAutopostBatch() {
   const title = document.getElementById("autopost-title-template").value;
   const desc = document.getElementById("autopost-desc-template").value;
   const tg = document.getElementById("autopost-tg").value;
+  const platform = document.getElementById("autopost-platform").value;
   const ids = Array.from(autopostSelectedProfiles);
 
   if (ids.length === 0) { alert("Выберите хотя бы один профиль"); return; }
@@ -784,6 +786,7 @@ async function startAutopostBatch() {
       body: JSON.stringify({
         profile_ids: ids,
         source_video_path: videoPath,
+        platform: platform,
         title_template: title,
         description_template: desc,
         tg_channel: tg,
@@ -835,6 +838,7 @@ async function updateAutopostStatusView() {
       if (j.status === "uploading") { statusColor = "var(--accent-amber)"; icon = "⏳"; }
       if (j.status === "uniqueizing") { statusColor = "var(--accent-sky)"; icon = "✨"; }
       if (j.status === "failed") { statusColor = "var(--accent-rose)"; icon = "✕"; }
+      const platformName = (j.platform === "instagram_reels") ? "Reels" : "Shorts";
 
       return `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
@@ -844,7 +848,7 @@ async function updateAutopostStatusView() {
             ${j.title ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Тема: ${escapeHtml(j.title)}</div>` : ''}
           </div>
           <div>
-            ${j.video_url ? `<a href="${escapeHtml(j.video_url)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Открыть Shorts ↗</a>` : ''}
+            ${j.video_url ? `<a href="${escapeHtml(j.video_url)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Открыть ${platformName} ↗</a>` : ''}
           </div>
         </div>
       `;

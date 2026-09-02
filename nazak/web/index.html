@@ -369,18 +369,27 @@
 
         <div class="form-row">
           <div class="form-group">
+            <label class="form-label">Платформа публикации:</label>
+            <select class="form-select" id="autopost-platform">
+              <option value="youtube_shorts" selected>YouTube Shorts</option>
+              <option value="instagram_reels">Instagram Reels</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Путь к исходному видео (MP4):</label>
             <input type="text" class="form-input" id="autopost-video-path" value="data/videos/source.mp4" placeholder="data/videos/source.mp4 или абсолютный путь">
           </div>
+        </div>
+
+        <div class="form-row">
           <div class="form-group">
             <label class="form-label">Telegram-канал / Бот воронки:</label>
             <input type="text" class="form-input" id="autopost-tg" value="@speed_vpn_bot" placeholder="@your_vpn_channel">
           </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Шаблон заголовка Shorts (со спинтаксом {A|B}):</label>
-          <input type="text" class="form-input" id="autopost-title-template" value="{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 ⚡ #shorts #vpn #ютуб">
+          <div class="form-group">
+            <label class="form-label">Формат заголовка:</label>
+            <input type="text" class="form-input" id="autopost-title-template" value="{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 ⚡ #shorts #vpn #ютуб">
+          </div>
         </div>
 
         <div class="form-group">
