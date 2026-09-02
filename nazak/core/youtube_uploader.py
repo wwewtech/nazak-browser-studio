@@ -91,10 +91,10 @@ class YouTubeUploader:
         Uploads a video to YouTube Studio.
         Returns: (success, published_video_url, error_message)
         """
-        async_playwright = ensure_async_playwright()
-
         if not video_path.exists():
             return False, None, f"Video file not found: {video_path}"
+
+        async_playwright = ensure_async_playwright()
 
         async with async_playwright() as p:
             try:

@@ -126,10 +126,10 @@ class InstagramUploader:
         Uploads a video to Instagram as a Reel via a dedicated, isolated browser context.
         Returns: (success, published_url, error_message)
         """
-        async_playwright = ensure_async_playwright()
-
         if not video_path.exists():
             return False, None, f"Video file not found: {video_path}"
+
+        async_playwright = ensure_async_playwright()
 
         browser = None
         context = None
