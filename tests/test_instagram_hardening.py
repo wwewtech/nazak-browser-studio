@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from nazak.core.instagram_uploader import InstagramUploader
-from nazak.core.upload_queue import UploadJob, UploadQueueManager
+from nazak.core.instagram_uploader import InstagramUploader, notify_progress as instagram_notify_progress
+from nazak.core.upload_queue import UploadJob, UploadQueueManager, notify_progress as queue_notify_progress
 
 
 @pytest.mark.parametrize(
@@ -501,4 +501,216 @@ def test_retry_error_classification_variants(error, expected):
     assert UploadQueueManager._is_retryable_error(error) is expected
 
 
-# Total tests: 60
+def test_instagram_notify_progress_handles_sync_callback():
+    async def run():
+        seen = []
+        await instagram_notify_progress(seen.append, "sync callback")
+        assert seen == ["sync callback"]
+
+    asyncio.run(run())
+
+
+def test_instagram_notify_progress_handles_async_callback():
+    async def run():
+        seen = []
+
+        async def cb(msg):
+            seen.append(msg)
+
+        await instagram_notify_progress(cb, "async callback")
+        assert seen == ["async callback"]
+
+    asyncio.run(run())
+
+
+def test_queue_notify_progress_handles_async_callback():
+    async def run():
+        seen = []
+
+        async def cb(msg):
+            seen.append(msg)
+
+        await queue_notify_progress(cb, "queue callback")
+        assert seen == ["queue callback"]
+
+    asyncio.run(run())
+
+
+def test_instagram_first_helper_returns_input_or_none():
+    assert InstagramUploader._first(None) is None
+    sentinel = object()
+    assert InstagramUploader._first(sentinel) is sentinel
+
+
+def test_instagram_context_reuses_existing_browser_context():
+    async def run():
+        uploader = InstagramUploader("http://127.0.0.1:9222")
+        existing = SimpleNamespace(
+            set_default_timeout=lambda *_args, **_kwargs: None,
+            set_default_navigation_timeout=lambda *_args, **_kwargs: None,
+        )
+
+        class Browser:
+            contexts = [existing]
+
+        context = await uploader._new_isolated_context(Browser())
+        assert context is existing
+
+    asyncio.run(run())
+
+
+def test_instagram_context_applies_default_timeouts_to_existing_context():
+    async def run():
+        uploader = InstagramUploader("http://127.0.0.1:9222", page_timeout=12.5, navigation_timeout=33.5)
+        calls = []
+
+        existing = SimpleNamespace(
+            set_default_timeout=lambda ms, **_kwargs: calls.append(("page", ms)),
+            set_default_navigation_timeout=lambda ms, **_kwargs: calls.append(("nav", ms)),
+        )
+
+        class Browser:
+            contexts = [existing]
+
+        await uploader._new_isolated_context(Browser())
+        assert calls == [("page", 12500), ("nav", 33500)]
+
+    asyncio.run(run())
+
+
+def test_upload_queue_cancel_all_marks_pending_jobs_canceled():
+    queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+    job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
+    queue.jobs["p1"] = job
+
+    queue.cancel_all()
+
+    assert queue._cancel_requested is True
+    assert job.status == "canceled"
+    assert job.progress_message == "Upload canceled by user"
+
+
+def test_upload_queue_get_jobs_status_exposes_expected_fields():
+    queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+    job = UploadJob(
+        profile_id="p1",
+        profile_name="P1",
+        source_video="demo.mp4",
+        platform="instagram_reels",
+        title="Test title",
+        description="Test desc",
+        status="published",
+        video_url="https://instagram.com/p/abc",
+        error=None,
+        progress_message="done",
+    )
+    queue.jobs["p1"] = job
+
+    payload = queue.get_jobs_status()
+    assert payload[0]["profile_id"] == "p1"
+    assert payload[0]["platform"] == "instagram_reels"
+    assert payload[0]["video_url"] == "https://instagram.com/p/abc"
+
+
+def test_upload_queue_rejects_duplicate_running_batch():
+    queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+    queue.is_running = True
+
+    async def run():
+        await queue.run_batch_upload([], Path("demo.mp4"), "t", "d")
+
+    asyncio.run(run())
+    assert queue.is_running is True
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("  CHALLENGE REQUIRED  ", True),
+        ("Verification required to continue", True),
+        ("we need to verify your account", True),
+        ("Access denied by policy", False),
+        ("Profile not found", False),
+    ],
+)
+def test_retryable_error_detection_with_case_variants(message, expected):
+    assert UploadQueueManager._is_retryable_error(message) is expected
+
+
+def test_retryable_upload_accepts_async_progress_callback():
+    async def run():
+        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        seen = []
+
+        async def fake_upload():
+            return True, "https://instagram.com/p/ok", None
+
+        async def progress_cb(msg):
+            seen.append(msg)
+
+        job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
+        result = await queue._retryable_upload(
+            job,
+            "Instagram upload",
+            fake_upload,
+            retries=1,
+            base_delay=0.01,
+            max_delay=0.1,
+            progress_callback=progress_cb,
+        )
+
+        assert result == (True, "https://instagram.com/p/ok", None)
+        assert seen == []
+
+    asyncio.run(run())
+
+
+def test_retryable_upload_uses_progress_message_format_for_retryable_failures():
+    async def run():
+        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        seen = []
+
+        async def fake_upload():
+            return False, None, "temporarily unavailable"
+
+        job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
+        result = await queue._retryable_upload(
+            job,
+            "Instagram upload",
+            fake_upload,
+            retries=1,
+            base_delay=0.01,
+            max_delay=0.05,
+            progress_callback=lambda msg: seen.append(msg),
+        )
+
+        assert result[0] is False
+        assert seen and "Retrying" in seen[0]
+
+    asyncio.run(run())
+
+
+def test_retryable_upload_does_not_run_after_cancel_request():
+    async def run():
+        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue._cancel_requested = True
+
+        async def fake_upload():
+            raise AssertionError("should not execute")
+
+        job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
+        result = await queue._retryable_upload(
+            job,
+            "Instagram upload",
+            fake_upload,
+            retries=5,
+            base_delay=0.01,
+            max_delay=0.05,
+        )
+
+        assert result == (False, None, "Upload canceled by user")
+
+    asyncio.run(run())
+
+
+# Total tests: 88
