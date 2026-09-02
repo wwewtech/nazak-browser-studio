@@ -1,6 +1,7 @@
 import asyncio
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -327,25 +328,32 @@ class _FakePlaywright:
         return self.browser
 
 
+def _install_fake_playwright(monkeypatch, browser):
+    class _AsyncPlaywrightContext:
+        def __init__(self, manager):
+            self.manager = manager
+
+        async def __aenter__(self):
+            return self.manager
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_async_playwright():
+        return _AsyncPlaywrightContext(_FakePlaywright(browser))
+
+    playwright_mod = ModuleType("playwright")
+    async_api_mod = ModuleType("playwright.async_api")
+    async_api_mod.async_playwright = fake_async_playwright
+    playwright_mod.async_api = async_api_mod
+    monkeypatch.setitem(sys.modules, "playwright", playwright_mod)
+    monkeypatch.setitem(sys.modules, "playwright.async_api", async_api_mod)
+
+
 def test_instagram_uploader_success_path_with_fake_browser(monkeypatch):
     async def run():
         browser = _FakeBrowser()
-        fw = _FakePlaywright(browser)
-
-        class _AsyncPlaywrightContext:
-            def __init__(self, manager):
-                self.manager = manager
-
-            async def __aenter__(self):
-                return self.manager
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        def fake_async_playwright():
-            return _AsyncPlaywrightContext(fw)
-
-        monkeypatch.setattr("playwright.async_api.async_playwright", fake_async_playwright)
+        _install_fake_playwright(monkeypatch, browser)
 
         uploader = InstagramUploader("http://127.0.0.1:9222")
         file_path = Path("tests/data/test_reel.mp4")
@@ -364,22 +372,7 @@ def test_instagram_uploader_success_path_with_fake_browser(monkeypatch):
 def test_instagram_uploader_detects_login_screen(monkeypatch):
     async def run():
         browser = _FakeBrowser()
-        fw = _FakePlaywright(browser)
-
-        class _AsyncPlaywrightContext:
-            def __init__(self, manager):
-                self.manager = manager
-
-            async def __aenter__(self):
-                return self.manager
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        def fake_async_playwright():
-            return _AsyncPlaywrightContext(fw)
-
-        monkeypatch.setattr("playwright.async_api.async_playwright", fake_async_playwright)
+        _install_fake_playwright(monkeypatch, browser)
 
         class LoginPage(_FakePage):
             def locator(self, selector):

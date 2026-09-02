@@ -29,6 +29,14 @@ async def notify_progress(progress_callback: Callable | None, message: str):
         await result
 
 
+def ensure_async_playwright():
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised by environment guard in CI
+        raise RuntimeError("Playwright is not installed. Install the browser automation dependency before using Instagram uploads.") from exc
+    return async_playwright
+
+
 class InstagramUploader:
     """Dedicated Instagram session runner with strict timeout and restart controls."""
 
@@ -116,7 +124,7 @@ class InstagramUploader:
         Uploads a video to Instagram as a Reel via a dedicated, isolated browser context.
         Returns: (success, published_url, error_message)
         """
-        from playwright.async_api import async_playwright
+        async_playwright = ensure_async_playwright()
 
         if not video_path.exists():
             return False, None, f"Video file not found: {video_path}"

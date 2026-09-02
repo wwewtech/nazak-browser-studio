@@ -12,6 +12,14 @@ from pathlib import Path
 from typing import Any
 
 
+def ensure_async_playwright():
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised by dependency guard
+        raise RuntimeError("Playwright is not installed. Install the browser automation dependency before using YouTube uploads.") from exc
+    return async_playwright
+
+
 async def notify_progress(progress_callback: Callable | None, message: str):
     if not progress_callback:
         return
@@ -81,7 +89,7 @@ class YouTubeUploader:
         Uploads a video to YouTube Studio.
         Returns: (success, published_video_url, error_message)
         """
-        from playwright.async_api import async_playwright
+        async_playwright = ensure_async_playwright()
 
         if not video_path.exists():
             return False, None, f"Video file not found: {video_path}"
