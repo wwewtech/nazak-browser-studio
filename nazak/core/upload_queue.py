@@ -269,9 +269,16 @@ class UploadQueueManager:
                     if platform_name == "instagram_reels":
                         uploader = InstagramUploader(f"http://127.0.0.1:{cdp_port}")
 
-                        async def upload_task():
-                            return await uploader.upload_reel(
-                                video_path=out_path, caption=job.description, progress_callback=on_progress
+                        async def upload_task(
+                            video_path=out_path,
+                            current_job=job,
+                            platform_uploader=uploader,
+                            progress=on_progress,
+                        ):
+                            return await platform_uploader.upload_reel(
+                                video_path=video_path,
+                                caption=current_job.description,
+                                progress_callback=progress,
                             )
 
                         upload_ok, video_url, upload_err = await self._retryable_upload(
@@ -285,12 +292,17 @@ class UploadQueueManager:
                     else:
                         uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
 
-                        async def upload_task():
-                            return await uploader.upload_shorts(
-                                video_path=out_path,
-                                title=job.title,
-                                description=job.description,
-                                progress_callback=on_progress,
+                        async def upload_task(
+                            video_path=out_path,
+                            current_job=job,
+                            platform_uploader=uploader,
+                            progress=on_progress,
+                        ):
+                            return await platform_uploader.upload_shorts(
+                                video_path=video_path,
+                                title=current_job.title,
+                                description=current_job.description,
+                                progress_callback=progress,
                             )
 
                         upload_ok, video_url, upload_err = await self._retryable_upload(

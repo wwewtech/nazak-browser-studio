@@ -7,8 +7,9 @@ with YouTube or other browser automation contexts.
 
 import asyncio
 import random
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 async def human_type(element, text: str):
