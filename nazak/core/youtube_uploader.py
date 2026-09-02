@@ -16,7 +16,9 @@ def ensure_async_playwright():
     try:
         from playwright.async_api import async_playwright
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised by dependency guard
-        raise RuntimeError("Playwright is not installed. Install the browser automation dependency before using YouTube uploads.") from exc
+        raise RuntimeError(
+            "Playwright is not installed. Install the browser automation dependency before using YouTube uploads."
+        ) from exc
     return async_playwright
 
 

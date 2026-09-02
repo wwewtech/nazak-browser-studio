@@ -33,7 +33,9 @@ def ensure_async_playwright():
     try:
         from playwright.async_api import async_playwright
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised by environment guard in CI
-        raise RuntimeError("Playwright is not installed. Install the browser automation dependency before using Instagram uploads.") from exc
+        raise RuntimeError(
+            "Playwright is not installed. Install the browser automation dependency before using Instagram uploads."
+        ) from exc
     return async_playwright
 
 
