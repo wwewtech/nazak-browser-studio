@@ -83,7 +83,9 @@ def test_queue_platform_normalization(platform, expected):
 
 def test_retryable_upload_retries_until_success():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         calls = {"count": 0}
 
         async def fake_upload():
@@ -111,7 +113,9 @@ def test_retryable_upload_retries_until_success():
 
 def test_retryable_upload_stops_on_non_retryable_error():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         calls = {"count": 0}
 
         async def fake_upload():
@@ -137,7 +141,9 @@ def test_retryable_upload_stops_on_non_retryable_error():
 
 def test_retryable_upload_returns_canceled_when_cancel_requested():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         queue._cancel_requested = True
 
         async def fake_upload():
@@ -161,7 +167,9 @@ def test_retryable_upload_returns_canceled_when_cancel_requested():
 
 def test_retryable_upload_exponential_backoff_updates_progress():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         seen = []
 
         async def fake_upload():
@@ -187,7 +195,9 @@ def test_retryable_upload_exponential_backoff_updates_progress():
 
 def test_retryable_upload_handles_exception_as_retryable():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         calls = {"count": 0}
 
         async def fake_upload():
@@ -639,7 +649,9 @@ def test_retryable_error_detection_with_case_variants(message, expected):
 
 def test_retryable_upload_accepts_async_progress_callback():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         seen = []
 
         async def fake_upload():
@@ -667,7 +679,9 @@ def test_retryable_upload_accepts_async_progress_callback():
 
 def test_retryable_upload_uses_progress_message_format_for_retryable_failures():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         seen = []
 
         async def fake_upload():
@@ -692,7 +706,9 @@ def test_retryable_upload_uses_progress_message_format_for_retryable_failures():
 
 def test_retryable_upload_does_not_run_after_cancel_request():
     async def run():
-        queue = UploadQueueManager(profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None)
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
         queue._cancel_requested = True
 
         async def fake_upload():

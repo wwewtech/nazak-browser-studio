@@ -205,7 +205,8 @@ class UploadQueueManager:
                     job.status = "uniqueizing"
                     job.progress_message = "Generating unique video hash & audio shift..."
                     await self.broadcast(
-                        "autopost_job_update", {"profile_id": pid, "status": job.status, "message": job.progress_message}
+                        "autopost_job_update",
+                        {"profile_id": pid, "status": job.status, "message": job.progress_message},
                     )
 
                     ok, out_path, err = self.uniquifier.uniquify_video(source_video_path, pid, profile_index=idx)
@@ -233,7 +234,8 @@ class UploadQueueManager:
                     job.status = "launching"
                     job.progress_message = "Launching isolated anti-detect browser session..."
                     await self.broadcast(
-                        "autopost_job_update", {"profile_id": pid, "status": job.status, "message": job.progress_message}
+                        "autopost_job_update",
+                        {"profile_id": pid, "status": job.status, "message": job.progress_message},
                     )
 
                     cdp_port = 9300 + idx
@@ -256,7 +258,8 @@ class UploadQueueManager:
                     target_label = "YouTube Studio" if platform_name == "youtube_shorts" else "Instagram"
                     job.progress_message = f"Uploading to {target_label}..."
                     await self.broadcast(
-                        "autopost_job_update", {"profile_id": pid, "status": job.status, "message": job.progress_message}
+                        "autopost_job_update",
+                        {"profile_id": pid, "status": job.status, "message": job.progress_message},
                     )
 
                     curr_job = job
@@ -264,7 +267,9 @@ class UploadQueueManager:
 
                     async def on_progress(msg: str, j=curr_job, p=curr_pid):
                         j.progress_message = msg
-                        await self.broadcast("autopost_job_update", {"profile_id": p, "status": j.status, "message": msg})
+                        await self.broadcast(
+                            "autopost_job_update", {"profile_id": p, "status": j.status, "message": msg}
+                        )
 
                     if platform_name == "instagram_reels":
                         uploader = InstagramUploader(f"http://127.0.0.1:{cdp_port}")

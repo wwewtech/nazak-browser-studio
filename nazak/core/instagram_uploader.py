@@ -59,7 +59,19 @@ class InstagramUploader:
     @staticmethod
     def _is_session_lost_error(message: str) -> bool:
         lower = message.lower()
-        return any(token in lower for token in ["session closed", "target closed", "connection closed", "browser has disconnected", "captcha", "challenge", "verify", "verification"])
+        return any(
+            token in lower
+            for token in [
+                "session closed",
+                "target closed",
+                "connection closed",
+                "browser has disconnected",
+                "captcha",
+                "challenge",
+                "verify",
+                "verification",
+            ]
+        )
 
     @staticmethod
     async def _safe_wait(task, timeout: float, *, label: str):
@@ -155,7 +167,9 @@ class InstagramUploader:
 
                 file_input = self._first(page.locator("input[type='file']"))
                 await self._safe_wait(file_input.wait_for(state="attached"), timeout=20.0, label="file input ready")
-                await self._safe_wait(file_input.set_input_files(str(video_path.resolve())), timeout=25.0, label="video upload")
+                await self._safe_wait(
+                    file_input.set_input_files(str(video_path.resolve())), timeout=25.0, label="video upload"
+                )
                 await asyncio.sleep(4)
 
                 await notify_progress(progress_callback, "Preparing reel metadata...")

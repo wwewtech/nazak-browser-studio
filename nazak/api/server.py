@@ -872,7 +872,9 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
 
 
 @app.post(
-    "/api/autopost/launch", tags=["YouTube Shorts Autoposter"], summary="Launch autonomous YouTube Shorts or Instagram Reels upload queue"
+    "/api/autopost/launch",
+    tags=["YouTube Shorts Autoposter"],
+    summary="Launch autonomous YouTube Shorts or Instagram Reels upload queue",
 )
 async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: BackgroundTasks):
     if upload_queue_mgr.is_running:
