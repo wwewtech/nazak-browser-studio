@@ -400,22 +400,7 @@ def test_instagram_uploader_detects_login_screen(monkeypatch):
 def test_instagram_uploader_handles_create_page_redirect(monkeypatch):
     async def run():
         browser = _FakeBrowser()
-        fw = _FakePlaywright(browser)
-
-        class _AsyncPlaywrightContext:
-            def __init__(self, manager):
-                self.manager = manager
-
-            async def __aenter__(self):
-                return self.manager
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        def fake_async_playwright():
-            return _AsyncPlaywrightContext(fw)
-
-        monkeypatch.setattr("playwright.async_api.async_playwright", fake_async_playwright)
+        _install_fake_playwright(monkeypatch, browser)
 
         class RedirectPage(_FakePage):
             def locator(self, selector):
@@ -446,22 +431,7 @@ def test_instagram_uploader_handles_create_page_redirect(monkeypatch):
 def test_instagram_uploader_closes_context_and_browser_in_finally(monkeypatch):
     async def run():
         browser = _FakeBrowser()
-        fw = _FakePlaywright(browser)
-
-        class _AsyncPlaywrightContext:
-            def __init__(self, manager):
-                self.manager = manager
-
-            async def __aenter__(self):
-                return self.manager
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        def fake_async_playwright():
-            return _AsyncPlaywrightContext(fw)
-
-        monkeypatch.setattr("playwright.async_api.async_playwright", fake_async_playwright)
+        _install_fake_playwright(monkeypatch, browser)
 
         uploader = InstagramUploader("http://127.0.0.1:9222")
         file_path = Path("tests/data/test_reel_close.mp4")
