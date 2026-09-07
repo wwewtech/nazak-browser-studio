@@ -30,7 +30,13 @@ def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Pat
         "description": "Total Hardware Isolation & Proxy Authentication Shield for Google Automation",
         "permissions": ["webRequest", "webRequestBlocking", "<all_urls>", "tabs"],
         "content_scripts": [
-            {"matches": ["<all_urls>"], "js": ["stealth.js"], "run_at": "document_start", "all_frames": True}
+            {
+                "matches": ["<all_urls>"],
+                "js": ["stealth.js"],
+                "run_at": "document_start",
+                "all_frames": True,
+                "world": "MAIN",
+            }
         ],
     }
 
@@ -63,6 +69,17 @@ chrome.webRequest.onAuthRequired.addListener(
     media_devs_json = json.dumps([d.model_dump() for d in fp.media_devices])
     geo_json = json.dumps(fp.geolocation.model_dump())
     battery_json = json.dumps(fp.battery.model_dump())
+    platform_json = json.dumps(fp.platform)
+    vendor_json = json.dumps(fp.vendor)
+    architecture_json = json.dumps(fp.architecture)
+    bitness_json = json.dumps(fp.bitness)
+    model_json = json.dumps(fp.model)
+    platform_version_json = json.dumps(fp.platform_version)
+    ua_full_version = fp.app_version.split("Chrome/")[1].split(" ")[0] if "Chrome/" in fp.app_version else "133.0.0.0"
+    ua_full_version_json = json.dumps(ua_full_version)
+    timezone_json = json.dumps(fp.timezone)
+    webgl_vendor_json = json.dumps(fp.webgl_vendor)
+    webgl_renderer_json = json.dumps(fp.webgl_renderer)
 
     stealth_js = f"""
 // Nazak Total Hardware Shield v2.0
@@ -92,7 +109,7 @@ chrome.webRequest.onAuthRequired.addListener(
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'platform', {{
-            get: () => "{fp.platform}",
+            get: () => {platform_json},
             configurable: true,
             enumerable: true
         }});
@@ -102,7 +119,7 @@ chrome.webRequest.onAuthRequired.addListener(
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'vendor', {{
-            get: () => "{fp.vendor}",
+            get: () => {vendor_json},
             configurable: true,
             enumerable: true
         }});
@@ -114,21 +131,21 @@ chrome.webRequest.onAuthRequired.addListener(
         const uaData = {{
             brands: brandsData,
             mobile: {str(fp.mobile).lower()},
-            platform: "{fp.platform}",
+            platform: {platform_json},
             getHighEntropyValues: function(hints) {{
                 return Promise.resolve({{
                     brands: brandsData,
                     mobile: {str(fp.mobile).lower()},
-                    platform: "{fp.platform}",
-                    architecture: "{fp.architecture}",
-                    bitness: "{fp.bitness}",
-                    model: "{fp.model}",
-                    platformVersion: "{fp.platform_version}",
-                    uaFullVersion: "{fp.app_version.split("Chrome/")[1].split(" ")[0] if "Chrome/" in fp.app_version else "133.0.0.0"}"
+                    platform: {platform_json},
+                    architecture: {architecture_json},
+                    bitness: {bitness_json},
+                    model: {model_json},
+                    platformVersion: {platform_version_json},
+                    uaFullVersion: {ua_full_version_json}
                 }});
             }},
             toJSON: function() {{
-                return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: "{fp.platform}" }};
+                return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {platform_json} }};
             }}
         }};
         Object.defineProperty(Navigator.prototype, 'userAgentData', {{
@@ -166,7 +183,7 @@ chrome.webRequest.onAuthRequired.addListener(
 
     // 6. Timezone & Locale Formatting
     try {{
-        const targetTimezone = "{fp.timezone}";
+        const targetTimezone = {timezone_json};
         const targetOffset = {fp.timezone_offset};
 
         const origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
@@ -184,8 +201,8 @@ chrome.webRequest.onAuthRequired.addListener(
     // 7. WebGL & GPU Hardware Spoofing (Shields actual host graphics card)
     try {{
         const webglParams = {{
-            37445: "{fp.webgl_vendor}",           // UNMASKED_VENDOR_WEBGL
-            37446: "{fp.webgl_renderer}",         // UNMASKED_RENDERER_WEBGL
+            37445: {webgl_vendor_json},           // UNMASKED_VENDOR_WEBGL
+            37446: {webgl_renderer_json},         // UNMASKED_RENDERER_WEBGL
             3379: {fp.max_texture_size},          // MAX_TEXTURE_SIZE
             34024: {fp.max_renderbuffer_size},    // MAX_RENDERBUFFER_SIZE
         }};

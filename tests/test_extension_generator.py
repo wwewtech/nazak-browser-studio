@@ -34,6 +34,7 @@ def test_generate_stealth_extension(tmp_path):
         manifest = json.load(f)
     assert manifest["manifest_version"] == 2
     assert "webRequest" in manifest["permissions"]
+    assert manifest["content_scripts"][0]["world"] == "MAIN"
 
     stealth_file = ext_dir / "stealth.js"
     assert stealth_file.exists()

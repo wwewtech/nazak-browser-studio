@@ -179,7 +179,7 @@ def generate_random_fingerprint(
     """
     Generates a completely randomized, statistically coherent hardware and digital fingerprint.
     """
-    if os_type == "mac":
+    if os_type in ("mac", "macos"):
         ua = random.choice(USER_AGENTS_MAC)
         platform = "MacIntel"
         avail_gpus = [g for g in GPU_PRESETS if "mac" in g["os"]]
