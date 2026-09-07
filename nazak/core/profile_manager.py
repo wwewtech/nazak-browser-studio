@@ -715,7 +715,7 @@ class ProfileManager:
 
         base_index = len(self.profiles) + 1
         for i in range(count):
-            chosen_os = random.choice(os_types)
+            chosen_os = os_types[i % len(os_types)]
             fp = generate_random_fingerprint(os_type=chosen_os)
 
             proxy_conf = ProxyConfig(type=ProxyType.DIRECT, raw="direct")

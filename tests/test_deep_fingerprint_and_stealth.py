@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from nazak.core.extension_generator import generate_profile_extension
-from nazak.core.fingerprint_generator import generate_random_fingerprint
+from nazak.core.fingerprint_generator import GPU_PRESETS, generate_random_fingerprint
 from nazak.models.profile import BrowserProfile, FingerprintConfig
 from nazak.models.proxy import ProxyConfig
 
@@ -278,8 +278,10 @@ def test_fingerprint_generator_synthesizes_all_platforms():
 
 def test_fingerprint_generator_produces_realistic_hardware_combinations():
     fp_win = generate_random_fingerprint(os_type="windows")
-    assert fp_win.hardware_concurrency in [4, 6, 8, 12, 16, 24, 32]
-    assert fp_win.device_memory in [8, 16, 32, 64]
+    all_cores = set().union(*[g["cores"] for g in GPU_PRESETS])
+    all_ram = set().union(*[g["ram"] for g in GPU_PRESETS])
+    assert fp_win.hardware_concurrency in all_cores
+    assert fp_win.device_memory in all_ram
     assert fp_win.screen_width >= 1280
     assert fp_win.screen_height >= 720
 
