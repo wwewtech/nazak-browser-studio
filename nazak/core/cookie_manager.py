@@ -52,8 +52,8 @@ def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
                     "path": path.strip() or "/",
                     "expires": exp_int,
                     "secure": secure.strip().lower() == "true",
-                    "httpOnly": http_only
-                    or (include_subdomains.strip().lower() == "true" and not domain.startswith(".")),
+                    "httpOnly": http_only,
+                    "includeSubdomains": include_subdomains.strip().lower() == "true",
                 }
             )
     return cookies
@@ -68,7 +68,10 @@ def cookies_to_netscape(cookies: list[dict[str, Any]]) -> str:
         if not isinstance(c, dict):
             continue
         domain = str(c.get("domain", "")).strip()
-        include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
+        if "includeSubdomains" in c:
+            include_subdomains = "TRUE" if c.get("includeSubdomains") else "FALSE"
+        else:
+            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
         path = str(c.get("path", "/")).strip() or "/"
         secure = "TRUE" if c.get("secure", False) else "FALSE"
 

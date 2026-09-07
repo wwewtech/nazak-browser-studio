@@ -47,3 +47,17 @@ def test_parse_any_cookies_empty_and_comments():
     raw = "# Just comments\n# Another line\n"
     parsed = parse_any_cookies(raw)
     assert len(parsed) == 0
+
+
+def test_netscape_cookie_httponly_and_subdomains_roundtrip():
+    # Host cookie without leading dot, with includeSubdomains=TRUE, and without httpOnly
+    raw = "mysite.com\tTRUE\t/\tFALSE\t1800000000\tsid\tabc\n"
+    parsed = parse_netscape_cookies(raw)
+    assert len(parsed) == 1
+    assert parsed[0]["httpOnly"] is False
+    assert parsed[0]["includeSubdomains"] is True
+
+    # When exported back, it should not have #HttpOnly_ prefix
+    exported = cookies_to_netscape(parsed)
+    assert "#HttpOnly_" not in exported
+    assert "mysite.com\tTRUE\t/\tFALSE\t1800000000\tsid\tabc" in exported

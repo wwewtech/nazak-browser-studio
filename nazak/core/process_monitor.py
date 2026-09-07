@@ -50,7 +50,11 @@ class ProcessMonitor:
                         # Check if process is still alive
                         alive = self.browser_launcher.is_profile_running(p.id)
                         if not alive:
-                            # User closed browser window
+                            # User closed browser window - verify status before updating/saving
+                            if hasattr(self.profile_manager, "get_profile"):
+                                curr = self.profile_manager.get_profile(p.id)
+                                if curr and curr.status != ProfileStatus.RUNNING:
+                                    continue
                             p.status = ProfileStatus.STOPPED
                             p.pid = None
                             self.profile_manager.update_profile(p)
