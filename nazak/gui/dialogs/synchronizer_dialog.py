@@ -177,7 +177,12 @@ class SynchronizerDialog(QDialog):
                 position=InfoBarPosition.TOP,
             )
         else:
-            InfoBar.info("Сетка", "Окна успешно перерасположены", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Сетка",
+                "Не удалось выровнять окна на рабочем столе",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
 
     def on_start_sync(self):
         master_id = self.combo_master.currentData()
@@ -197,11 +202,17 @@ class SynchronizerDialog(QDialog):
             self.synchronizer_mgr.start_session(
                 master_profile_id=master_id, worker_profile_ids=workers, humanize_jitter=self.chk_jitter.isChecked()
             )
-
-        InfoBar.success(
-            "Синхронизация активна",
-            f"Синхронизируются {len(workers)} ведомых профилей с Master ({master_id})",
-            parent=self,
-            position=InfoBarPosition.TOP,
-        )
+            InfoBar.info(
+                "Синхронизация создана",
+                f"Сессия создана для {len(workers)} ведомых профилей с Master ({master_id}). Фоновая репликация ввода CDP находится в разработке.",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+        else:
+            InfoBar.warning(
+                "Ошибка синхронизатора",
+                "Менеджер синхронизации недоступен",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
         self.accept()

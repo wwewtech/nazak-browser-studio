@@ -10,10 +10,8 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from ..api.server import app as fastapi_app
-from ..config import DATA_DIR, DEFAULT_HOST, DEFAULT_PORT, EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE
-from ..core.browser_launcher import BrowserLauncher
-from ..core.profile_manager import ProfileManager
+from ..api.server import app as fastapi_app, browser_launcher, profile_manager
+from ..config import DATA_DIR, DEFAULT_HOST, DEFAULT_PORT
 from .app_window import NazakFluentMainWindow
 from .splash import NazakSplashScreen
 
@@ -75,19 +73,13 @@ def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
     splash.show()
     app.processEvents()
 
-    # Initialize Core Engines while splash is visible
-    profile_manager = ProfileManager(PROFILES_FILE, PROFILES_DIR)
-    browser_launcher = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
-
-    # 5. Create Native Windows 11 Fluent Window
+    # 5. Create Native Windows 11 Fluent Window (using shared engine singletons)
     window = NazakFluentMainWindow(profile_manager, browser_launcher)
     if icon_path.exists():
         window.setWindowIcon(QIcon(str(icon_path)))
 
     # Transition from Splash to Main Window after brief telemetry display
     splash.show_and_fade(duration_ms=900, on_finished=window.show)
-
-    sys.exit(app.exec())
 
     exit_code = app.exec()
     server_thread.stop()

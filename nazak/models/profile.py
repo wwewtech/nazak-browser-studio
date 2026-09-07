@@ -9,7 +9,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from .health import HealthCheckResult
-from .proxy import ProxyConfig
+from .proxy import ProxyConfig, ProxyType as ProxyType
 
 
 class ProfileStatus(str, Enum):

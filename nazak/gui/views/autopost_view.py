@@ -213,9 +213,9 @@ class AutopostView(QWidget):
         d_tmpl = self.input_desc.toPlainText()
         tg = self.input_tg.text()
         sample = format_video_metadata(t_tmpl, d_tmpl, "Profile 01", "prof_01", tg)
-        self.lbl_preview_sample.setText(
-            f"Превью заголовка: {sample['title']}\nПревью описания: {sample['description'].splitlines()[0]}"
-        )
+        desc_lines = sample["description"].splitlines()
+        first_line = desc_lines[0] if desc_lines else ""
+        self.lbl_preview_sample.setText(f"Превью заголовка: {sample['title']}\nПревью описания: {first_line}")
 
     def toggle_all_checkboxes(self, checked: bool):
         for cb in self.profile_checkboxes.values():

@@ -21,7 +21,8 @@ from qfluentwidgets import (
 )
 
 from ...core.fingerprint_generator import GPU_PRESETS, SCREEN_RESOLUTIONS, generate_random_fingerprint
-from ...models.profile import BrowserProfile, FingerprintConfig, GoogleSettings, ProxyConfig, ProxyType
+from ...models.profile import BrowserProfile, FingerprintConfig, GoogleSettings
+from ...models.proxy import ProxyConfig, ProxyType
 from ..style import FLUENT_DARK_QSS
 
 
