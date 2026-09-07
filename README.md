@@ -16,14 +16,18 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-293%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-492%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
+
+<p align="center">
+  <a href="README_EN.md">English</a> • <b>Русский</b>
+</p>
 
 <p align="center">
   <b>100% Free Dolphin{anty} Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Скачать готовый EXE (v1.4.1 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Документация](#-архитектура-и-возможности) • [🌐 **Полная REST API & Swagger Дока**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-local-automation-api--dolphinanty-parity) • [🚀 Быстрый старт](#-быстрый-старт) • [🧪 Тесты](#-тестовое-покрытие)
+[📥 **Скачать готовый EXE (v1.5.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Документация](#-архитектура-и-возможности) • [🌐 **Полная REST API & Swagger Дока**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-local-automation-api--dolphinanty-parity) • [🚀 Быстрый старт](#-быстрый-старт) • [🧪 Тесты](#-тестовое-покрытие)
 
 ---
 
@@ -210,22 +214,26 @@ python -m nazak.main --mode web
 
 ## 🧪 Тестовое покрытие
 
-Проект покрыт всесторонним набором из **293 автоматических тестов**:
+Проект покрыт всесторонним набором из **492 автоматических тестов**:
 
 ```powershell
-python -m pytest -p no:asyncio tests -v
+python -m pytest tests -q
 ```
 
 ```
-============================ 293 passed in 24.03s =============================
+============================ 492 passed in 83.93s =============================
 ```
 
+- `test_deep_security_and_traversal.py` — 25 тестов безопасности: валидация путей `validate_pid`, защита Zip-Slip, CORS localhost regex, маскирование учетных данных.
+- `test_deep_storage_and_concurrency.py` — 25 тестов многопоточности и хранилища: атомарная запись `profiles.json` через RLock и уникальные temp-файлы, транзакции пакетов, жизненный цикл процессов.
+- `test_deep_fingerprint_and_stealth.py` — 25 тестов маскировки и изоляции: экранирование `json.dumps` в `stealth.js`, контекст `MAIN` world, подмена Canvas, WebGL, WebRTC, Audio, Battery, Client Hints.
+- `test_deep_api_and_scenarios.py` — 25 тестов интеграции API и прогрева: двусторонний Netscape cookie roundtrip, алиасы сценариев, Dolphin{anty} Local API parity, асинхронный синхронизатор `httpx`.
+- `test_audit_regression.py` — 21 регрессионный тест для всех 23 дефектов из аудита (C1-C5, H1-H11, M1-M8, I1).
 - `test_local_automation_cdp_api.py` — тесты Dolphin{anty} Local API и CDP портов.
 - `test_cookie_bulk_manager.py` — тесты пакетного импорта, папок, ZIP архивов и Netscape парсера.
 - `test_synchronizer_engine.py` — тесты синхронизатора сессий и расположения окон Win32.
 - `test_scenario_engine_and_warmup.py` — тесты конструктора сценариев и многошагового автопрогрева.
 - `test_mass_profile_generator.py` — тесты массовой генерации ферм и уникализации отпечатков.
-- `test_profile_bundle_portability.py` — тесты портативных `.nazak` бандлов.
 - `test_proxy_rotation_and_mobile.py` — тесты мобильных ссылок смены IP.
 - `test_account_provisioner_edge_cases.py` — тесты RFC 6238 TOTP, OAuth 2.0.
 - `test_browser_cdp_resilience.py` — тесты генерации параметров Chrome и stealth.js.

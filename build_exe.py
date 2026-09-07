@@ -33,7 +33,7 @@ SPEC_FILE = ROOT_DIR / "NazakBrowserStudio.spec"
 APP_DIR = DIST_DIR / "NazakBrowserStudio"
 EXE_PATH = APP_DIR / "NazakBrowserStudio.exe"
 ISS_FILE = ROOT_DIR / "installer.iss"
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 ZIP_NAME = f"NazakBrowserStudio-v{VERSION}-Windows-x64.zip"
 ZIP_PATH = DIST_DIR / ZIP_NAME
 

@@ -2,7 +2,7 @@
 Nazak Browser Studio - Professional Multi-Profile Browser Management Suite.
 """
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 __author__ = "Nazak Digital"
 
 from .core import BrowserLauncher, ProcessMonitor, ProfileManager, check_proxy_health
