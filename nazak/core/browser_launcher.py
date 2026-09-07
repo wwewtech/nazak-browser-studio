@@ -212,9 +212,11 @@ class BrowserLauncher:
         ws = self.profile_cdp_ws.get(profile_id) or self.resolve_cdp_ws_url(port, timeout_sec=1.0)
         if ws:
             self.profile_cdp_ws[profile_id] = ws
+        ws_url = ws or f"ws://127.0.0.1:{port}/devtools/browser"
         return {
             "port": port,
-            "ws_endpoint": ws or f"ws://127.0.0.1:{port}/devtools/browser",
+            "ws_endpoint": ws_url,
+            "wsEndpoint": ws_url,
             "http_endpoint": f"http://127.0.0.1:{port}",
         }
 

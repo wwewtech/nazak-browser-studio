@@ -1,11 +1,9 @@
 # Synchronizer
 import asyncio
 import ctypes
-import json
 import random
 import sys
 import time
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -142,23 +140,25 @@ class SynchronizerManager:
         if not self.current_session or not self.current_session.active:
             return {}
         results = {}
-        for worker_id in self.current_session.worker_profile_ids:
-            cdp_info = self.browser_launcher.get_cdp_info(worker_id)
-            if not cdp_info:
-                results[worker_id] = False
-                continue
-            port = cdp_info["port"]
-            if self.current_session.humanize_jitter:
-                delay = random.uniform(*self.current_session.delay_range_ms) / 1000.0
-                await asyncio.sleep(delay)
-            try:
-                nav_url = f"http://127.0.0.1:{port}/json"
-                req = urllib.request.Request(nav_url)
-                with urllib.request.urlopen(req, timeout=1.5) as resp:
-                    tabs = json.loads(resp.read().decode("utf-8"))
+        import httpx
+
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            for worker_id in self.current_session.worker_profile_ids:
+                cdp_info = self.browser_launcher.get_cdp_info(worker_id)
+                if not cdp_info:
+                    results[worker_id] = False
+                    continue
+                port = cdp_info["port"]
+                if self.current_session.humanize_jitter:
+                    delay = random.uniform(*self.current_session.delay_range_ms) / 1000.0
+                    await asyncio.sleep(delay)
+                try:
+                    nav_url = f"http://127.0.0.1:{port}/json"
+                    resp = await client.get(nav_url)
+                    tabs = resp.json() if resp.status_code == 200 else []
                     results[worker_id] = bool(tabs)
-            except Exception:
-                results[worker_id] = False
+                except Exception:
+                    results[worker_id] = False
         self.current_session.total_replicated_events += 1
         return results
 

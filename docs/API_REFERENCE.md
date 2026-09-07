@@ -55,7 +55,9 @@
       },
       "automation": {
         "port": 9222,
-        "wsEndpoint": "ws://127.0.0.1:9222/devtools/browser/d92f98..."
+        "ws_endpoint": "ws://127.0.0.1:9222/devtools/browser/d92f98...",
+        "wsEndpoint": "ws://127.0.0.1:9222/devtools/browser/d92f98...",
+        "http_endpoint": "http://127.0.0.1:9222"
       },
       "tags": ["Google Ads", "USA", "RTX4090"]
     }
@@ -265,17 +267,17 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 
 #### `GET /api/scenarios`
 Получение списка встроенных сценариев:
-- `ecommerce_trust_booster` — Прогрев поисковой выдачи Google, интернет-магазины, клики по товарам.
-- `youtube_shorts_warmup` — Просмотр ленты Shorts, досмотры видео, разгон рекомендаций.
-- `crypto_web3_farming` — Серфинг CoinMarketCap, DeFi протоколов, крипто-новостей.
-- `finance_high_cpc_banking` — Сбор трастовых куков высшей ценовой категории (банки, кредиты).
+- `scen_ecom_trust` (псевдоним: `ecommerce_trust_booster`) — Прогрев поисковой выдачи Google, интернет-магазины, клики по товарам.
+- `scen_youtube_viewer` (псевдоним: `youtube_shorts_warmup`) — Просмотр ленты Shorts, досмотры видео, разгон рекомендаций.
+- `scen_crypto_web3` (псевдоним: `crypto_web3_farming`) — Серфинг CoinMarketCap, DeFi протоколов, крипто-новостей.
+- `scen_finance_banking` (псевдоним: `finance_high_cpc_banking`) — Сбор трастовых куков высшей ценовой категории (банки, кредиты).
 
 #### `POST /api/scenarios/run`
 Запуск сценария по пулу профилей с контролем параллелизма (`max_concurrency`).
 - **Request Body**:
 ```json
 {
-  "scenario_id": "ecommerce_trust_booster",
+  "scenario_id": "scen_ecom_trust",
   "profile_ids": ["prof_01", "prof_02", "prof_03"],
   "max_concurrency": 3
 }
