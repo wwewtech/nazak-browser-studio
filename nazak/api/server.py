@@ -5,8 +5,10 @@ FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
 import asyncio
 import json
 import os
+import re
 import urllib.request
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -78,12 +80,24 @@ synchronizer_mgr = SynchronizerManager(browser_launcher)
 scenario_executor = ScenarioExecutor(browser_launcher, profile_manager)
 
 
+_server_loop: asyncio.AbstractEventLoop | None = None
+
+
 def on_process_state_change(profile_id: str, status: ProfileStatus):
+    global _server_loop
+    payload = {"profile_id": profile_id, "status": status.value}
+    if _server_loop and _server_loop.is_running():
+        try:
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast("profile_status_change", payload),
+                _server_loop,
+            )
+            return
+        except Exception:
+            pass
     try:
         asyncio.get_running_loop()
-        _task = asyncio.create_task(
-            ws_manager.broadcast("profile_status_change", {"profile_id": profile_id, "status": status.value})
-        )
+        asyncio.create_task(ws_manager.broadcast("profile_status_change", payload))
     except RuntimeError:
         pass
 
@@ -93,6 +107,9 @@ process_monitor.register_callback(on_process_state_change)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _server_loop
+    _server_loop = asyncio.get_running_loop()
+    app.state.loop = _server_loop
     process_monitor.start()
     yield
     process_monitor.stop()
@@ -140,7 +157,7 @@ tags_metadata = [
 app = FastAPI(
     title="Nazak Browser Studio API",
     description="Professional Multi-Profile Anti-Detect Browser Launcher with Strict Proxy & Google Automation Isolation",
-    version="1.4.1",
+    version="1.5.0",
     openapi_tags=tags_metadata,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -155,11 +172,35 @@ async def redirect_to_swagger_docs():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8899",
+        "http://localhost:8899",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def validate_pid(profile_id: str) -> str:
+    if not profile_id or not isinstance(profile_id, str):
+        raise HTTPException(status_code=400, detail="Invalid profile_id: must be a non-empty string")
+    p = Path(profile_id)
+    if (
+        p.name != profile_id
+        or p.is_absolute()
+        or profile_id in ("", ".", "..")
+        or "/" in profile_id
+        or "\\" in profile_id
+        or ":" in profile_id
+    ):
+        raise HTTPException(status_code=400, detail="Invalid profile_id: path traversal detected")
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", profile_id):
+        raise HTTPException(status_code=400, detail="Invalid profile_id: unsafe characters")
+    return profile_id
 
 
 # Schemas for requests
@@ -292,6 +333,7 @@ async def list_profiles():
     "/api/profiles/{profile_id}", response_model=BrowserProfile, tags=["Profiles"], summary="Get single profile details"
 )
 async def get_profile(profile_id: str):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -303,6 +345,10 @@ async def get_profile(profile_id: str):
 
 @app.post("/api/profiles", response_model=BrowserProfile, tags=["Profiles"], summary="Create new isolated profile")
 async def create_profile(profile_data: BrowserProfile):
+    if profile_data.id:
+        validate_pid(profile_data.id)
+        if profile_manager.get_profile(profile_data.id):
+            raise HTTPException(status_code=409, detail=f"Profile with id '{profile_data.id}' already exists")
     created = profile_manager.create_profile(profile_data)
     await ws_manager.broadcast("profile_created", created.model_dump())
     return created
@@ -312,6 +358,7 @@ async def create_profile(profile_data: BrowserProfile):
     "/api/profiles/{profile_id}", response_model=BrowserProfile, tags=["Profiles"], summary="Update profile settings"
 )
 async def update_profile(profile_id: str, profile_data: BrowserProfile):
+    validate_pid(profile_id)
     profile_data.id = profile_id
     updated = profile_manager.update_profile(profile_data)
     if not updated:
@@ -322,6 +369,7 @@ async def update_profile(profile_id: str, profile_data: BrowserProfile):
 
 @app.delete("/api/profiles/{profile_id}", tags=["Profiles"], summary="Delete profile and local storage data")
 async def delete_profile(profile_id: str):
+    validate_pid(profile_id)
     if browser_launcher.is_profile_running(profile_id):
         browser_launcher.stop(profile_id)
     deleted = profile_manager.delete_profile(profile_id, delete_data=True)
@@ -338,6 +386,7 @@ async def delete_profile(profile_id: str):
     summary="Clone profile with randomized hardware fingerprint",
 )
 async def clone_profile(profile_id: str, new_name: str | None = Query(None)):
+    validate_pid(profile_id)
     cloned = profile_manager.clone_profile(profile_id, new_name)
     if not cloned:
         raise HTTPException(status_code=404, detail="Source profile not found")
@@ -347,6 +396,7 @@ async def clone_profile(profile_id: str, new_name: str | None = Query(None)):
 
 @app.post("/api/profiles/{profile_id}/launch", tags=["Profiles"], summary="Launch browser profile")
 async def launch_profile(profile_id: str, req: LaunchRequest | None = None):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -381,6 +431,7 @@ async def launch_profile(profile_id: str, req: LaunchRequest | None = None):
 
 @app.post("/api/profiles/{profile_id}/stop", tags=["Profiles"], summary="Stop running browser profile")
 async def stop_profile(profile_id: str):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -429,6 +480,7 @@ async def dolphin_list_profiles():
     summary="Nazak v1 - Start profile with CDP automation",
 )
 async def dolphin_start_profile(profile_id: str, custom_url: str | None = Query(None), port: int | None = Query(None)):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -458,6 +510,7 @@ async def dolphin_start_profile(profile_id: str, custom_url: str | None = Query(
 )
 @app.post("/api/v1/profiles/{profile_id}/stop", tags=["Automation & CDP"], summary="Nazak v1 - Stop running profile")
 async def dolphin_stop_profile(profile_id: str):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -498,6 +551,7 @@ async def dolphin_active_profiles():
     summary="Query active CDP port and WebSocket URL for profile",
 )
 async def get_profile_cdp(profile_id: str):
+    validate_pid(profile_id)
     cdp_info = browser_launcher.get_cdp_info(profile_id)
     if not cdp_info:
         raise HTTPException(status_code=400, detail="Profile is not running or CDP is not active")
@@ -507,29 +561,53 @@ async def get_profile_cdp(profile_id: str):
 @app.post("/api/profiles/batch-launch", tags=["Profiles"], summary="Launch multiple profiles simultaneously")
 async def batch_launch(req: BatchActionRequest):
     results: dict[str, Any] = {}
+    any_changed = False
     for pid in req.profile_ids:
+        try:
+            validate_pid(pid)
+        except HTTPException:
+            results[pid] = {"success": False, "error": f"Invalid profile ID: {pid}"}
+            continue
         prof = profile_manager.get_profile(pid)
         if prof:
             ok, p_id, err = browser_launcher.launch(prof)
             if ok:
                 prof.status = ProfileStatus.RUNNING
                 prof.pid = p_id
-                profile_manager.update_profile(prof)
+                prof.updated_at = datetime.now(timezone.utc).isoformat()
+                profile_manager.profiles[pid] = prof
+                any_changed = True
                 results[pid] = {"success": True, "pid": p_id}
             else:
+                prof.status = ProfileStatus.ERROR
+                prof.pid = None
+                prof.updated_at = datetime.now(timezone.utc).isoformat()
+                profile_manager.profiles[pid] = prof
+                any_changed = True
                 results[pid] = {"success": False, "error": err}
+    if any_changed:
+        profile_manager.save_profiles()
     return results
 
 
 @app.post("/api/profiles/batch-stop", tags=["Profiles"], summary="Stop multiple running profiles simultaneously")
 async def batch_stop(req: BatchActionRequest):
+    any_changed = False
     for pid in req.profile_ids:
+        try:
+            validate_pid(pid)
+        except HTTPException:
+            continue
         browser_launcher.stop(pid)
         prof = profile_manager.get_profile(pid)
         if prof:
             prof.status = ProfileStatus.STOPPED
             prof.pid = None
-            profile_manager.update_profile(prof)
+            prof.updated_at = datetime.now(timezone.utc).isoformat()
+            profile_manager.profiles[pid] = prof
+            any_changed = True
+    if any_changed:
+        profile_manager.save_profiles()
     return {"success": True, "stopped_count": len(req.profile_ids)}
 
 
@@ -540,6 +618,7 @@ async def batch_stop(req: BatchActionRequest):
     summary="Perform 5-stage health check for profile proxy",
 )
 async def check_profile_proxy(profile_id: str):
+    validate_pid(profile_id)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -568,16 +647,19 @@ async def check_all_profiles():
     async def _check(p: BrowserProfile):
         res = await check_proxy_health(p.proxy, profile_dir=PROFILES_DIR / p.id)
         p.last_health_check = res
-        profile_manager.update_profile(p)
+        p.updated_at = datetime.now(timezone.utc).isoformat()
+        profile_manager.profiles[p.id] = p
         await ws_manager.broadcast("profile_health_update", {"profile_id": p.id, "health": res.model_dump()})
         return p.id, res
 
     await asyncio.gather(*[_check(p) for p in profiles], return_exceptions=True)
+    profile_manager.save_profiles()
     return {"total_checked": len(profiles)}
 
 
 @app.post("/api/profiles/{profile_id}/clear-cache", tags=["Profiles"], summary="Purge browser cache for profile")
 async def clear_cache(profile_id: str):
+    validate_pid(profile_id)
     if browser_launcher.is_profile_running(profile_id):
         raise HTTPException(
             status_code=400, detail="Cannot clear cache while browser is running. Please stop it first."
@@ -643,6 +725,7 @@ async def mass_generate_profiles_endpoint(req: MassGenerateRequest):
     summary="Export complete profile as portable .nazak archive",
 )
 async def export_profile_bundle_endpoint(profile_id: str):
+    validate_pid(profile_id)
     prof = profile_manager.get_profile(profile_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -654,6 +737,7 @@ async def export_profile_bundle_endpoint(profile_id: str):
 
 @app.post("/api/profiles/{profile_id}/rotate-proxy", tags=["Proxies"], summary="Trigger mobile proxy IP rotation URL")
 async def rotate_profile_proxy_endpoint(profile_id: str):
+    validate_pid(profile_id)
     prof = profile_manager.get_profile(profile_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -704,6 +788,10 @@ async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
     summary="Export profile cookies as JSON or Netscape format",
 )
 async def export_profile_cookies_endpoint(profile_id: str, format: str = Query("json")):
+    validate_pid(profile_id)
+    prof = profile_manager.get_profile(profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
     cookies = profile_manager.load_profile_cookies(profile_id)
     if format.lower() == "netscape":
         return {"format": "netscape", "content": cookies_to_netscape(cookies), "cookies_count": len(cookies)}
@@ -716,6 +804,10 @@ async def export_profile_cookies_endpoint(profile_id: str, format: str = Query("
     summary="Import cookies into profile (JSON or Netscape format)",
 )
 async def import_cookies_endpoint(profile_id: str, req: CookieImportRequest):
+    validate_pid(profile_id)
+    prof = profile_manager.get_profile(profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
     cookies = parse_any_cookies(req.cookies_data)
     if not cookies:
         raise HTTPException(
@@ -731,21 +823,41 @@ async def list_scenarios():
     return [s.to_dict() for s in BUILTIN_SCENARIOS]
 
 
+SCENARIO_ALIASES: dict[str, str] = {
+    "ecommerce_trust_booster": "scen_ecom_trust",
+    "youtube_shorts_warmup": "scen_youtube_viewer",
+    "crypto_web3_farming": "scen_crypto_web3",
+    "finance_high_cpc_banking": "scen_finance_banking",
+}
+
+
 @app.post(
     "/api/scenarios/run", tags=["Scenarios & Warmup"], summary="Run scenario across profile pool with concurrency limit"
 )
 async def run_scenario_endpoint(req: ScenarioRunRequest, background_tasks: BackgroundTasks):
+    for pid in req.profile_ids:
+        validate_pid(pid)
+
     scenario = None
     if req.scenario_id:
+        target_id = SCENARIO_ALIASES.get(req.scenario_id, req.scenario_id)
         for s in BUILTIN_SCENARIOS:
-            if s.id == req.scenario_id:
+            if s.id == target_id:
                 scenario = s
                 break
+        if not scenario:
+            valid_ids = [s.id for s in BUILTIN_SCENARIOS] + list(SCENARIO_ALIASES.keys())
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown scenario_id '{req.scenario_id}'. Valid IDs: {valid_ids}",
+            )
     elif req.scenario_data:
         scenario = WarmupScenario.from_dict(req.scenario_data)
-
-    if not scenario:
-        scenario = BUILTIN_SCENARIOS[0]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either scenario_id or scenario_data must be provided",
+        )
 
     background_tasks.add_task(
         scenario_executor.run_batch_warmup,
@@ -806,6 +918,7 @@ async def synchronizer_navigate(req: SynchronizerNavigateRequest):
     "/api/profiles/{profile_id}/warmup/plan", tags=["Scenarios & Warmup"], summary="Generate organic warmup search plan"
 )
 async def get_warmup_plan(profile_id: str, req: WarmupRequest):
+    validate_pid(profile_id)
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
     return plan.to_dict()
 
@@ -816,6 +929,7 @@ async def get_warmup_plan(profile_id: str, req: WarmupRequest):
     summary="Launch profile on warmup start URL",
 )
 async def launch_warmup(profile_id: str, req: WarmupRequest):
+    validate_pid(profile_id)
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
     urls = generate_warmup_urls(plan.queries)
     start_url = urls[0] if urls else "https://www.google.com"
@@ -861,10 +975,12 @@ async def get_autopost_status():
 
 @app.post("/api/autopost/uniquify", tags=["YouTube Shorts Autoposter"], summary="Batch uniqueize video using FFmpeg")
 async def uniquify_videos_endpoint(req: UniquifyRequest):
+    for pid in req.profile_ids:
+        validate_pid(pid)
     src = Path(req.source_video_path)
     if not src.exists():
         raise HTTPException(status_code=400, detail=f"Source video not found: {req.source_video_path}")
-    results = video_uniquifier.batch_uniquify(src, req.profile_ids)
+    results = await asyncio.to_thread(video_uniquifier.batch_uniquify, src, req.profile_ids)
     formatted = {}
     for pid, (ok, path, err) in results.items():
         formatted[pid] = {"success": ok, "output_path": str(path.resolve()) if path else None, "error": err}
@@ -877,6 +993,8 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
     summary="Launch autonomous YouTube Shorts or Instagram Reels upload queue",
 )
 async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: BackgroundTasks):
+    for pid in req.profile_ids:
+        validate_pid(pid)
     if upload_queue_mgr.is_running:
         raise HTTPException(
             status_code=400, detail="An upload batch is already running. Please wait or cancel it first."
@@ -918,6 +1036,8 @@ async def cancel_autopost():
     summary="Preview Spintax title and description generations",
 )
 async def preview_spintax_endpoint(req: AutopostBatchRequest):
+    for pid in req.profile_ids:
+        validate_pid(pid)
     samples = []
     for pid in req.profile_ids[:5]:
         prof = profile_manager.get_profile(pid)

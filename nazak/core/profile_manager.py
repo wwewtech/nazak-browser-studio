@@ -5,7 +5,9 @@ Profile Manager: Persistence, Deep 10-Profile Auto-Provisioning, Total Disk Isol
 import json
 import os
 import random
+import re
 import shutil
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -34,7 +36,24 @@ class ProfileManager:
         self.profiles_file = profiles_file
         self.profiles_dir = profiles_dir
         self.profiles: dict[str, BrowserProfile] = {}
+        self._save_lock = threading.RLock()
         self.load_profiles()
+
+    def _validate_id(self, profile_id: str):
+        if not profile_id or not isinstance(profile_id, str):
+            raise ValueError("Invalid profile ID: must be a non-empty string")
+        p = Path(profile_id)
+        if (
+            p.name != profile_id
+            or p.is_absolute()
+            or profile_id in ("", ".", "..")
+            or "/" in profile_id
+            or "\\" in profile_id
+            or ":" in profile_id
+        ):
+            raise ValueError(f"Invalid profile ID: path traversal detected ({profile_id})")
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", profile_id):
+            raise ValueError(f"Invalid profile ID: unsafe characters ({profile_id})")
 
     def _generate_default_10_profiles(self) -> list[BrowserProfile]:
         """
@@ -374,58 +393,85 @@ class ProfileManager:
             self.save_profiles()
 
     def save_profiles(self):
-        """Atomically saves profiles to JSON file with Windows retry resilience."""
-        self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp_file = self.profiles_file.with_suffix(".tmp")
-        data = [p.model_dump() for p in self.profiles.values()]
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-        for attempt in range(5):
+        """Atomically saves profiles to JSON file with Windows retry resilience and thread safety."""
+        with self._save_lock:
+            self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp_file = self.profiles_file.with_name(f"{self.profiles_file.name}.{uuid.uuid4().hex}.tmp")
             try:
-                tmp_file.replace(self.profiles_file)
-                break
-            except (PermissionError, OSError):
-                time.sleep(0.05 * (attempt + 1))
-                if attempt == 4:
-                    shutil.copy2(tmp_file, self.profiles_file)
+                data = [p.model_dump() for p in self.profiles.values()]
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+
+                for attempt in range(5):
+                    try:
+                        tmp_file.replace(self.profiles_file)
+                        break
+                    except (PermissionError, OSError):
+                        time.sleep(0.05 * (attempt + 1))
+                        if attempt == 4:
+                            shutil.copy2(tmp_file, self.profiles_file)
+                            try:
+                                tmp_file.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+            finally:
+                if tmp_file.exists():
                     try:
                         tmp_file.unlink(missing_ok=True)
                     except Exception:
                         pass
 
     def list_profiles(self) -> list[BrowserProfile]:
-        return list(self.profiles.values())
+        with self._save_lock:
+            return list(self.profiles.values())
 
     def get_profile(self, profile_id: str) -> BrowserProfile | None:
-        return self.profiles.get(profile_id)
+        try:
+            self._validate_id(profile_id)
+        except ValueError:
+            return None
+        with self._save_lock:
+            return self.profiles.get(profile_id)
 
     def create_profile(self, profile: BrowserProfile) -> BrowserProfile:
-        if not profile.id:
-            profile.id = f"prof_{uuid.uuid4().hex[:8]}"
-        self.profiles[profile.id] = profile
-        self.save_profiles()
-        return profile
+        with self._save_lock:
+            if not profile.id:
+                profile.id = f"prof_{uuid.uuid4().hex[:8]}"
+            else:
+                self._validate_id(profile.id)
+                if profile.id in self.profiles:
+                    raise ValueError(f"Profile with id '{profile.id}' already exists")
+            self.profiles[profile.id] = profile
+            self.save_profiles()
+            return profile
 
     def update_profile(self, profile: BrowserProfile) -> BrowserProfile | None:
-        if profile.id not in self.profiles:
-            return None
-        profile.updated_at = datetime.now(timezone.utc).isoformat()
-        self.profiles[profile.id] = profile
-        self.save_profiles()
-        return profile
+        self._validate_id(profile.id)
+        with self._save_lock:
+            if profile.id not in self.profiles:
+                return None
+            profile.updated_at = datetime.now(timezone.utc).isoformat()
+            self.profiles[profile.id] = profile
+            self.save_profiles()
+            return profile
 
     def delete_profile(self, profile_id: str, delete_data: bool = True) -> bool:
-        if profile_id not in self.profiles:
-            return False
-        self.profiles.pop(profile_id, None)
-        self.save_profiles()
+        self._validate_id(profile_id)
+        with self._save_lock:
+            if profile_id not in self.profiles:
+                return False
+            self.profiles.pop(profile_id, None)
+            self.save_profiles()
 
-        if delete_data:
-            data_path = self.profiles_dir / profile_id
-            if data_path.exists():
-                shutil.rmtree(data_path, ignore_errors=True)
-        return True
+            if delete_data:
+                data_path = (self.profiles_dir / profile_id).resolve()
+                if (
+                    data_path.is_relative_to(self.profiles_dir.resolve())
+                    and data_path != self.profiles_dir.resolve()
+                    and data_path.exists()
+                ):
+                    shutil.rmtree(data_path, ignore_errors=True)
+            return True
 
     def clone_profile(self, source_id: str, new_name: str | None = None) -> BrowserProfile | None:
         source = self.get_profile(source_id)
@@ -460,8 +506,12 @@ class ProfileManager:
         return cloned_profile
 
     def get_profile_disk_size_bytes(self, profile_id: str) -> int:
-        path = self.profiles_dir / profile_id
-        if not path.exists():
+        try:
+            self._validate_id(profile_id)
+        except ValueError:
+            return 0
+        path = (self.profiles_dir / profile_id).resolve()
+        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
             return 0
         total = 0
         try:
@@ -484,8 +534,9 @@ class ProfileManager:
         return total
 
     def clear_profile_cache(self, profile_id: str) -> bool:
-        path = self.profiles_dir / profile_id
-        if not path.exists():
+        self._validate_id(profile_id)
+        path = (self.profiles_dir / profile_id).resolve()
+        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
             return True
         cache_dirs = ["Cache", "Code Cache", "GPUCache", "DawnCache", "Service Worker/CacheStorage"]
         for cdir in cache_dirs:
@@ -499,7 +550,12 @@ class ProfileManager:
 
     def save_profile_cookies(self, profile_id: str, cookies: list[dict[str, Any]]) -> bool:
         """Persists imported cookies to both JSON and Netscape formats in profile directory."""
-        path = self.profiles_dir / profile_id
+        self._validate_id(profile_id)
+        if profile_id not in self.profiles:
+            return False
+        path = (self.profiles_dir / profile_id).resolve()
+        if not path.is_relative_to(self.profiles_dir.resolve()) or path == self.profiles_dir.resolve():
+            return False
         path.mkdir(parents=True, exist_ok=True)
         default_dir = path / "Default"
         default_dir.mkdir(parents=True, exist_ok=True)
@@ -522,7 +578,10 @@ class ProfileManager:
 
     def load_profile_cookies(self, profile_id: str) -> list[dict[str, Any]]:
         """Loads saved cookies from JSON or Netscape formats in profile directory."""
-        path = self.profiles_dir / profile_id
+        self._validate_id(profile_id)
+        path = (self.profiles_dir / profile_id).resolve()
+        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
+            return []
         json_file = path / "cookies.json"
         if json_file.exists():
             try:
@@ -683,6 +742,10 @@ class ProfileManager:
         Exports a complete portable .nazak / zip bundle containing profile metadata,
         fingerprint, cookies, and local session files.
         """
+        try:
+            self._validate_id(profile_id)
+        except ValueError:
+            return None
         prof = self.get_profile(profile_id)
         if not prof:
             return None
@@ -692,7 +755,9 @@ class ProfileManager:
         out_file = output_path or (self.profiles_dir / f"{profile_id}_bundle.nazak")
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
-        prof_dir = self.profiles_dir / profile_id
+        prof_dir = (self.profiles_dir / profile_id).resolve()
+        if not prof_dir.is_relative_to(self.profiles_dir.resolve()):
+            return None
 
         with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
             # 1. Profile metadata JSON
@@ -724,7 +789,7 @@ class ProfileManager:
 
     def import_profile_bundle(self, bundle_path: Path, new_name: str | None = None) -> BrowserProfile | None:
         """
-        Imports and restores a portable .nazak / zip bundle into the workspace.
+        Imports and restores a portable .nazak / zip bundle into the workspace with zip-slip protection.
         """
         if not bundle_path.exists():
             return None
@@ -752,17 +817,24 @@ class ProfileManager:
                 prof_data["created_at"] = datetime.now(timezone.utc).isoformat()
                 prof_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-                # Restore session files
-                target_dir = self.profiles_dir / new_id
+                # Restore session files safely
+                target_dir = (self.profiles_dir / new_id).resolve()
                 target_dir.mkdir(parents=True, exist_ok=True)
 
                 for name in zf.namelist():
                     if name.startswith("data/"):
                         rel_sub = name[len("data/") :]
-                        if rel_sub:
-                            target_file = target_dir / rel_sub
-                            target_file.parent.mkdir(parents=True, exist_ok=True)
-                            target_file.write_bytes(zf.read(name))
+                        if not rel_sub:
+                            continue
+                        rel_path = Path(rel_sub)
+                        # Protect against zip-slip: block absolute paths, drives, and '..' segments
+                        if rel_path.is_absolute() or rel_path.drive or ".." in rel_path.parts:
+                            continue
+                        target_file = (target_dir / rel_path).resolve()
+                        if not target_file.is_relative_to(target_dir):
+                            continue
+                        target_file.parent.mkdir(parents=True, exist_ok=True)
+                        target_file.write_bytes(zf.read(name))
 
                 # Restore cookies
                 if "cookies.json" in zf.namelist():

@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -14,13 +15,13 @@ import time
 
 from playwright.async_api import async_playwright
 
-from nazak.config import EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE
+from nazak.config import DATA_DIR, EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE
 from nazak.core.account_provisioner import AccountProvisioner, generate_totp_rfc6238
 from nazak.core.browser_launcher import BrowserLauncher, find_chrome_executable
 from nazak.core.profile_manager import ProfileManager
 from nazak.core.youtube_uploader import human_type
 
-SCREENSHOTS_DIR = Path("D:/nazak/data/screenshots/live_run")
+SCREENSHOTS_DIR = DATA_DIR / "screenshots" / "live_run"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -33,30 +34,63 @@ async def run_live_flow():
     pm = ProfileManager(PROFILES_FILE, PROFILES_DIR)
     prov = AccountProvisioner(pm, PROFILES_DIR)
 
-    profiles = [
-        p
-        for p in pm.list_profiles()
-        if "mlikhonkhan78" in p.name
-        or (p.google.target_account_email and "mlikhonkhan78" in p.google.target_account_email)
-    ]
+    target_email = os.environ.get("GOOGLE_EMAIL", "")
+    profiles = []
+    if target_email:
+        profiles = [
+            p
+            for p in pm.list_profiles()
+            if (target_email in p.name)
+            or (p.google and p.google.target_account_email and target_email in p.google.target_account_email)
+        ]
     if not profiles:
-        print("Профиль не найден в базе, импортируем из data1.txt...")
-        raw_text = Path("D:/nazak/data1.txt").read_text(encoding="utf-8")
-        profiles = prov.batch_import_and_create_profiles(
-            raw_text, group_name="DarkStore Gmail", posting_mode="browser_stealth"
-        )
+        existing = pm.list_profiles()
+        google_profs = [p for p in existing if p.google and (p.google.notes or p.google.target_account_email)]
+        if google_profs:
+            profiles = [google_profs[0]]
+        elif existing:
+            profiles = [existing[0]]
+
+    if not profiles:
+        data_file = Path(os.environ.get("NAZAK_DATA_FILE", DATA_DIR / "data1.txt"))
+        if data_file.exists():
+            print(f"Профиль не найден в базе, импортируем из {data_file}...")
+            raw_text = data_file.read_text(encoding="utf-8")
+            profiles = prov.batch_import_and_create_profiles(
+                raw_text, group_name="DarkStore Gmail", posting_mode="browser_stealth"
+            )
+
+    if not profiles:
+        print("❌ Профили для авторизации не найдены. Создайте профиль или укажите NAZAK_DATA_FILE.")
+        return
 
     target_prof = profiles[-1]
-    notes = json.loads(target_prof.google.notes)
+    notes = {}
+    if target_prof.google and target_prof.google.notes:
+        try:
+            notes = json.loads(target_prof.google.notes)
+        except Exception:
+            notes = {}
 
-    email = notes.get("account_email", "mlikhonkhan78@gmail.com")
-    password = notes.get("account_password", "Gomie8383888")
-    totp_secret = notes.get("totp_secret", "qq6rxgbtkfetme7digqvl27kkechle5i")
-    recovery = notes.get("recovery_email", "")
+    email = (
+        notes.get("account_email")
+        or os.environ.get("GOOGLE_EMAIL")
+        or (target_prof.google.target_account_email if target_prof.google else "")
+    )
+    password = notes.get("account_password") or os.environ.get("GOOGLE_PASSWORD", "")
+    totp_secret = notes.get("totp_secret") or os.environ.get("GOOGLE_TOTP_SECRET", "")
+    recovery = notes.get("recovery_email") or os.environ.get("GOOGLE_RECOVERY_EMAIL", "")
 
-    print(f"📌 Аккаунт: {email}")
-    print(f"🔑 Пароль: {password}")
-    print(f"🛡️ TOTP Ключ: {totp_secret}")
+    masked_pw = ("*" * len(password)) if password else "НЕ ЗАДАН"
+    masked_totp = (
+        (totp_secret[:2] + "****" + totp_secret[-2:])
+        if len(totp_secret) > 4
+        else ("****" if totp_secret else "НЕ ЗАДАН")
+    )
+
+    print(f"📌 Аккаунт: {email or 'не указан'}")
+    print(f"🔑 Пароль: {masked_pw}")
+    print(f"🛡️ TOTP Ключ: {masked_totp}")
 
     # 2. Build Browser Arguments
     bl = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
@@ -234,7 +268,13 @@ async def run_live_flow():
                 pass
 
             # 9. Upload Test Video Shorts
-            video_file = Path("D:/nazak/data/test_shorts.mp4")
+            video_path_env = os.environ.get("NAZAK_TEST_VIDEO")
+            video_file = Path(video_path_env) if video_path_env else (DATA_DIR / "test_shorts.mp4")
+            if not video_file.exists():
+                video_file = DATA_DIR / "videos" / "source.mp4"
+            if not video_file.exists():
+                video_file.parent.mkdir(parents=True, exist_ok=True)
+                video_file.write_bytes(b"DEMO_MP4_HEADER" + b"0" * 1024)
             print(f"🎬 Шаг 7: Загрузка Shorts видео ({video_file.name})...")
 
             # Try center 'Upload videos' button first, or fallback to Create menu
