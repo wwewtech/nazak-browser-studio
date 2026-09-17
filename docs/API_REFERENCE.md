@@ -1,43 +1,43 @@
-# 🌐 Nazak Browser Studio PRO — REST API & Swagger Reference
+# 🌐 Nazak Browser Studio — REST API & Swagger Reference
 
-> **API Server URL**: `http://127.0.0.1:8899`  
-> **Interactive Swagger UI**: [`http://127.0.0.1:8899/docs`](http://127.0.0.1:8899/docs) (или [`http://127.0.0.1:8899/swagger`](http://127.0.0.1:8899/swagger))  
-> **ReDoc Alternative UI**: [`http://127.0.0.1:8899/redoc`](http://127.0.0.1:8899/redoc)  
+> **API Server URL**: `http://127.0.0.1:8899`
+> **Interactive Swagger UI**: [`http://127.0.0.1:8899/docs`](http://127.0.0.1:8899/docs) (or [`http://127.0.0.1:8899/swagger`](http://127.0.0.1:8899/swagger))
+> **ReDoc Alternative UI**: [`http://127.0.0.1:8899/redoc`](http://127.0.0.1:8899/redoc)
 > **OpenAPI Specification JSON**: [`http://127.0.0.1:8899/openapi.json`](http://127.0.0.1:8899/openapi.json)
 
 ---
 
-## 📑 Содержание
-1. [Интерактивная документация Swagger](#-интерактивная-документация-swagger)
+## 📑 Table of Contents
+1. [Interactive Swagger Documentation](#-interactive-swagger-documentation)
 2. [Dolphin{anty} v1.0 Local Automation API (Playwright / Puppeteer / Selenium)](#-1-dolphinanty-v10-local-automation-api)
-3. [Управление профилями и массовая генерация ферм](#-2-управление-профилями-profiles)
-4. [Пакетный импорт и экспорт куков (Batch Cookies)](#-3-пакетный-импорт-и-экспорт-куков-cookies)
-5. [Синхронизатор действий и сетка окон Win32](#-4-синхронизатор-действий-action-synchronizer)
-6. [Конструктор сценариев и органический автопрогрев](#-5-конструктор-сценариев-и-автопрогрев-scenarios)
-7. [Диагностика прокси и мобильная ротация IP](#-6-прокси-и-мобильная-ротация-ip-proxies)
+3. [Profile Management & Mass Farm Generation](#-2-profile-management-profiles)
+4. [Batch Cookies Import & Export (Cookies)](#-3-batch-cookies-import--export-cookies)
+5. [Action Synchronizer & Win32 Window Grid](#-4-action-synchronizer)
+6. [Scenario Builder & Auto Warm-up (Scenarios)](#-5-scenario-builder--auto-warm-up-scenarios)
+7. [Proxy Diagnostics & Mobile IP Rotation (Proxies)](#-6-proxies--mobile-ip-rotation-proxies)
 8. [YouTube Shorts Stealth Autoposter & FFmpeg](#-7-youtube-shorts-autoposter--ffmpeg)
-9. [Системная телеметрия и WebSocket события](#-8-системная-телеметрия-и-websocket-события)
+9. [System Telemetry & WebSocket Events](#-8-system-telemetry--websocket-events)
 
 ---
 
-## ⚡ Интерактивная документация Swagger
+## ⚡ Interactive Swagger Documentation
 
-При запуске Nazak Browser Studio в режиме сервера (`python -m nazak.main --mode web` или при работе десктопного приложения) встроенный FastAPI сервер автоматически разворачивает интерактивный UI:
+When Nazak Browser Studio is running in server mode (`python -m nazak.main --mode web` or while the desktop app is running), the built-in FastAPI server automatically deploys an interactive UI:
 
-- **Swagger UI**: Откройте браузер по адресу `http://127.0.0.1:8899/docs` (или `http://127.0.0.1:8899/swagger`). Здесь вы можете тестировать каждый эндпоинт в режиме реального времени, просматривать JSON-схемы запросов и ответов и нажимать кнопку **"Try it out"**.
-- **ReDoc**: Доступен по адресу `http://127.0.0.1:8899/redoc` для удобного чтения технической спецификации в трехпанельном формате.
+- **Swagger UI**: Open your browser at `http://127.0.0.1:8899/docs` (or `http://127.0.0.1:8899/swagger`). Here you can test every endpoint in real time, inspect JSON request/response schemas, and click the **"Try it out"** button.
+- **ReDoc**: Available at `http://127.0.0.1:8899/redoc` for comfortably reading the technical specification in a three-panel format.
 
 ---
 
 ## 🤖 1. Dolphin{anty} v1.0 Local Automation API
 
-Полная совместимость со стандартным протоколом автоматизации Dolphin{anty}. Ваши существующие скрипты на **Playwright**, **Puppeteer**, **Selenium** или **BAS** могут подключаться к прогретым профилям без модификации логики.
+Full compatibility with the standard Dolphin{anty} automation protocol. Your existing **Playwright**, **Puppeteer**, **Selenium**, or **BAS** scripts can connect to warmed-up profiles without any logic changes.
 
-### Эндпоинты:
+### Endpoints:
 
 #### `GET /v1.0/browser_profiles`
-Получение списка всех профилей, их статусов, привязанных прокси и тегов.
-- **Ответ `200 OK`**:
+Retrieves the list of all profiles, their statuses, attached proxies, and tags.
+- **Response `200 OK`**:
 ```json
 {
   "success": true,
@@ -66,11 +66,11 @@
 ```
 
 #### `GET /v1.0/browser_profiles/{id}/start`
-Запуск профиля Chromium с выделением динамического порта CDP и генерацией WebSocket URL для подключения автоматизации.
-- **Параметры Query**:
-  - `custom_url` (опционально, string) — начальный URL для открытия.
-  - `port` (опционально, integer) — явный порт CDP (если не указан, выделяется свободный порт).
-- **Ответ `200 OK`**:
+Launches the Chromium profile with allocation of a dynamic CDP port and generation of a WebSocket URL for automation connections.
+- **Query Parameters**:
+  - `custom_url` (optional, string) — initial URL to open.
+  - `port` (optional, integer) — explicit CDP port (if not specified, a free port is allocated).
+- **Response `200 OK`**:
 ```json
 {
   "success": true,
@@ -84,8 +84,8 @@
 ```
 
 #### `GET /v1.0/browser_profiles/{id}/stop`
-Остановка работающего профиля.
-- **Ответ `200 OK`**:
+Stops a running profile.
+- **Response `200 OK`**:
 ```json
 {
   "success": true,
@@ -94,8 +94,8 @@
 ```
 
 #### `GET /v1.0/browser_profiles/active`
-Список всех активных на данный момент профилей с их CDP WebSocket эндпоинтами.
-- **Ответ `200 OK`**:
+List of all currently active profiles with their CDP WebSocket endpoints.
+- **Response `200 OK`**:
 ```json
 {
   "success": true,
@@ -116,7 +116,7 @@
 
 ---
 
-### 💡 Примеры подключения скриптов автоматизации
+### 💡 Automation Script Connection Examples
 
 #### 🐍 Python: Playwright (`connect_over_cdp`)
 ```python
@@ -126,7 +126,7 @@ from playwright.sync_api import sync_playwright
 PROFILE_ID = "prof_01"
 BASE_API = "http://127.0.0.1:8899"
 
-# 1. Запуск браузера через API
+# 1. Launch the browser via API
 start_res = requests.get(f"{BASE_API}/v1.0/browser_profiles/{PROFILE_ID}/start").json()
 if not start_res.get("success"):
     raise RuntimeError(f"Failed to launch profile: {start_res}")
@@ -134,17 +134,17 @@ if not start_res.get("success"):
 ws_endpoint = start_res["automation"]["wsEndpoint"]
 print(f"[+] Browser launched. Connecting via CDP: {ws_endpoint}")
 
-# 2. Подключение Playwright к запущенному изолированному профилю
+# 2. Connect Playwright to the launched isolated profile
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp(ws_endpoint)
     context = browser.contexts[0]
     page = context.pages[0] if context.pages else context.new_page()
 
-    # Все куки, отпечатки железа, прокси и сессия уже активны!
+    # All cookies, hardware fingerprints, proxy, and session are already active!
     page.goto("https://www.google.com")
     print(f"[+] Page title: {page.title()}")
-    
-    # 3. После работы закрываем сессию
+
+    # 3. Close the session after work is done
     browser.close()
     requests.get(f"{BASE_API}/v1.0/browser_profiles/{PROFILE_ID}/stop")
 ```
@@ -156,20 +156,20 @@ const puppeteer = require('puppeteer-core');
 
 async function main() {
     const profileId = 'prof_01';
-    
-    // 1. Запуск профиля
+
+    // 1. Launch the profile
     const res = await axios.get(`http://127.0.0.1:8899/v1.0/browser_profiles/${profileId}/start`);
     const wsEndpoint = res.data.automation.wsEndpoint;
-    
-    // 2. Подключение к CDP
+
+    // 2. Connect to CDP
     const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    
+
     await page.goto('https://api.ipify.org?format=json');
     const content = await page.evaluate(() => document.body.innerText);
     console.log(`[+] Real Exit IP via Proxy: ${content}`);
-    
+
     await browser.disconnect();
     await axios.get(`http://127.0.0.1:8899/v1.0/browser_profiles/${profileId}/stop`);
 }
@@ -179,44 +179,44 @@ main().catch(console.error);
 
 #### 💻 cURL
 ```bash
-# Запуск
+# Launch
 curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/start"
 
-# Остановка
+# Stop
 curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 ```
 
 ---
 
-## 👤 2. Управление профилями (Profiles)
+## 👤 2. Profile Management (Profiles)
 
-| Метод | Путь | Описание |
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/profiles` | Получить список всех профилей с их реальным статусом и PID |
-| `POST` | `/api/profiles` | Создать новый изолированный профиль |
-| `GET` | `/api/profiles/{id}` | Получить подробную конфигурацию профиля |
-| `PUT` | `/api/profiles/{id}` | Обновить параметры железа/прокси/аккаунта |
-| `DELETE` | `/api/profiles/{id}` | Удалить профиль и очистить файлы сессии на диске |
-| `POST` | `/api/profiles/{id}/clone` | Клонировать профиль со случайным перевыпуском отпечатков железа |
-| `POST` | `/api/profiles/{id}/launch` | Запуск браузера (обычный или с CDP) |
-| `POST` | `/api/profiles/{id}/stop` | Остановка процесса браузера |
-| `POST` | `/api/profiles/batch-launch` | Пакетный запуск массива `["prof_01", "prof_02"]` |
-| `POST` | `/api/profiles/batch-stop` | Пакетная остановка массива `["prof_01", "prof_02"]` |
-| `POST` | `/api/profiles/mass-generate` | Массовое создание фермы (1–100+ профилей) с Round-Robin прокси |
-| `POST` | `/api/profiles/bulk-import` | Пакетное создание профилей из строк прокси |
-| `GET` | `/api/profiles/{id}/bundle/export` | Экспорт профиля в портативный `.nazak` zip-архив |
-| `POST` | `/api/profiles/{id}/clear-cache` | Очистка кэша браузера, шейдеров и временных файлов профиля |
+| `GET` | `/api/profiles` | Get the list of all profiles with their real status and PID |
+| `POST` | `/api/profiles` | Create a new isolated profile |
+| `GET` | `/api/profiles/{id}` | Get the detailed profile configuration |
+| `PUT` | `/api/profiles/{id}` | Update hardware/proxy/account parameters |
+| `DELETE` | `/api/profiles/{id}` | Delete the profile and clean up session files on disk |
+| `POST` | `/api/profiles/{id}/clone` | Clone the profile with random re-issuing of hardware fingerprints |
+| `POST` | `/api/profiles/{id}/launch` | Launch the browser (normal or with CDP) |
+| `POST` | `/api/profiles/{id}/stop` | Stop the browser process |
+| `POST` | `/api/profiles/batch-launch` | Batch launch an array `["prof_01", "prof_02"]` |
+| `POST` | `/api/profiles/batch-stop` | Batch stop an array `["prof_01", "prof_02"]` |
+| `POST` | `/api/profiles/mass-generate` | Mass-create a farm (1–100+ profiles) with Round-Robin proxies |
+| `POST` | `/api/profiles/bulk-import` | Bulk-create profiles from proxy strings |
+| `GET` | `/api/profiles/{id}/bundle/export` | Export a profile to a portable `.nazak` zip archive |
+| `POST` | `/api/profiles/{id}/clear-cache` | Clear browser cache, shaders, and profile temporary files |
 
 ---
 
-## 🍪 3. Пакетный импорт и экспорт куков (Cookies)
+## 🍪 3. Batch Cookies Import & Export (Cookies)
 
 #### `POST /api/cookies/bulk-import`
-Универсальный пакетный импорт куков для множества профилей одновременно.
-- **Поддерживаемые форматы `cookies_data`**:
-  1. Блоки с разделителями профилей (`=== Profile 01 ===`, `--- Name ---`, `[Profile 01]`).
-  2. JSON-карта `{ "Profile_A": [...], "Profile_B": [...] }`.
-  3. Одиночный массив JSON или формат Netscape.
+Universal batch import of cookies for multiple profiles at once.
+- **Supported `cookies_data` formats**:
+  1. Blocks with profile delimiters (`=== Profile 01 ===`, `--- Name ---`, `[Profile 01]`).
+  2. A JSON map `{ "Profile_A": [...], "Profile_B": [...] }`.
+  3. A single JSON array or Netscape format.
 - **Request Body**:
 ```json
 {
@@ -238,7 +238,7 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 ```
 
 #### `POST /api/cookies/bulk-export`
-Экспорт всех сессионных куков в структурированный JSON или скачиваемый `.zip` архив.
+Exports all session cookies to a structured JSON or a downloadable `.zip` archive.
 - **Request Body**:
 ```json
 {
@@ -249,31 +249,31 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 
 ---
 
-## ⚡ 4. Синхронизатор действий (Action Synchronizer)
+## ⚡ 4. Action Synchronizer
 
-Репликация действий из главного окна (**Master**) на любые дочерние окна (**Workers**) с защитой от антифрода (суб-пиксельный джиттер и временные задержки) и автораскладкой окон по сетке.
+Replicates actions from the main window (**Master**) to any child windows (**Workers**) with anti-fraud protection (sub-pixel jitter and time delays) and automatic window tiling on a grid.
 
-| Метод | Путь | Описание |
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/synchronizer/start` | Запуск сессии синхронизации Master → Workers |
-| `POST` | `/api/synchronizer/stop` | Остановка текущей синхронизации |
-| `GET` | `/api/synchronizer/status` | Получение статуса сессии синхронизации |
-| `POST` | `/api/synchronizer/tile-windows` | 1-Клик выравнивание всех окон браузера по сетке 2x2, 3x3, 4x4 |
-| `POST` | `/api/synchronizer/navigate` | Мгновенная синхронная навигация всех воркеров на URL |
+| `POST` | `/api/synchronizer/start` | Start a Master → Workers synchronization session |
+| `POST` | `/api/synchronizer/stop` | Stop the current synchronization |
+| `GET` | `/api/synchronizer/status` | Get the synchronization session status |
+| `POST` | `/api/synchronizer/tile-windows` | 1-click alignment of all browser windows on a 2x2, 3x3, 4x4 grid |
+| `POST` | `/api/synchronizer/navigate` | Instantly navigate all workers to a URL in sync |
 
 ---
 
-## 🔥 5. Конструктор сценариев и автопрогрев (Scenarios)
+## 🔥 5. Scenario Builder & Auto Warm-up (Scenarios)
 
 #### `GET /api/scenarios`
-Получение списка встроенных сценариев:
-- `scen_ecom_trust` (псевдоним: `ecommerce_trust_booster`) — Прогрев поисковой выдачи Google, интернет-магазины, клики по товарам.
-- `scen_youtube_viewer` (псевдоним: `youtube_shorts_warmup`) — Просмотр ленты Shorts, досмотры видео, разгон рекомендаций.
-- `scen_crypto_web3` (псевдоним: `crypto_web3_farming`) — Серфинг CoinMarketCap, DeFi протоколов, крипто-новостей.
-- `scen_finance_banking` (псевдоним: `finance_high_cpc_banking`) — Сбор трастовых куков высшей ценовой категории (банки, кредиты).
+Retrieves the list of built-in scenarios:
+- `scen_ecom_trust` (alias: `ecommerce_trust_booster`) — Google SERP warm-up, e-commerce sites, clicks on products.
+- `scen_youtube_viewer` (alias: `youtube_shorts_warmup`) — Shorts feed viewing, full video watches, recommendation boosting.
+- `scen_crypto_web3` (alias: `crypto_web3_farming`) — Browsing CoinMarketCap, DeFi protocols, crypto news.
+- `scen_finance_banking` (alias: `finance_high_cpc_banking`) — Collecting top-price-tier trust cookies (banks, loans).
 
 #### `POST /api/scenarios/run`
-Запуск сценария по пулу профилей с контролем параллелизма (`max_concurrency`).
+Runs a scenario across a pool of profiles with concurrency control (`max_concurrency`).
 - **Request Body**:
 ```json
 {
@@ -285,10 +285,10 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 
 ---
 
-## 📱 6. Прокси и мобильная ротация IP (Proxies)
+## 📱 6. Proxies & Mobile IP Rotation (Proxies)
 
 #### `POST /api/profiles/{id}/rotate-proxy`
-Вызов URL ротации динамического мобильного прокси (смена внешнего IP адреса по ссылке провайдера).
+Triggers the rotation URL of a dynamic mobile proxy (changing the external IP address via the provider's link).
 - **Response `200 OK`**:
 ```json
 {
@@ -299,31 +299,31 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 ```
 
 #### `POST /api/profiles/{id}/check`
-5-этапная диагностика: TCP Latency, Geolocation / ISP, Google Reachability Suite, проверка хранилища, WebRTC Isolation.
+5-stage diagnostics: TCP Latency, Geolocation / ISP, Google Reachability Suite, storage check, WebRTC Isolation.
 
 ---
 
 ## 🎬 7. YouTube Shorts Autoposter & FFmpeg
 
-| Метод | Путь | Описание |
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/autopost/status` | Статус очереди автопостинга и доступность FFmpeg |
-| `POST` | `/api/autopost/uniquify` | Глубокая уникализация исходного видео под каждый профиль |
-| `POST` | `/api/autopost/launch` | Запуск автономной очереди загрузки с кривыми Безье |
-| `POST` | `/api/autopost/cancel` | Мгновенная отмена очереди загрузок |
-| `POST` | `/api/autopost/preview-spintax` | Предпросмотр рандомизации названий и описаний |
+| `GET` | `/api/autopost/status` | Autoposting queue status and FFmpeg availability |
+| `POST` | `/api/autopost/uniquify` | Deep uniquification of the source video for each profile |
+| `POST` | `/api/autopost/launch` | Start an autonomous upload queue with Bézier curves |
+| `POST` | `/api/autopost/cancel` | Instant cancellation of the upload queue |
+| `POST` | `/api/autopost/preview-spintax` | Preview of randomized titles and descriptions |
 
 ---
 
-## 📡 8. Системная телеметрия и WebSocket события
+## 📡 8. System Telemetry & WebSocket Events
 
 ### `GET /api/system/info`
-Возвращает информацию о хосте, пути к Google Chrome, количестве запущенных браузеров и путях к данным.
+Returns information about the host, the path to Google Chrome, the number of running browsers, and data paths.
 
 ### `WebSocket /ws/events`
-Стриминг событий в реальном времени:
+Real-time event streaming:
 ```json
-// Пример: статус браузера изменился
+// Example: browser status changed
 {
   "event": "profile_status_change",
   "data": {
@@ -333,7 +333,7 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
   }
 }
 ```
-Другие типы событий:
+Other event types:
 - `profile_created`, `profile_updated`, `profile_deleted`
 - `profile_health_update`
 - `cookies_bulk_imported`

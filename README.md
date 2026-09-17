@@ -10,7 +10,7 @@
   <img src="data/assets/logo_light.png" width="120" alt="Nazak Light Logo" />
 </p>
 
-# 🌐 Nazak Browser Studio PRO
+# 🌐 Nazak Browser Studio
 ### Next-Generation Hardware-Isolated Anti-Detect Browser, Local Automation CDP API, Action Synchronizer, Scenario Warmup & YouTube Shorts Stealth Autoposter
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -20,40 +20,24 @@
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <a href="README_EN.md">English</a> • <b>Русский</b>
-</p>
-
-<p align="center">
   <b>100% Free Dolphin{anty} Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Скачать готовый EXE (v1.5.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Документация](#-архитектура-и-возможности) • [🌐 **Полная REST API & Swagger Дока**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-local-automation-api--dolphinanty-parity) • [🚀 Быстрый старт](#-быстрый-старт) • [🧪 Тесты](#-тестовое-покрытие)
+[📥 **Download Portable EXE (v1.5.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
 </div>
 
-## 📸 Галерея интерфейса (Windows 11 Fluent Dark)
+## 📌 Architecture and Features
 
-| Управление профилями (100% Изоляция) | YouTube Shorts Stealth Autoposter |
-| :---: | :---: |
-| ![Profiles Dashboard](data/screenshots/view_1_profiles_updated.png) | ![Autoposter](data/screenshots/view_2_autopost.png) |
-
-| Импорт и активация аккаунтов (Live 2FA) | Сетевая диагностика и Google Reachability |
-| :---: | :---: |
-| ![Accounts View](data/screenshots/view_6_accounts.png) | ![Proxies View](data/screenshots/view_3_proxies.png) |
-
----
-
-## 📌 Архитектура и Возможности
-
-**Nazak Browser Studio** — это профессиональный десктопный комбайн для Windows, объединяющий технологии глубокой аппаратной маскировки Chromium, массовое управление аккаунтами Google/YouTube, локальный API автоматизации для Playwright/Puppeteer/Selenium, синхронизатор действий и автономный автопостинг контента.
+**Nazak Browser Studio** is an enterprise-grade desktop suite for Windows combining deep Chromium hardware spoofing, multi-account Google/YouTube farm management, local CDP automation REST API for Playwright/Puppeteer/Selenium, real-time action synchronization, and autonomous stealth content publishing.
 
 ```mermaid
 flowchart TD
-    A[Покупные аккаунты / Пакетные Куки / Прокси] -->|Пакетный импорт & Генерация ферм| B(Nazak Provisioning & Mass Generator)
-    B -->|Генерация уникального железа| C[Изолированный профиль Chromium]
-    
+    A[Purchased Accounts / Batch Cookies / Proxies] -->|Batch Import & Farm Generator| B(Nazak Provisioning & Mass Generator)
+    B -->|Hardware Fingerprint Synthesis| C[Isolated Chromium Profile]
+
     subgraph Hardware Isolation Shield
         C --> D1[GPU Spoofing: RTX 4090 / 3080]
         C --> D2[Canvas & WebAudio Noise Injection]
@@ -66,7 +50,7 @@ flowchart TD
         F1 --> F2[Playwright / Puppeteer connect_over_cdp]
         F1 --> F3[Real-time Action Synchronizer & Win32 Grid]
     end
-    
+
     subgraph Automation & Autoposter
         C --> E1[Google Login + 2FA TOTP RFC 6238]
         E1 --> E2[Autonomous Scenario Warmup & Trust Booster]
@@ -79,142 +63,141 @@ flowchart TD
 ---
 
 ### 🤖 1. Local Automation API & Dolphin{anty} Parity
-Позволяет любым внешним скриптам на Python, Node.js, Go или C# подключаться к прогретым профилям с уникальными отпечатками через стандартный протокол Chrome DevTools Protocol (CDP).
+Enables external automation scripts in Python, Node.js, Go, or C# to connect directly to warmed profiles with unique hardware footprints using the standard Chrome DevTools Protocol (CDP).
 
-> 📘 **Интерактивный Swagger UI**: [`http://127.0.0.1:8899/docs`](http://127.0.0.1:8899/docs) или [`http://127.0.0.1:8899/swagger`](http://127.0.0.1:8899/swagger)  
-> 📖 **Полная документация REST API**: [**`docs/API_REFERENCE.md`**](docs/API_REFERENCE.md)
+> 📘 **Interactive Swagger UI**: [`http://127.0.0.1:8899/docs`](http://127.0.0.1:8899/docs) or [`http://127.0.0.1:8899/swagger`](http://127.0.0.1:8899/swagger)
+> 📖 **Full REST API Documentation**: [**`docs/API_REFERENCE.md`**](docs/API_REFERENCE.md)
 
-#### 🔗 Совместимые эндпоинты Dolphin{anty} Local API:
-- `GET /v1.0/browser_profiles` — список всех профилей со статусами и прокси.
-- `GET /v1.0/browser_profiles/{profile_id}/start` — запуск профиля, динамическое выделение порта CDP и возврат `{ "success": True, "automation": { "port": 9222, "wsEndpoint": "ws://..." } }`.
-- `GET /v1.0/browser_profiles/{profile_id}/stop` — остановка браузера.
-- `GET /v1.0/browser_profiles/active` — получение списка всех активных браузеров с их CDP-портами.
+#### 🔗 Dolphin{anty} Compatible Local Endpoints:
+- `GET /v1.0/browser_profiles` — list all profiles with live statuses, proxy info, and tags.
+- `GET /v1.0/browser_profiles/{profile_id}/start` — start browser profile, dynamically allocate a free CDP port, and return `{ "success": true, "automation": { "port": 9222, "wsEndpoint": "ws://...", "ws_endpoint": "ws://..." } }`.
+- `GET /v1.0/browser_profiles/{profile_id}/stop` — gracefully terminate browser instance.
+- `GET /v1.0/browser_profiles/active` — inspect all actively running browsers and their CDP ports.
 
-#### 💡 Пример подключения через Playwright (Python):
+#### 💡 Playwright Connection Example (Python):
 ```python
 import requests
 from playwright.sync_api import sync_playwright
 
-# 1. Запуск изолированного профиля через Nazak API
+# 1. Launch isolated profile via Nazak Local API
 resp = requests.get("http://localhost:8899/v1.0/browser_profiles/prof_01/start").json()
 ws_endpoint = resp["automation"]["wsEndpoint"]
 
-# 2. Подключение Playwright напрямую к профилю
+# 2. Connect Playwright directly over CDP
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp(ws_endpoint)
     context = browser.contexts[0]
     page = context.pages[0] if context.pages else context.new_page()
-    
-    # Работаем со всеми куками, прокси и аппаратными отпечатками профиля!
+
+    # Fully operating with isolated cookies, proxy, and hardware fingerprints!
     page.goto("https://www.google.com")
     print(page.title())
 ```
 
 ---
 
-### 🍪 2. Пакетный импорт и экспорт куков (Batch Cookie Tool)
-- **Универсальный парсер**:
-  - Распознавание разделителей профилей: `=== Profile 01 ===`, `--- Name ---`, `[Profile Name]`.
-  - JSON-карты `{ "Account_1": [...], "Account_2": [...] }`.
-  - Авто-создание новых изолированных профилей на лету для ненайденных сессий.
-- **Работа с папками и ZIP-архивами**:
-  - Выбор папки с файлами `.json` / `.txt` (Netscape format).
-  - Распаковка и загрузка многопрофильных `.zip` архивов.
-  - Массовый экспорт всех или выбранных куков в структурированный ZIP-архив.
+### 🍪 2. Batch Cookie Management (Import / Export)
+- **Universal Multi-Format Parser**:
+  - Auto-detection of profile delimiters: `=== Profile 01 ===`, `--- Name ---`, `[Profile Name]`.
+  - JSON maps `{ "Account_1": [...], "Account_2": [...] }`.
+  - Auto-creation of new isolated browser profiles on the fly for unmapped sessions.
+- **Folder and ZIP Archive Ingestion**:
+  - Ingest folders containing `.json` or `.txt` (Netscape format) files.
+  - Decompress and batch-load multi-profile `.zip` archives.
+  - Bulk export selected or all profile cookies into a structured portable ZIP archive.
 
 ---
 
-### ⚡ 3. Синхронизатор действий (Action Synchronizer & Window Grid)
-- **Репликация действий в реальном времени**:
-  - Управляйте одним главным профилем (**Master**) — все клики, нажатия клавиш, навигация и скролл мгновенно повторяются на десятках дочерних окон (**Workers**).
-- **Антифрод-рандомизация (Humanizer)**:
-  - Суб-пиксельное случайное смещение курсора мыши.
-  - Временные задержки (20–80 мс) для исключения машинной синхронности.
-- **Автоматическая сетка окон (Win32 Grid Tiling)**:
-  - 1 клик для аккуратного раскладывания всех активных браузеров по экрану в матрицу 2×2, 3×3 или 4×4.
+### ⚡ 3. Action Synchronizer & Window Grid
+- **Real-Time Action Replication**:
+  - Control a single primary profile (**Master**) — all mouse clicks, keystrokes, navigation events, and scrolls can be broadcasted to dozens of secondary profiles (**Workers**).
+- **Anti-Detection Randomization (Humanizer)**:
+  - Sub-pixel randomized cursor coordinate jitter.
+  - Micro-delays (20–80 ms) eliminating robotic machine synchronicity.
+- **Win32 Window Grid Tiling**:
+  - 1-click automatic arrangement of all active browser windows into a balanced 2×2, 3×3, or 4×4 monitor grid.
 
 ---
 
-### 🔥 4. Конструктор сценариев и органический автопрогрев
-- **Готовые многошаговые сценарии**:
-  - **E-Commerce & Google Ads Trust Booster**: поиск электроники, скролл выдачи, клик по товарам, принятие cookie-баннеров.
-  - **YouTube & Shorts Audience Warmup**: просмотр превью, скролл рекомендаций, воспроизведение видео.
-  - **Crypto & Web3 Investor**: мониторинг CoinMarketCap, серфинг DeFi протоколов.
-  - **Finance & High-CPC Banking**: сбор трастовых финансовых куков высшей ценовой категории.
-- **Параллельное исполнение**:
-  - Запуск сценариев по пулу профилей с контролем параллелизма (Concurrency Pool).
+### 🔥 4. Scenario Builder & Autonomous Warmup
+- **Pre-Built Multi-Step Warmup Scenarios**:
+  - **E-Commerce & Google Ads Trust Booster**: organic Google searches, SERP dwell time, product browsing on marketplaces, cookie consent dialog acceptance.
+  - **YouTube & Shorts Audience Warmup**: feed scrolling, preview dwell, organic video viewing sessions.
+  - **Crypto & Web3 Investor Farming**: CoinMarketCap browsing, DeFi protocol exploration, crypto whitepaper dwell.
+  - **Finance & High-CPC Banking Footprint**: accumulation of premium Tier-1 financial advertising cookies.
+- **Concurrent Execution Pool**:
+  - Batch launch scenarios across profile clusters with fine-grained concurrency control (`max_concurrency`).
 
 ---
 
-### 📦 5. Массовая генерация ферм и портативные бандлы (`.nazak`)
-- **Массовая генерация**:
-  - Создание от 1 до 100+ профилей в 1 клик.
-  - Круговое распределение прокси (Round-Robin).
-  - Смешанные отпечатки ОС (Windows 10/11, macOS Sequoia, Linux Ubuntu).
-- **Портативные бандлы (`.nazak`)**:
-  - Экспорт полного изолированного профиля (настройки железа + сессия + куки + расширения) в единый переносимый zip-пакет.
-  - Мгновенный импорт на любом другом компьютере.
+### 📦 5. Mass Farm Generator & Portable Bundles (`.nazak`)
+- **Mass Profile Generation**:
+  - Create 1 to 100+ fully isolated profiles in 1 click.
+  - Automatic Round-Robin proxy assignment across the pool.
+  - Authentic OS distribution (Windows 10/11, macOS Sequoia, Linux Ubuntu).
+- **Portable `.nazak` Bundles**:
+  - Export complete browser profile state (hardware fingerprints, storage sessions, cookies, extensions) into a single portable `.nazak` package.
+  - Instant one-click import on any workstation with zip-slip traversal protection.
 
 ---
 
-### 📱 6. Мобильные прокси и ссылки смены IP (IP Rotation)
-- Поддержка ссылок ротации в форматах `host:port:user:pass:http://change-ip`, `host:port:user:pass|http://change-ip`, `[proxy]#[rotation_url]`.
-- Кнопка **"Сменить IP"** прямо в таблице интерфейса и эндпоинт `POST /api/profiles/{id}/rotate-proxy`.
+### 📱 6. Mobile Proxies & IP Rotation Links
+- Support for rotation URLs in multiple formats: `host:port:user:pass:http://change-ip`, `host:port:user:pass|http://change-ip`, `[proxy]#[rotation_url]`.
+- Direct **"Rotate IP"** trigger button in GUI tables and via REST endpoint `POST /api/profiles/{id}/rotate-proxy`.
 
 ---
 
-### 🛡️ 7. Аппаратная маскировка (Total Hardware Shield)
-- **Видеокарты реальных ПК**: Эмуляция *NVIDIA GeForce RTX 4090 / 4080 / 3080 / 3070*, *AMD Radeon RX 7900 XTX*, *Intel Iris Xe / UHD 770*.
-- **Суб-перцептивный шум**:
-  - `Canvas 2D Noise`: уникализация хэша холста на каждом профиле без артефактов на страницах.
-  - `AudioContext Noise`: защита от снятия слепков звукового тракта через `AudioBuffer`.
-  - `ClientRects Jitter`: защита от шрифтового фингерпринтинга.
-- **Скрытие автоматизации**: Полное удаление `navigator.webdriver`, подмена `navigator.userAgentData` (Client Hints), `deviceMemory` (8-64 GB), `hardwareConcurrency` (4-32 cores).
-- **Защита от утечек и сканирования портов**: Блокировка попыток антифрод-скриптов опрашивать порты локалхоста `127.0.0.1`, принудительная политика WebRTC `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`.
+### 🛡️ 7. Total Hardware Shield
+- **Real GPU Hardware Emulation**: *NVIDIA GeForce RTX 4090 / 4080 / 3080 / 3070*, *AMD Radeon RX 7900 XTX*, *Intel Iris Xe / UHD 770*.
+- **Sub-Perceptual Noise Injection**:
+  - `Canvas 2D Noise`: per-profile canvas hash uniqueization without visual artifacts.
+  - `AudioContext Noise`: protects against sound processing fingerprinting via `AudioBuffer`.
+  - `ClientRects Jitter`: protects against font-measurement fingerprinting.
+- **Automation Cloaking**: Complete elimination of `navigator.webdriver`, spoofing of `navigator.userAgentData` (User-Agent Client Hints), `deviceMemory` (8–64 GB), and `hardwareConcurrency` (4–32 cores) in the MAIN execution world.
+- **Port Scanning & Leak Protection**: Blocks anti-fraud port scanning targeting localhost `127.0.0.1`, enforces strict WebRTC policy `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`.
 
 ---
 
-### 🔑 8. Менеджер аккаунтов и встроенный 2FA TOTP Генератор
-- **Пакетный импорт с любых маркетов (DarkStore, Retriv, AccsMarket)**: `login:pass:2fa:recovery`
-- **Встроенный RFC 6238 TOTP Engine**: Расшифровка Base32 любой длины с авто-паддингом и тикающим таймером.
-- **Автоматическая сквозная авторизация**: Google Login + YouTube Studio Onboarding Dismissal.
+### 🔑 8. Account Provisioner & Built-In RFC 6238 2FA TOTP Engine
+- **Batch Import from All Major Marketplaces (DarkStore, Retriv, AccsMarket)**: `login:pass:2fa:recovery`.
+- **Integrated RFC 6238 TOTP Engine**: Base32 secret decoding with dynamic auto-padding and real-time OTP calculation.
+- **Autonomous End-to-End Authentication**: Automated Google sign-in and dismissal of YouTube Studio onboarding prompts.
 
 ---
 
-### 🎬 9. YouTube Shorts + Instagram Reels Stealth Autoposter & Video Uniqueizer
-- **Глубокая уникализация видео через FFmpeg**: `-map_metadata -1`, микро-кроп 3%, рескейл 1080x1920, кадр-шум, аудио питч-сдвиг.
-- **Спинтакс-генератор**: `{Лучший|Топ} Shorts/Reels для {РФ|Мира} ⚡ {tg} {promo}`.
-- **Две платформы в одном пайплайне**: YouTube Shorts и Instagram Reels с общим CDP-автопостингом, человеческим набором текста и управлением очередью профилей.
-- **Эмуляция человека по кривым Безье**: Физические траектории мыши и посимвольный ввод текста.
+### 🎬 9. YouTube Shorts & Instagram Reels Stealth Autoposter & Video Uniqueizer
+- **Deep FFmpeg Video Uniqueization**: Strips metadata (`-map_metadata -1`), applies 3% micro-crop, 1080×1920 vertical conform, imperceptible frame noise, and subtle audio pitch/tempo shift.
+- **Spintax Title & Description Generator**: `{Best|Top} Shorts/Reels for {Tech|Crypto} ⚡ {tg} {promo}`.
+- **Unified Multi-Platform Pipeline**: Single workflow orchestrating autonomous uploads for both YouTube Shorts and Instagram Reels with humanized Bezier mouse trajectory motorics and character-by-character typing.
 
 ---
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
-### 🪟 Windows: Запуск готового EXE (Рекомендуется)
-1. Скачайте архив из раздела [**Releases**](https://github.com/wwewtech/nazak-browser-studio/releases).
-2. Распакуйте и запустите `NazakBrowserStudio.exe` (или `start_app.bat`).
+### 🪟 Windows: Pre-Built Binary (Recommended)
+1. Download the latest release from the [**Releases**](https://github.com/wwewtech/nazak-browser-studio/releases) section.
+2. Extract the archive and launch `NazakBrowserStudio.exe` (or `start_app.bat`).
 
 ---
 
-### 🐍 Запуск из исходного кода (Python 3.10+)
+### 🐍 Running from Source (Python 3.10+)
 ```powershell
-# Установка зависимостей
+# Install requirements
 pip install -r requirements.txt
 playwright install chromium
 
-# Запуск нативного интерфейса
+# Launch Native Windows 11 Fluent GUI
 python -m nazak.main --mode gui
 
-# Или запуск REST API и веб-студии
+# Or launch headless REST API and Web Studio
 python -m nazak.main --mode web
 ```
 
 ---
 
-## 🧪 Тестовое покрытие
+## 🧪 Test Coverage
 
-Проект покрыт всесторонним набором из **492 автоматических тестов**:
+The project is backed by a comprehensive regression and unit test suite comprising **492 automated tests**:
 
 ```powershell
 python -m pytest tests -q
@@ -224,23 +207,23 @@ python -m pytest tests -q
 ============================ 492 passed in 83.93s =============================
 ```
 
-- `test_deep_security_and_traversal.py` — 25 тестов безопасности: валидация путей `validate_pid`, защита Zip-Slip, CORS localhost regex, маскирование учетных данных.
-- `test_deep_storage_and_concurrency.py` — 25 тестов многопоточности и хранилища: атомарная запись `profiles.json` через RLock и уникальные temp-файлы, транзакции пакетов, жизненный цикл процессов.
-- `test_deep_fingerprint_and_stealth.py` — 25 тестов маскировки и изоляции: экранирование `json.dumps` в `stealth.js`, контекст `MAIN` world, подмена Canvas, WebGL, WebRTC, Audio, Battery, Client Hints.
-- `test_deep_api_and_scenarios.py` — 25 тестов интеграции API и прогрева: двусторонний Netscape cookie roundtrip, алиасы сценариев, Dolphin{anty} Local API parity, асинхронный синхронизатор `httpx`.
-- `test_audit_regression.py` — 21 регрессионный тест для всех 23 дефектов из аудита (C1-C5, H1-H11, M1-M8, I1).
-- `test_local_automation_cdp_api.py` — тесты Dolphin{anty} Local API и CDP портов.
-- `test_cookie_bulk_manager.py` — тесты пакетного импорта, папок, ZIP архивов и Netscape парсера.
-- `test_synchronizer_engine.py` — тесты синхронизатора сессий и расположения окон Win32.
-- `test_scenario_engine_and_warmup.py` — тесты конструктора сценариев и многошагового автопрогрева.
-- `test_mass_profile_generator.py` — тесты массовой генерации ферм и уникализации отпечатков.
-- `test_proxy_rotation_and_mobile.py` — тесты мобильных ссылок смены IP.
-- `test_account_provisioner_edge_cases.py` — тесты RFC 6238 TOTP, OAuth 2.0.
-- `test_browser_cdp_resilience.py` — тесты генерации параметров Chrome и stealth.js.
+- `test_deep_security_and_traversal.py` — 25 security tests: `validate_pid` path traversal defense, Zip-Slip vulnerability protection, CORS localhost regex restrictions, CLI credential masking.
+- `test_deep_storage_and_concurrency.py` — 25 concurrency & persistence tests: atomic `profiles.json` write via RLock & unique tmp files, batch save coalescing, process lifecycle monitor transitions.
+- `test_deep_fingerprint_and_stealth.py` — 25 fingerprint & stealth tests: `json.dumps` escaping in `stealth.js`, `MAIN` world content script execution context, Canvas, WebGL, WebRTC, Audio, Battery, Client Hints emulation.
+- `test_deep_api_and_scenarios.py` — 25 API & scenario integration tests: bidirectional Netscape cookie roundtrip fidelity, warmup scenario aliases, Dolphin{anty} Local API parity, asynchronous `httpx` synchronizer.
+- `test_audit_regression.py` — regression tests covering security, validation, and storage fixes.
+- `test_local_automation_cdp_api.py` — Dolphin{anty} parity API and CDP port tests.
+- `test_cookie_bulk_manager.py` — batch cookie import, folder/zip handling, and Netscape parser tests.
+- `test_synchronizer_engine.py` — session synchronizer and Win32 grid layout tests.
+- `test_scenario_engine_and_warmup.py` — multi-step warmup scenarios and concurrency tests.
+- `test_mass_profile_generator.py` — mass generation and hardware uniqueization tests.
+- `test_profile_bundle_portability.py` — portable `.nazak` bundle export/import tests.
+- `test_proxy_rotation_and_mobile.py` — mobile proxy rotation link tests.
+- `test_account_provisioner_edge_cases.py` — RFC 6238 TOTP engine and OAuth tests.
+- `test_browser_cdp_resilience.py` — Chrome parameter synthesis and stealth extension tests.
 
 ---
 
-## 📄 Лицензия
+## 📄 License
 
-Распространяется под лицензией [MIT](LICENSE). Разработано для автоматизации арбитража трафика, управления фермами аккаунтов, локальной автоматизации через CDP и безопасного создания контента.
-
+Distributed under the [MIT License](LICENSE). Engineered for high-throughput traffic arbitrage, account farm orchestration, local CDP browser automation, and stealth content publishing.

@@ -65,6 +65,7 @@ data/profiles.local.json
 data/*.json
 data/extensions/
 data/logs/
+data/screenshots/
 data/videos/*.mp4
 data/videos/*.mov
 data/videos/*.mkv
