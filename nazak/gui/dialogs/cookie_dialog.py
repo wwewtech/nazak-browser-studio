@@ -78,7 +78,9 @@ class CookieManagerDialog(QDialog):
     def on_import_cookies(self):
         text = self.cookie_editor.toPlainText().strip()
         if not text:
-            InfoBar.warning("Empty Data", "Paste cookies into the input field", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Empty Data", "Paste cookies into the input field", parent=self, position=InfoBarPosition.TOP
+            )
             return
 
         cookies = parse_any_cookies(text)

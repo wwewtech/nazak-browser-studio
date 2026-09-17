@@ -369,9 +369,7 @@ class ProfilesView(QWidget):
         diag = ProfileEditDialog(profile=None, profile_manager=self.profile_manager, parent=self)
         if diag.exec():
             self.refresh_profiles()
-            InfoBar.success(
-                "Profile created", "New isolated profile added", parent=self, position=InfoBarPosition.TOP
-            )
+            InfoBar.success("Profile created", "New isolated profile added", parent=self, position=InfoBarPosition.TOP)
 
     def on_edit_profile(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)
@@ -414,9 +412,7 @@ class ProfilesView(QWidget):
                 "Browser launched", f"Profile '{prof.name}' • PID {pid}", parent=self, position=InfoBarPosition.TOP
             )
         else:
-            InfoBar.error(
-                "Launch error", err or "Could not launch Chromium", parent=self, position=InfoBarPosition.TOP
-            )
+            InfoBar.error("Launch error", err or "Could not launch Chromium", parent=self, position=InfoBarPosition.TOP)
 
     def on_stop_profile(self, profile_id: str):
         self.browser_launcher.stop(profile_id)

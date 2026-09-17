@@ -41,9 +41,7 @@ class ProxiesView(QWidget):
         lbl_title = QLabel("Proxies & Bulk Import", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
 
-        lbl_desc = QLabel(
-            "Bulk HTTP / HTTPS / SOCKS5 proxy entry with automatic hardware fingerprint generation", self
-        )
+        lbl_desc = QLabel("Bulk HTTP / HTTPS / SOCKS5 proxy entry with automatic hardware fingerprint generation", self)
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
 
         main_layout.addWidget(lbl_title)
@@ -96,7 +94,15 @@ class ProxiesView(QWidget):
         self.table = TableWidget(card_table)
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
-            ["Profile", "Proxy Server", "Ping", "External IP • Country", "Google Status", "YouTube Access", "IP Rotation"]
+            [
+                "Profile",
+                "Proxy Server",
+                "Ping",
+                "External IP • Country",
+                "Google Status",
+                "YouTube Access",
+                "IP Rotation",
+            ]
         )
 
         header = self.table.horizontalHeader()
@@ -169,14 +175,14 @@ class ProxiesView(QWidget):
                     position=InfoBarPosition.TOP,
                 )
         except Exception as e:
-            InfoBar.warning(
-                "Rotation error", f"Could not rotate IP: {e!s}", parent=self, position=InfoBarPosition.TOP
-            )
+            InfoBar.warning("Rotation error", f"Could not rotate IP: {e!s}", parent=self, position=InfoBarPosition.TOP)
 
     def on_bulk_import(self):
         text = self.input_proxies.toPlainText().strip()
         if not text:
-            InfoBar.warning("Empty input", "Paste proxy lines into the field", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning(
+                "Empty input", "Paste proxy lines into the field", parent=self, position=InfoBarPosition.TOP
+            )
             return
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]

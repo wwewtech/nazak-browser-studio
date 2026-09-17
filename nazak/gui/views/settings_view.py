@@ -104,6 +104,4 @@ class SettingsView(QWidget):
         theme = self.combo_theme.currentData()
         if theme is not None:
             setTheme(theme)
-            InfoBar.success(
-                "Theme updated", "Interface appearance changed", parent=self, position=InfoBarPosition.TOP
-            )
+            InfoBar.success("Theme updated", "Interface appearance changed", parent=self, position=InfoBarPosition.TOP)

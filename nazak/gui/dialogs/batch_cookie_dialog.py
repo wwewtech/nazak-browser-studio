@@ -56,7 +56,8 @@ class BatchCookieDialog(QDialog):
         main_layout.addWidget(lbl_title)
 
         lbl_desc = QLabel(
-            "Import cookies for multiple profiles from delimited text, a JSON dictionary, a folder, or a ZIP archive.", self
+            "Import cookies for multiple profiles from delimited text, a JSON dictionary, a folder, or a ZIP archive.",
+            self,
         )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         main_layout.addWidget(lbl_desc)

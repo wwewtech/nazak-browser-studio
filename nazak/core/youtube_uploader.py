@@ -119,9 +119,7 @@ class YouTubeUploader:
 
                 # Dismiss 'Welcome to YouTube Studio' modal if present
                 try:
-                    continue_btn = page.locator(
-                        "button:has-text('Continue'), #continue-button"
-                    ).first
+                    continue_btn = page.locator("button:has-text('Continue'), #continue-button").first
                     if await continue_btn.is_visible(timeout=3000):
                         await continue_btn.click()
                         await asyncio.sleep(1.5)
@@ -130,9 +128,7 @@ class YouTubeUploader:
 
                 # Dismiss any tooltips
                 try:
-                    close_tip = page.locator(
-                        "button:has-text('Close'), button:has-text('Dismiss')"
-                    ).first
+                    close_tip = page.locator("button:has-text('Close'), button:has-text('Dismiss')").first
                     if await close_tip.is_visible(timeout=2000):
                         await close_tip.click()
                         await asyncio.sleep(1.0)
@@ -148,9 +144,7 @@ class YouTubeUploader:
                 if await center_upload.is_visible(timeout=3000):
                     await center_upload.click()
                 else:
-                    create_btn = page.locator(
-                        "#create-icon, [aria-label='Create'], button:has-text('CREATE')"
-                    ).first
+                    create_btn = page.locator("#create-icon, [aria-label='Create'], button:has-text('CREATE')").first
                     await create_btn.wait_for(state="visible", timeout=20000)
                     box = await create_btn.bounding_box()
                     if box:
@@ -160,9 +154,7 @@ class YouTubeUploader:
                         await create_btn.click()
                     await asyncio.sleep(1.5)
 
-                    upload_item = page.locator(
-                        "#text-item-0, tp-yt-paper-item:has-text('Upload videos')"
-                    ).first
+                    upload_item = page.locator("#text-item-0, tp-yt-paper-item:has-text('Upload videos')").first
                     await upload_item.click()
 
                 await asyncio.sleep(2.5)
@@ -178,9 +170,7 @@ class YouTubeUploader:
                 await notify_progress(progress_callback, "Filling metadata (Title & Description)...")
 
                 # 4. Fill Title
-                title_box = page.locator(
-                    "#title-textarea #textbox, [aria-label*='title' i]"
-                ).first
+                title_box = page.locator("#title-textarea #textbox, [aria-label*='title' i]").first
                 await title_box.wait_for(state="visible", timeout=25000)
                 await title_box.click()
                 await page.keyboard.press("Control+A")
@@ -190,9 +180,7 @@ class YouTubeUploader:
                 await asyncio.sleep(1.2)
 
                 # 5. Fill Description
-                desc_box = page.locator(
-                    "#description-textarea #textbox, [aria-label*='description' i]"
-                ).first
+                desc_box = page.locator("#description-textarea #textbox, [aria-label*='description' i]").first
                 if await desc_box.is_visible():
                     await desc_box.click()
                     await human_type(desc_box, description)

@@ -151,9 +151,7 @@ async def run_live_flow():
                             await email_input.type(ch, delay=35)
                         await asyncio.sleep(0.8)
 
-                        next_btn = page.locator(
-                            "#identifierNext, button:has-text('Next')"
-                        ).first
+                        next_btn = page.locator("#identifierNext, button:has-text('Next')").first
                         await next_btn.click()
                         await asyncio.sleep(4)
                         await page.screenshot(path=str(SCREENSHOTS_DIR / "02_after_email.png"))
@@ -171,9 +169,7 @@ async def run_live_flow():
                         await pwd_input.type(ch, delay=40)
                     await asyncio.sleep(0.8)
 
-                    next_btn_pwd = page.locator(
-                        "#passwordNext, button:has-text('Next')"
-                    ).first
+                    next_btn_pwd = page.locator("#passwordNext, button:has-text('Next')").first
                     await next_btn_pwd.click()
                     await asyncio.sleep(5)
                     await page.screenshot(path=str(SCREENSHOTS_DIR / "03_after_password.png"))
@@ -194,9 +190,7 @@ async def run_live_flow():
                             await totp_input.type(ch, delay=50)
                         await asyncio.sleep(0.8)
 
-                        next_btn_totp = page.locator(
-                            "#totpNext, button:has-text('Next')"
-                        ).first
+                        next_btn_totp = page.locator("#totpNext, button:has-text('Next')").first
                         await next_btn_totp.click()
                         await asyncio.sleep(5)
                         await page.screenshot(path=str(SCREENSHOTS_DIR / "04_after_totp.png"))
@@ -230,9 +224,7 @@ async def run_live_flow():
 
             # Dismiss 'Welcome to YouTube Studio' modal if present
             try:
-                continue_btn = page.locator(
-                    "button:has-text('Continue'), #continue-button"
-                ).first
+                continue_btn = page.locator("button:has-text('Continue'), #continue-button").first
                 if await continue_btn.is_visible(timeout=4000):
                     print("👋 Closing the 'Welcome to YouTube Studio' window...")
                     await continue_btn.click()
@@ -242,9 +234,7 @@ async def run_live_flow():
 
             # Dismiss any tooltip
             try:
-                close_tip = page.locator(
-                    "button:has-text('Close'), button:has-text('Dismiss')"
-                ).first
+                close_tip = page.locator("button:has-text('Close'), button:has-text('Dismiss')").first
                 if await close_tip.is_visible(timeout=3000):
                     await close_tip.click()
                     await asyncio.sleep(1.0)
@@ -256,9 +246,7 @@ async def run_live_flow():
 
             # Check for "Create Channel" button if needed
             try:
-                create_channel_btn = page.locator(
-                    "#create-channel-button, button:has-text('Create channel')"
-                ).first
+                create_channel_btn = page.locator("#create-channel-button, button:has-text('Create channel')").first
                 if await create_channel_btn.is_visible(timeout=4000):
                     print("🎬 Step 6: Channel creation window detected! Clicking 'Create channel'...")
                     await create_channel_btn.click()
@@ -285,15 +273,11 @@ async def run_live_flow():
                 print("Clicking the 'Upload videos' button on the dashboard...")
                 await center_upload.click()
             else:
-                create_btn = page.locator(
-                    "#create-icon, [aria-label='Create'], button:has-text('Create')"
-                ).first
+                create_btn = page.locator("#create-icon, [aria-label='Create'], button:has-text('Create')").first
                 await create_btn.wait_for(state="visible", timeout=15000)
                 await create_btn.click()
                 await asyncio.sleep(1.5)
-                upload_item = page.locator(
-                    "#text-item-0, tp-yt-paper-item:has-text('Upload videos')"
-                ).first
+                upload_item = page.locator("#text-item-0, tp-yt-paper-item:has-text('Upload videos')").first
                 await upload_item.click()
 
             await asyncio.sleep(3)
@@ -307,9 +291,7 @@ async def run_live_flow():
             await page.screenshot(path=str(SCREENSHOTS_DIR / "08_file_uploading.png"))
 
             # Fill Title
-            title_box = page.locator(
-                "#title-textarea #textbox, [aria-label*='title' i]"
-            ).first
+            title_box = page.locator("#title-textarea #textbox, [aria-label*='title' i]").first
             await title_box.wait_for(state="visible", timeout=30000)
             await title_box.click()
             await page.keyboard.press("Control+A")

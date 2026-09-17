@@ -123,7 +123,9 @@ class AutopostView(QWidget):
         l_spin.addLayout(h_spin_head)
 
         self.input_title = LineEdit(card_spin)
-        self.input_title.setText("{Best|Top|Working} {VPN|Vpn} for {the Russian Federation|Russia} 2026 #shorts #vpn #youtube")
+        self.input_title.setText(
+            "{Best|Top|Working} {VPN|Vpn} for {the Russian Federation|Russia} 2026 #shorts #vpn #youtube"
+        )
         self.input_title.textChanged.connect(self.on_preview_spintax)
         l_spin.addWidget(self.input_title)
 
@@ -282,6 +284,4 @@ class AutopostView(QWidget):
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(True)
             btn.setText("Start Autoposting")
-        InfoBar.success(
-            "Queue completed", f"Processed {len(results)} posts", parent=self, position=InfoBarPosition.TOP
-        )
+        InfoBar.success("Queue completed", f"Processed {len(results)} posts", parent=self, position=InfoBarPosition.TOP)

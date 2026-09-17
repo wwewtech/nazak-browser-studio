@@ -45,9 +45,7 @@ class ProfileEditDialog(QDialog):
         main_layout.setContentsMargins(24, 20, 24, 20)
 
         # Title
-        title_text = (
-            "Create an Isolated Profile" if self.is_create_mode else f"Profile Settings: {self.profile.name}"
-        )
+        title_text = "Create an Isolated Profile" if self.is_create_mode else f"Profile Settings: {self.profile.name}"
         lbl_title = QLabel(title_text, self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 17px; font-weight: 700;")
         main_layout.addWidget(lbl_title)

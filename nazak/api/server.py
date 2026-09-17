@@ -238,9 +238,7 @@ class AutopostBatchRequest(BaseModel):
     source_video_path: str | None = None
     platform: str = "youtube_shorts"
     title_template: str = "{Best|Top|Working} {VPN|vpn} for {the RF|Russia} 2026 ⚡ #shorts"
-    description_template: str = (
-        "⚡ Download a fast VPN without limits: {tg}\n🎁 Discount promo code: {promo}\n\n#shorts #vpn #virtualprivatenetwork"
-    )
+    description_template: str = "⚡ Download a fast VPN without limits: {tg}\n🎁 Discount promo code: {promo}\n\n#shorts #vpn #virtualprivatenetwork"
     tg_channel: str = "@your_vpn_bot"
     delay_seconds: int = 10
 

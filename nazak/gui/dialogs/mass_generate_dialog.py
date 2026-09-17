@@ -124,10 +124,7 @@ class MassGenerateDialog(QDialog):
         self.txt_proxies = TextEdit(card_proxy)
         self.txt_proxies.setFixedHeight(110)
         self.txt_proxies.setPlaceholderText(
-            "host:port:user:pass\n"
-            "socks5://user:pass@host:port\n"
-            "192.168.1.1:8080\n"
-            "Leave blank for a direct connection"
+            "host:port:user:pass\nsocks5://user:pass@host:port\n192.168.1.1:8080\nLeave blank for a direct connection"
         )
         l_prox.addWidget(self.txt_proxies)
         main_layout.addWidget(card_proxy)

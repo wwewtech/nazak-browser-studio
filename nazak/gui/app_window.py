@@ -87,9 +87,7 @@ class NazakFluentMainWindow(MSFluentWindow):
 
         # 5. Google Warmup Bot
         self.warmup_view = WarmupView(self.profile_manager, self.browser_launcher, self)
-        self.addSubInterface(
-            self.warmup_view, FluentIcon.ROBOT, "Warmup", FluentIcon.ROBOT, NavigationItemPosition.TOP
-        )
+        self.addSubInterface(self.warmup_view, FluentIcon.ROBOT, "Warmup", FluentIcon.ROBOT, NavigationItemPosition.TOP)
 
         # 6. Settings (Bottom pinned)
         self.settings_view = SettingsView(self)

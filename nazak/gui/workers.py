@@ -108,7 +108,9 @@ class AutopostBatchWorker(QThread):
                 if not prof:
                     continue
 
-                self.job_update_signal.emit(pid, "uniqueizing", "Creating a unique video variant and shifting frequencies...")
+                self.job_update_signal.emit(
+                    pid, "uniqueizing", "Creating a unique video variant and shifting frequencies..."
+                )
                 ok, out_path, err = self.uniquifier.uniquify_video(self.source_video_path, pid, profile_index=idx)
                 if not ok or not out_path:
                     self.job_update_signal.emit(pid, "failed", f"Video error: {err}")

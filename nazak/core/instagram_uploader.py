@@ -185,9 +185,7 @@ class InstagramUploader:
                 await notify_progress(progress_callback, "Preparing reel metadata...")
 
                 caption_box = self._first(
-                    page.locator(
-                        "textarea[aria-label*='Write a caption' i], textarea[aria-label*='Caption' i]"
-                    )
+                    page.locator("textarea[aria-label*='Write a caption' i], textarea[aria-label*='Caption' i]")
                 )
                 if await asyncio.wait_for(caption_box.is_visible(), timeout=15.0):
                     await self._safe_wait(caption_box.click(), timeout=10.0, label="caption click")

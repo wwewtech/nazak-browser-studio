@@ -48,9 +48,7 @@ if sys.stderr is None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Nazak Browser Studio - Windows 11 Multi-Profile Anti-Detect Browser"
-    )
+    parser = argparse.ArgumentParser(description="Nazak Browser Studio - Windows 11 Multi-Profile Anti-Detect Browser")
     parser.add_argument(
         "--mode",
         choices=["gui", "web", "cli"],

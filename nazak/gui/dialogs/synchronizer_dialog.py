@@ -193,9 +193,7 @@ class SynchronizerDialog(QDialog):
             return
 
         if not workers:
-            InfoBar.warning(
-                "Error", "Select at least one worker profile", parent=self, position=InfoBarPosition.TOP
-            )
+            InfoBar.warning("Error", "Select at least one worker profile", parent=self, position=InfoBarPosition.TOP)
             return
 
         if self.synchronizer_mgr:
