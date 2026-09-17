@@ -1,5 +1,5 @@
 """
-Bespoke Non-Generic Editorial Brand Banners for Nazak Browser Studio in Russian.
+Bespoke Non-Generic Editorial Brand Banners for Nazak Browser Studio in English.
 Pure Swiss geometric poster layout.
 """
 
@@ -88,10 +88,10 @@ def draw_prism(p: QPainter, cx: float, cy: float, size: float):
 
 def generate_banners():
     _app = QApplication.instance() or QApplication(sys.argv)
-    assets_dir = Path("D:/nazak/data/assets")
+    assets_dir = Path(__file__).resolve().parents[2] / "data" / "assets"
 
     # =========================================================================
-    # OPTION A: Centered Monumental Swiss Monolith in Russian (1280 x 440)
+    # OPTION A: Centered Monumental Swiss Monolith in English (1280 x 440)
     # =========================================================================
     b_centered = QImage(1280, 440, QImage.Format.Format_ARGB32_Premultiplied)
     b_centered.fill(QColor(6, 7, 9))
@@ -114,7 +114,7 @@ def generate_banners():
     p1.setPen(QColor(255, 255, 255))
     p1.drawText(QRectF(0, 185, 1280, 50), Qt.AlignmentFlag.AlignCenter, "N A Z A K")
 
-    # 4. Russian Subtitle
+    # 4. English Subtitle
     font_sub = QFont("Segoe UI Variable Text", 15, QFont.Weight.Medium)
     font_sub.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, -0.2)
     p1.setFont(font_sub)
@@ -122,18 +122,18 @@ def generate_banners():
     p1.drawText(
         QRectF(0, 245, 1280, 28),
         Qt.AlignmentFlag.AlignCenter,
-        "Антидетект-платформа нового поколения и автономная студия Shorts",
+        "Next-generation anti-detect platform and autonomous Shorts studio",
     )
 
-    # 5. Centered Monolithic Hardware Chips (Russian)
+    # 5. Centered Monolithic Hardware Chips (English)
     font_chip = QFont("JetBrains Mono", 10, QFont.Weight.Medium)
     p1.setFont(font_chip)
     fm = QFontMetrics(font_chip)
 
     chips = [
-        "100% ИЗОЛЯЦИЯ ЖЕЛЕЗА И CANVAS",
-        "ЖИВОЙ 2FA TOTP RFC 6238",
-        "STEALTH CDP АВТОПОСТИНГ",
+        "100% HARDWARE & CANVAS ISOLATION",
+        "LIVE 2FA TOTP RFC 6238",
+        "STEALTH CDP AUTOPOSTING",
         "WINDOWS / MACOS / LINUX",
     ]
 
@@ -165,20 +165,19 @@ def generate_banners():
 
         start_x += w_c + 12
 
-    # 6. Muted Version Footer (Russian)
+    # 6. Muted Version Footer (English)
     font_foot = QFont("JetBrains Mono", 9, QFont.Weight.Normal)
     p1.setFont(font_foot)
     p1.setPen(QColor(82, 82, 91))
     p1.drawText(
         QRectF(0, 390, 1280, 20),
         Qt.AlignmentFlag.AlignCenter,
-        "ВЕРСИЯ 1.3.0 PRO  •  ОТКРЫТЫЙ ИСХОДНЫЙ КОД  •  ЛИЦЕНЗИЯ MIT",
+        "VERSION 1.3.0  •  OPEN SOURCE  •  MIT LICENSE",
     )
 
     p1.end()
     b_centered.save(str(assets_dir / "banner.png"))
-    b_centered.save(str(assets_dir / "banner_centered.png"))
-    print("Saved Russian banner.png!")
+    print("Saved English banner.png!")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nazak Browser Studio PRO - Senior Production Build Orchestrator.
+Nazak Browser Studio - Senior Production Build Orchestrator.
 Automates PyInstaller compilation, footprint optimization, smoke tests, ZIP packaging, and Inno Setup installer.
 """
 
@@ -238,7 +238,7 @@ def build_inno_installer():
 
 def print_summary():
     print(f"\n{GREEN}{BOLD}================================================================{RESET}")
-    print(f"{GREEN}{BOLD}       NAZAK BROWSER STUDIO PRO - BUILD COMPLETED               {RESET}")
+    print(f"{GREEN}{BOLD}       NAZAK BROWSER STUDIO - BUILD COMPLETED               {RESET}")
     print(f"{GREEN}{BOLD}================================================================{RESET}\n")
 
     if EXE_PATH.exists():

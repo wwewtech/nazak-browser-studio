@@ -1,4 +1,4 @@
-# Universal Docker container for Nazak Browser Studio PRO
+# Universal Docker container for Nazak Browser Studio
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \

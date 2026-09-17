@@ -1,9 +1,9 @@
 ; =====================================================================
-; Inno Setup 6 Script for Nazak Browser Studio PRO
+; Inno Setup 6 Script for Nazak Browser Studio
 ; Enterprise Windows 10/11 Fluent Installer
 ; =====================================================================
 
-#define MyAppName "Nazak Browser Studio PRO"
+#define MyAppName "Nazak Browser Studio"
 #define MyAppVersion "1.5.0"
 #define MyAppPublisher "Nazak Technologies"
 #define MyAppURL "https://github.com/wwewtech/nazak-browser-studio"
@@ -45,7 +45,6 @@ DisableDirPage=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

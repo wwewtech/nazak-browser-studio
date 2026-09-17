@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Nazak Browser Studio PRO - Production Build Pipeline
+title Nazak Browser Studio - Production Build Pipeline
 
 echo ====================================================================
-echo        NAZAK BROWSER STUDIO PRO - SENIOR PRODUCTION BUILD
+echo        NAZAK BROWSER STUDIO - SENIOR PRODUCTION BUILD
 echo ====================================================================
 echo.
 

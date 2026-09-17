@@ -6,7 +6,7 @@
     name="NazakTech.NazakBrowserStudio"
     type="win32"
   />
-  <description>Nazak Browser Studio PRO - Anti-Detect &amp; CDP Automation Platform</description>
+  <description>Nazak Browser Studio - Anti-Detect &amp; CDP Automation Platform</description>
   
   <!-- Trust Info: Run as standard invoker without administrative prompt unless requested -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

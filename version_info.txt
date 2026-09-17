@@ -20,12 +20,12 @@ VSVersionInfo(
           '040904B0',
           [
             StringStruct('CompanyName', 'Nazak Technologies'),
-            StringStruct('FileDescription', 'Nazak Browser Studio PRO - Anti-Detect & CDP Automation Platform'),
+            StringStruct('FileDescription', 'Nazak Browser Studio - Anti-Detect & CDP Automation Platform'),
             StringStruct('FileVersion', '1.5.0.0'),
             StringStruct('InternalName', 'NazakBrowserStudio'),
             StringStruct('LegalCopyright', 'Copyright (C) 2024-2026 Nazak Technologies. All rights reserved.'),
             StringStruct('OriginalFilename', 'NazakBrowserStudio.exe'),
-            StringStruct('ProductName', 'Nazak Browser Studio PRO'),
+            StringStruct('ProductName', 'Nazak Browser Studio'),
             StringStruct('ProductVersion', '1.5.0.0'),
             StringStruct('Comments', 'Professional Windows 11 Anti-Detect Browser & CDP Automation Engine')
           ]
