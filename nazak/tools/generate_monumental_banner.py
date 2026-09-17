@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import QApplication
 
 def generate_monumental_banner():
     _app = QApplication.instance() or QApplication(sys.argv)
-    assets_dir = Path("D:/nazak/data/assets")
+    assets_dir = Path(__file__).resolve().parents[2] / "data" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     def draw_mathematical_stealth_prism(p: QPainter, cx: float, cy: float, size: float):
