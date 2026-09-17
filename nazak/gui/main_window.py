@@ -43,7 +43,7 @@ def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
     # Set Windows 10/11 Taskbar App ID so icon displays properly
     if sys.platform == "win32":
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Nazak.BrowserStudio.Pro.1.3")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Nazak.BrowserStudio.1.3")
         except Exception:
             pass
 
@@ -59,7 +59,7 @@ def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
     if not app:
         app = QApplication(sys.argv if sys.argv else ["NazakBrowserStudio"])
     app.setApplicationName("NazakBrowserStudio")
-    app.setApplicationDisplayName("Nazak Browser Studio PRO")
+    app.setApplicationDisplayName("Nazak Browser Studio")
 
     # Set Application Icon
     icon_path = DATA_DIR / "assets" / "icon.ico"

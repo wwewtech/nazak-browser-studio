@@ -288,8 +288,8 @@ def test_spintax_format_video_metadata_full_matrix():
 
     # 3. Full metadata format with telegram channel and unicode
     meta = format_video_metadata(
-        title_template="{🔥|⚡} Топ {10|5} лайфхаков для разработчиков",
-        description_template="Подпишись на канал: {tg}\n#shorts #tech",
+        title_template="{🔥|⚡} Top {10|5} tips for developers — try these!",
+        description_template="Subscribe to the channel: {tg}\n#shorts #tech",
         profile_name="Dev Profile",
         profile_id="prof_01",
         tg_channel="@tech_daily",

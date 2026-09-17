@@ -33,7 +33,7 @@ class ProfileEditDialog(QDialog):
         self.profile_manager = profile_manager
         self.is_create_mode = profile is None
 
-        self.setWindowTitle("Новый профиль" if self.is_create_mode else f"Настройка: {profile.name}")
+        self.setWindowTitle("New Profile" if self.is_create_mode else f"Settings: {profile.name}")
         self.resize(700, 680)
         self.setMinimumSize(660, 620)
         self.setStyleSheet(FLUENT_DARK_QSS)
@@ -46,7 +46,7 @@ class ProfileEditDialog(QDialog):
 
         # Title
         title_text = (
-            "Создание изолированного профиля" if self.is_create_mode else f"Настройка профиля: {self.profile.name}"
+            "Create an Isolated Profile" if self.is_create_mode else f"Profile Settings: {self.profile.name}"
         )
         lbl_title = QLabel(title_text, self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 17px; font-weight: 700;")
@@ -66,18 +66,18 @@ class ProfileEditDialog(QDialog):
         l_base = QVBoxLayout(card_base)
         l_base.setContentsMargins(16, 12, 16, 12)
 
-        lbl_b = QLabel("Основная информация", card_base)
+        lbl_b = QLabel("Basic Information", card_base)
         lbl_b.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_base.addWidget(lbl_b)
 
         self.input_name = LineEdit(card_base)
-        self.input_name.setPlaceholderText("Имя профиля, например 01 • Google Ads USA")
+        self.input_name.setPlaceholderText("Profile name, e.g. 01 • Google Ads USA")
         if self.profile:
             self.input_name.setText(self.profile.name)
         l_base.addWidget(self.input_name)
 
         self.input_group = LineEdit(card_base)
-        self.input_group.setPlaceholderText("Группа (Google Ads, Warmup, YouTube)")
+        self.input_group.setPlaceholderText("Group (Google Ads, Warmup, YouTube)")
         if self.profile:
             self.input_group.setText(self.profile.group)
         else:
@@ -90,12 +90,12 @@ class ProfileEditDialog(QDialog):
         l_proxy = QVBoxLayout(card_proxy)
         l_proxy.setContentsMargins(16, 12, 16, 12)
 
-        lbl_p = QLabel("Настройка прокси HTTP / HTTPS / SOCKS5", card_proxy)
+        lbl_p = QLabel("HTTP / HTTPS / SOCKS5 Proxy Settings", card_proxy)
         lbl_p.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_proxy.addWidget(lbl_p)
 
         self.input_proxy_raw = LineEdit(card_proxy)
-        self.input_proxy_raw.setPlaceholderText("host:port:user:pass или socks5://user:pass@host:port (или direct)")
+        self.input_proxy_raw.setPlaceholderText("host:port:user:pass or socks5://user:pass@host:port (or direct)")
         if self.profile and self.profile.proxy.raw:
             self.input_proxy_raw.setText(self.profile.proxy.raw)
         else:
@@ -109,12 +109,12 @@ class ProfileEditDialog(QDialog):
         l_fp.setContentsMargins(16, 14, 16, 14)
 
         h_fp_title = QHBoxLayout()
-        lbl_fp = QLabel("Изоляция железа и цифровой отпечаток", card_fp)
+        lbl_fp = QLabel("Hardware Isolation and Digital Fingerprint", card_fp)
         lbl_fp.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_fp_title.addWidget(lbl_fp)
         h_fp_title.addStretch()
 
-        self.btn_randomize = PushButton(FluentIcon.SYNC, "Сгенерировать отпечаток", card_fp)
+        self.btn_randomize = PushButton(FluentIcon.SYNC, "Generate Fingerprint", card_fp)
 
         self.btn_randomize.clicked.connect(self.on_randomize_fp)
         h_fp_title.addWidget(self.btn_randomize)
@@ -124,7 +124,7 @@ class ProfileEditDialog(QDialog):
         grid_fp.setVerticalSpacing(8)
 
         # GPU Preset
-        lbl_g = QLabel("Видеокарта (GPU):", card_fp)
+        lbl_g = QLabel("Graphics card (GPU):", card_fp)
         lbl_g.setStyleSheet("color: #d4d4d8; font-size: 11px;")
         grid_fp.addWidget(lbl_g, 0, 0)
         self.combo_gpu = ComboBox(card_fp)
@@ -133,25 +133,25 @@ class ProfileEditDialog(QDialog):
         grid_fp.addWidget(self.combo_gpu, 0, 1)
 
         # CPU Cores
-        lbl_c = QLabel("Процессор (CPU):", card_fp)
+        lbl_c = QLabel("Processor (CPU):", card_fp)
         lbl_c.setStyleSheet("color: #d4d4d8; font-size: 11px;")
         grid_fp.addWidget(lbl_c, 1, 0)
         self.combo_cores = ComboBox(card_fp)
         for c in [6, 8, 12, 14, 16, 24, 32]:
-            self.combo_cores.addItem(f"{c} ядер", userData=c)
+            self.combo_cores.addItem(f"{c} cores", userData=c)
         grid_fp.addWidget(self.combo_cores, 1, 1)
 
         # RAM
-        lbl_r = QLabel("Память (RAM):", card_fp)
+        lbl_r = QLabel("Memory (RAM):", card_fp)
         lbl_r.setStyleSheet("color: #d4d4d8; font-size: 11px;")
         grid_fp.addWidget(lbl_r, 2, 0)
         self.combo_ram = ComboBox(card_fp)
         for r in [8, 16, 32, 64]:
-            self.combo_ram.addItem(f"{r} ГБ", userData=r)
+            self.combo_ram.addItem(f"{r} GB", userData=r)
         grid_fp.addWidget(self.combo_ram, 2, 1)
 
         # Screen
-        lbl_sc = QLabel("Разрешение экрана:", card_fp)
+        lbl_sc = QLabel("Screen resolution:", card_fp)
         lbl_sc.setStyleSheet("color: #d4d4d8; font-size: 11px;")
         grid_fp.addWidget(lbl_sc, 3, 0)
         self.combo_screen = ComboBox(card_fp)
@@ -169,7 +169,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_canvas = SwitchButton(card_sw)
         self.switch_canvas.setChecked(True)
-        lbl_sw1 = QLabel("Шум Canvas", card_sw)
+        lbl_sw1 = QLabel("Canvas Noise", card_sw)
         lbl_sw1.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw1)
         h_switches.addWidget(self.switch_canvas)
@@ -177,7 +177,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_audio = SwitchButton(card_sw)
         self.switch_audio.setChecked(True)
-        lbl_sw2 = QLabel("Шум WebAudio", card_sw)
+        lbl_sw2 = QLabel("WebAudio Noise", card_sw)
         lbl_sw2.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw2)
         h_switches.addWidget(self.switch_audio)
@@ -185,7 +185,7 @@ class ProfileEditDialog(QDialog):
 
         self.switch_port_scan = SwitchButton(card_sw)
         self.switch_port_scan.setChecked(True)
-        lbl_sw3 = QLabel("Антискан портов", card_sw)
+        lbl_sw3 = QLabel("Port Scan Protection", card_sw)
         lbl_sw3.setStyleSheet("color: #d4d4d8; font-size: 11px; font-weight: 600;")
         h_switches.addWidget(lbl_sw3)
         h_switches.addWidget(self.switch_port_scan)
@@ -201,11 +201,11 @@ class ProfileEditDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        self.btn_cancel = PushButton("Отмена", self)
+        self.btn_cancel = PushButton("Cancel", self)
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
 
-        self.btn_save = PrimaryPushButton(FluentIcon.ACCEPT, "Сохранить", self)
+        self.btn_save = PrimaryPushButton(FluentIcon.ACCEPT, "Save", self)
         self.btn_save.clicked.connect(self.on_save)
         btn_layout.addWidget(self.btn_save)
 
@@ -221,10 +221,10 @@ class ProfileEditDialog(QDialog):
         idx = self.combo_gpu.findText(fp.webgl_unmasked_renderer)
         if idx >= 0:
             self.combo_gpu.setCurrentIndex(idx)
-        idx = self.combo_cores.findText(f"{fp.hardware_concurrency} ядер")
+        idx = self.combo_cores.findText(f"{fp.hardware_concurrency} cores")
         if idx >= 0:
             self.combo_cores.setCurrentIndex(idx)
-        idx = self.combo_ram.findText(f"{fp.device_memory} ГБ")
+        idx = self.combo_ram.findText(f"{fp.device_memory} GB")
         if idx >= 0:
             self.combo_ram.setCurrentIndex(idx)
         idx = self.combo_screen.findText(f"{fp.screen_width} × {fp.screen_height}")
@@ -240,10 +240,10 @@ class ProfileEditDialog(QDialog):
         idx_gpu = self.combo_gpu.findText(new_fp.webgl_unmasked_renderer)
         if idx_gpu >= 0:
             self.combo_gpu.setCurrentIndex(idx_gpu)
-        idx_cores = self.combo_cores.findText(f"{new_fp.hardware_concurrency} ядер")
+        idx_cores = self.combo_cores.findText(f"{new_fp.hardware_concurrency} cores")
         if idx_cores >= 0:
             self.combo_cores.setCurrentIndex(idx_cores)
-        idx_ram = self.combo_ram.findText(f"{new_fp.device_memory} ГБ")
+        idx_ram = self.combo_ram.findText(f"{new_fp.device_memory} GB")
         if idx_ram >= 0:
             self.combo_ram.setCurrentIndex(idx_ram)
         idx_screen = self.combo_screen.findText(f"{new_fp.screen_width} × {new_fp.screen_height}")
@@ -254,8 +254,8 @@ class ProfileEditDialog(QDialog):
         self.switch_audio.setChecked(bool(new_fp.audio_noise))
         self.switch_port_scan.setChecked(bool(new_fp.block_port_scanning))
         InfoBar.success(
-            "Отпечаток сгенерирован",
-            "Подобран согласованный набор характеристик железа",
+            "Fingerprint Generated",
+            "Selected a consistent set of hardware specifications",
             parent=self,
             position=InfoBarPosition.TOP,
         )
@@ -263,7 +263,7 @@ class ProfileEditDialog(QDialog):
     def on_save(self):
         name = self.input_name.text().strip()
         if not name:
-            InfoBar.warning("Внимание", "Укажите имя профиля", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning("Warning", "Enter a profile name", parent=self, position=InfoBarPosition.TOP)
             return
 
         group = self.input_group.text().strip() or "General"

@@ -1,5 +1,5 @@
 """
-Minimalist Executive Splash Screen for Nazak Browser Studio PRO.
+Minimalist Executive Splash Screen for Nazak Browser Studio.
 Zero AI-slop: No fake telemetry logs, no fake window chrome.
 Pure monolithic brand emblem, Swiss typography, and smooth indeterminate hairline loader.
 """
@@ -107,12 +107,12 @@ class NazakSplashScreen(QSplashScreen):
         p.setPen(QColor(255, 255, 255))
         p.drawText(QRectF(0, 172, w, 32), Qt.AlignmentFlag.AlignCenter, "NAZAK")
 
-        # 4. Refined Russian Subtitle
+        # 4. Refined English Subtitle
         font_sub = QFont("Segoe UI Variable Text", 10, QFont.Weight.DemiBold)
         font_sub.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2.0)
         p.setFont(font_sub)
         p.setPen(QColor(113, 113, 122))
-        p.drawText(QRectF(0, 206, w, 20), Qt.AlignmentFlag.AlignCenter, "АНТИДЕТЕКТ СТУДИЯ")
+        p.drawText(QRectF(0, 206, w, 20), Qt.AlignmentFlag.AlignCenter, "ANTI-DETECT STUDIO")
 
         # 5. Version String in Bottom-Right
         font_ver = QFont("JetBrains Mono", 8, QFont.Weight.Normal)

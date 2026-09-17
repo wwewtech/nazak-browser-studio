@@ -120,7 +120,7 @@ class YouTubeUploader:
                 # Dismiss 'Welcome to YouTube Studio' modal if present
                 try:
                     continue_btn = page.locator(
-                        "button:has-text('Continue'), button:has-text('Продолжить'), #continue-button"
+                        "button:has-text('Continue'), #continue-button"
                     ).first
                     if await continue_btn.is_visible(timeout=3000):
                         await continue_btn.click()
@@ -131,7 +131,7 @@ class YouTubeUploader:
                 # Dismiss any tooltips
                 try:
                     close_tip = page.locator(
-                        "button:has-text('Close'), button:has-text('Dismiss'), button:has-text('Понятно')"
+                        "button:has-text('Close'), button:has-text('Dismiss')"
                     ).first
                     if await close_tip.is_visible(timeout=2000):
                         await close_tip.click()
@@ -143,13 +143,13 @@ class YouTubeUploader:
 
                 # 1. Click upload button (center dashboard button or CREATE menu)
                 center_upload = page.locator(
-                    "button:has-text('Upload videos'), button:has-text('Добавить видео'), #upload-button, [aria-label*='Upload' i]"
+                    "button:has-text('Upload videos'), #upload-button, [aria-label*='Upload' i]"
                 ).first
                 if await center_upload.is_visible(timeout=3000):
                     await center_upload.click()
                 else:
                     create_btn = page.locator(
-                        "#create-icon, [aria-label='Create'], [aria-label='Создать'], button:has-text('CREATE'), button:has-text('СОЗДАТЬ')"
+                        "#create-icon, [aria-label='Create'], button:has-text('CREATE')"
                     ).first
                     await create_btn.wait_for(state="visible", timeout=20000)
                     box = await create_btn.bounding_box()
@@ -161,7 +161,7 @@ class YouTubeUploader:
                     await asyncio.sleep(1.5)
 
                     upload_item = page.locator(
-                        "#text-item-0, tp-yt-paper-item:has-text('Upload videos'), tp-yt-paper-item:has-text('Добавить видео')"
+                        "#text-item-0, tp-yt-paper-item:has-text('Upload videos')"
                     ).first
                     await upload_item.click()
 
@@ -179,7 +179,7 @@ class YouTubeUploader:
 
                 # 4. Fill Title
                 title_box = page.locator(
-                    "#title-textarea #textbox, [aria-label*='title' i], [aria-label*='название' i]"
+                    "#title-textarea #textbox, [aria-label*='title' i]"
                 ).first
                 await title_box.wait_for(state="visible", timeout=25000)
                 await title_box.click()
@@ -191,7 +191,7 @@ class YouTubeUploader:
 
                 # 5. Fill Description
                 desc_box = page.locator(
-                    "#description-textarea #textbox, [aria-label*='description' i], [aria-label*='описание' i]"
+                    "#description-textarea #textbox, [aria-label*='description' i]"
                 ).first
                 if await desc_box.is_visible():
                     await desc_box.click()

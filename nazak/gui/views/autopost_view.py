@@ -52,11 +52,11 @@ class AutopostView(QWidget):
         # 1. Header with Top Action Button
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        lbl_title = QLabel("Автопостинг YouTube Shorts", self)
+        lbl_title = QLabel("YouTube Shorts Autoposting", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
 
         lbl_desc = QLabel(
-            "Автономная уникализация видео через FFmpeg, генерация спинтакс-заголовков и публикация Shorts через CDP",
+            "Automatic video variation with FFmpeg, spintax title generation and Shorts publishing via CDP",
             self,
         )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
@@ -66,7 +66,7 @@ class AutopostView(QWidget):
         h_head.addLayout(v_title)
         h_head.addStretch()
 
-        self.btn_start_top = PrimaryPushButton(FluentIcon.SEND, "Запустить автопостинг", self)
+        self.btn_start_top = PrimaryPushButton(FluentIcon.SEND, "Start Autoposting", self)
         self.btn_start_top.clicked.connect(self.on_start_autopost)
         h_head.addWidget(self.btn_start_top)
         main_layout.addLayout(h_head)
@@ -85,24 +85,24 @@ class AutopostView(QWidget):
         l_src = QVBoxLayout(card_src)
         l_src.setContentsMargins(16, 14, 16, 14)
 
-        lbl_s1 = QLabel("Исходный видеоролик и воронка", card_src)
+        lbl_s1 = QLabel("Source Video & Funnel", card_src)
         lbl_s1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_src.addWidget(lbl_s1)
 
         h_file = QHBoxLayout()
         self.input_video_path = LineEdit(card_src)
         self.input_video_path.setText("data/videos/source.mp4")
-        self.input_video_path.setPlaceholderText("Путь к MP4 файлу...")
+        self.input_video_path.setPlaceholderText("Path to MP4 file...")
         h_file.addWidget(self.input_video_path)
 
-        btn_browse = PushButton(FluentIcon.FOLDER, "Обзор...", card_src)
+        btn_browse = PushButton(FluentIcon.FOLDER, "Browse...", card_src)
         btn_browse.clicked.connect(self.on_browse_file)
         h_file.addWidget(btn_browse)
         l_src.addLayout(h_file)
 
         self.input_tg = LineEdit(card_src)
         self.input_tg.setText("@speed_vpn_bot")
-        self.input_tg.setPlaceholderText("Telegram-канал или бот воронки, например @my_vpn_bot")
+        self.input_tg.setPlaceholderText("Telegram channel or funnel bot, e.g. @my_vpn_bot")
         l_src.addWidget(self.input_tg)
         layout.addWidget(card_src)
 
@@ -112,25 +112,25 @@ class AutopostView(QWidget):
         l_spin.setContentsMargins(16, 14, 16, 14)
 
         h_spin_head = QHBoxLayout()
-        lbl_s2 = QLabel("Спинтакс-шаблоны метаданных", card_spin)
+        lbl_s2 = QLabel("Spintax Metadata Templates", card_spin)
         lbl_s2.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_spin_head.addWidget(lbl_s2)
         h_spin_head.addStretch()
 
-        btn_preview = PushButton(FluentIcon.SYNC, "Сгенерировать примеры", card_spin)
+        btn_preview = PushButton(FluentIcon.SYNC, "Generate Examples", card_spin)
         btn_preview.clicked.connect(self.on_preview_spintax)
         h_spin_head.addWidget(btn_preview)
         l_spin.addLayout(h_spin_head)
 
         self.input_title = LineEdit(card_spin)
-        self.input_title.setText("{Лучший|Топ|Рабочий} {VPN|Впн} для {РФ|России} 2026 #shorts #vpn #ютуб")
+        self.input_title.setText("{Best|Top|Working} {VPN|Vpn} for {the Russian Federation|Russia} 2026 #shorts #vpn #youtube")
         self.input_title.textChanged.connect(self.on_preview_spintax)
         l_spin.addWidget(self.input_title)
 
         self.input_desc = TextEdit(card_spin)
         self.input_desc.setMaximumHeight(75)
         self.input_desc.setText(
-            "{Скачать быстрый VPN без ограничений:|Как смотреть ютуб в 4K в РФ:} {tg}\nПромокод на скидку: {promo}\n\n#shorts #vpn #впн #ютуб"
+            "{Download a fast VPN without limits:|How to watch YouTube in 4K in Russia:} {tg}\nDiscount code: {promo}\n\n#shorts #vpn #vpn #youtube"
         )
         self.input_desc.textChanged.connect(self.on_preview_spintax)
         l_spin.addWidget(self.input_desc)
@@ -148,16 +148,16 @@ class AutopostView(QWidget):
         l_profs.setContentsMargins(16, 14, 16, 14)
 
         h_prof_head = QHBoxLayout()
-        lbl_s3 = QLabel("Выбор аккаунтов для публикации", card_profs)
+        lbl_s3 = QLabel("Select Accounts for Publishing", card_profs)
         lbl_s3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_prof_head.addWidget(lbl_s3)
         h_prof_head.addStretch()
 
-        btn_all = PushButton("Выбрать все", card_profs)
+        btn_all = PushButton("Select All", card_profs)
         btn_all.clicked.connect(lambda: self.toggle_all_checkboxes(True))
         h_prof_head.addWidget(btn_all)
 
-        btn_none = PushButton("Снять", card_profs)
+        btn_none = PushButton("Deselect All", card_profs)
         btn_none.clicked.connect(lambda: self.toggle_all_checkboxes(False))
         h_prof_head.addWidget(btn_none)
         l_profs.addLayout(h_prof_head)
@@ -178,13 +178,13 @@ class AutopostView(QWidget):
         l_table = QVBoxLayout(card_table)
         l_table.setContentsMargins(16, 14, 16, 14)
 
-        lbl_s4 = QLabel("Журнал очереди автопостинга", card_table)
+        lbl_s4 = QLabel("Autoposting Queue Log", card_table)
         lbl_s4.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_table.addWidget(lbl_s4)
 
         self.table = TableWidget(card_table)
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Профиль", "Статус", "Прогресс", "Ссылка"])
+        self.table.setHorizontalHeaderLabels(["Profile", "Status", "Progress", "Link"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setMinimumHeight(160)
         l_table.addWidget(self.table)
@@ -197,14 +197,14 @@ class AutopostView(QWidget):
         h_bot = QHBoxLayout()
         h_bot.addStretch()
 
-        self.btn_start_bottom = PrimaryPushButton(FluentIcon.SEND, "Запустить автопостинг", self)
+        self.btn_start_bottom = PrimaryPushButton(FluentIcon.SEND, "Start Autoposting", self)
         self.btn_start_bottom.setMinimumWidth(240)
         self.btn_start_bottom.clicked.connect(self.on_start_autopost)
         h_bot.addWidget(self.btn_start_bottom)
         main_layout.addLayout(h_bot)
 
     def on_browse_file(self):
-        fname, _ = QFileDialog.getOpenFileName(self, "Выберите видеофайл MP4", "", "Video Files (*.mp4 *.mov *.mkv)")
+        fname, _ = QFileDialog.getOpenFileName(self, "Select an MP4 video file", "", "Video Files (*.mp4 *.mov *.mkv)")
         if fname:
             self.input_video_path.setText(fname)
 
@@ -215,7 +215,7 @@ class AutopostView(QWidget):
         sample = format_video_metadata(t_tmpl, d_tmpl, "Profile 01", "prof_01", tg)
         desc_lines = sample["description"].splitlines()
         first_line = desc_lines[0] if desc_lines else ""
-        self.lbl_preview_sample.setText(f"Превью заголовка: {sample['title']}\nПревью описания: {first_line}")
+        self.lbl_preview_sample.setText(f"Title preview: {sample['title']}\nDescription preview: {first_line}")
 
     def toggle_all_checkboxes(self, checked: bool):
         for cb in self.profile_checkboxes.values():
@@ -224,7 +224,7 @@ class AutopostView(QWidget):
     def on_start_autopost(self):
         selected_ids = [pid for pid, cb in self.profile_checkboxes.items() if cb.isChecked()]
         if not selected_ids:
-            InfoBar.warning("Внимание", "Выберите хотя бы один профиль", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning("Warning", "Select at least one profile", parent=self, position=InfoBarPosition.TOP)
             return
 
         vpath = Path(self.input_video_path.text().strip())
@@ -237,13 +237,13 @@ class AutopostView(QWidget):
             prof = self.profile_manager.get_profile(pid)
             pname = prof.name if prof else pid
             self.table.setItem(row, 0, QTableWidgetItem(pname))
-            self.table.setItem(row, 1, QTableWidgetItem("В ОЧЕРЕДИ"))
-            self.table.setItem(row, 2, QTableWidgetItem("Ожидание старта"))
+            self.table.setItem(row, 1, QTableWidgetItem("QUEUED"))
+            self.table.setItem(row, 2, QTableWidgetItem("Waiting to start"))
             self.table.setItem(row, 3, QTableWidgetItem("-"))
 
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(False)
-            btn.setText("Выполняется...")
+            btn.setText("Running...")
 
         self.worker = AutopostBatchWorker(
             profile_manager=self.profile_manager,
@@ -259,8 +259,8 @@ class AutopostView(QWidget):
         self.worker.start()
 
         InfoBar.success(
-            "Очередь запущена",
-            f"Автопостинг начат для {len(selected_ids)} профилей",
+            "Queue started",
+            f"Autoposting started for {len(selected_ids)} profiles",
             parent=self,
             position=InfoBarPosition.TOP,
         )
@@ -281,7 +281,7 @@ class AutopostView(QWidget):
     def on_batch_finished(self, results):
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(True)
-            btn.setText("Запустить автопостинг")
+            btn.setText("Start Autoposting")
         InfoBar.success(
-            "Очередь завершена", f"Обработано {len(results)} публикаций", parent=self, position=InfoBarPosition.TOP
+            "Queue completed", f"Processed {len(results)} posts", parent=self, position=InfoBarPosition.TOP
         )

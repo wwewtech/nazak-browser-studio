@@ -37,7 +37,7 @@ class NazakFluentMainWindow(MSFluentWindow):
         self.init_navigation()
 
     def init_window(self):
-        self.setWindowTitle("Nazak Browser Studio PRO")
+        self.setWindowTitle("Nazak Browser Studio")
         self.resize(1200, 800)
         self.setMinimumSize(1020, 680)
 
@@ -64,37 +64,37 @@ class NazakFluentMainWindow(MSFluentWindow):
         # 1. Profiles Dashboard (Primary)
         self.profiles_view = ProfilesView(self.profile_manager, self.browser_launcher, self)
         self.addSubInterface(
-            self.profiles_view, FluentIcon.APPLICATION, "Профили", FluentIcon.APPLICATION, NavigationItemPosition.TOP
+            self.profiles_view, FluentIcon.APPLICATION, "Profiles", FluentIcon.APPLICATION, NavigationItemPosition.TOP
         )
 
         # 2. YouTube Shorts Autoposter
         self.autopost_view = AutopostView(self.profile_manager, self.browser_launcher, self)
         self.addSubInterface(
-            self.autopost_view, FluentIcon.SEND, "Автопостинг", FluentIcon.SEND, NavigationItemPosition.TOP
+            self.autopost_view, FluentIcon.SEND, "Autoposting", FluentIcon.SEND, NavigationItemPosition.TOP
         )
 
         # 3. Account Provisioning & Dual-Mode Activation
         self.accounts_view = AccountsView(self.profile_manager, self.browser_launcher, self)
         self.addSubInterface(
-            self.accounts_view, FluentIcon.PEOPLE, "Аккаунты", FluentIcon.PEOPLE, NavigationItemPosition.TOP
+            self.accounts_view, FluentIcon.PEOPLE, "Accounts", FluentIcon.PEOPLE, NavigationItemPosition.TOP
         )
 
         # 4. Proxies & Bulk Import
         self.proxies_view = ProxiesView(self.profile_manager, self.browser_launcher, self)
         self.addSubInterface(
-            self.proxies_view, FluentIcon.GLOBE, "Прокси", FluentIcon.GLOBE, NavigationItemPosition.TOP
+            self.proxies_view, FluentIcon.GLOBE, "Proxies", FluentIcon.GLOBE, NavigationItemPosition.TOP
         )
 
         # 5. Google Warmup Bot
         self.warmup_view = WarmupView(self.profile_manager, self.browser_launcher, self)
         self.addSubInterface(
-            self.warmup_view, FluentIcon.ROBOT, "Прогрев", FluentIcon.ROBOT, NavigationItemPosition.TOP
+            self.warmup_view, FluentIcon.ROBOT, "Warmup", FluentIcon.ROBOT, NavigationItemPosition.TOP
         )
 
         # 6. Settings (Bottom pinned)
         self.settings_view = SettingsView(self)
         self.addSubInterface(
-            self.settings_view, FluentIcon.SETTING, "Настройки", FluentIcon.SETTING, NavigationItemPosition.BOTTOM
+            self.settings_view, FluentIcon.SETTING, "Settings", FluentIcon.SETTING, NavigationItemPosition.BOTTOM
         )
 
         # Live Inter-Tab Synchronization

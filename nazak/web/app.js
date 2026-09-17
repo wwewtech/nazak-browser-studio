@@ -42,12 +42,12 @@ function initWebSocket() {
   const wsUrl = `${protocol}//${window.location.host}/ws/events`;
   try {
     ws = new WebSocket(wsUrl);
-    ws.onopen = () => { document.getElementById("ws-status-text").innerText = "WS: Подключен"; };
+    ws.onopen = () => { document.getElementById("ws-status-text").innerText = "WS: Connected"; };
     ws.onmessage = (event) => {
       try { handleWsEvent(JSON.parse(event.data)); } catch (e) {}
     };
     ws.onclose = () => {
-      document.getElementById("ws-status-text").innerText = "WS: Реконнект...";
+      document.getElementById("ws-status-text").innerText = "WS: Reconnecting...";
       setTimeout(initWebSocket, 2500);
     };
   } catch (e) {
@@ -64,9 +64,9 @@ function handleWsEvent(msg) {
       prof.pid = pid || null;
       renderProfiles();
       updateMetrics();
-      if (status === "running") showToast(`Профиль "${prof.name}" запущен (PID: ${pid})`, "success");
-      if (status === "stopped") showToast(`Профиль "${prof.name}" остановлен`, "info");
-      if (status === "error") showToast(`Ошибка запуска: ${error}`, "error");
+      if (status === "running") showToast(`Profile "${prof.name}" started (PID: ${pid})`, "success");
+      if (status === "stopped") showToast(`Profile "${prof.name}" stopped`, "info");
+      if (status === "error") showToast(`Launch error: ${error}`, "error");
     }
   } else if (msg.event === "profile_health_update") {
     const { profile_id, health } = msg.data;
@@ -93,12 +93,12 @@ async function fetchSystemInfo() {
     const dot = document.getElementById("chrome-dot");
     if (systemInfo.chrome_installed) {
       dot.className = "status-dot online";
-      statusText.innerText = "Chrome: Обнаружен";
+      statusText.innerText = "Chrome: Detected";
       statusPill.title = systemInfo.chrome_executable;
     } else {
       dot.className = "status-dot";
       dot.style.backgroundColor = "var(--accent-rose)";
-      statusText.innerText = "Chrome: Не найден";
+      statusText.innerText = "Chrome: Not found";
     }
   } catch (e) {}
 }
@@ -151,7 +151,7 @@ function updateBulkBar() {
   const size = selectedProfileIds.size;
   if (size > 0) {
     bar.style.display = "flex";
-    countText.innerText = `Выбрано: ${size} из ${profiles.length} профилей`;
+    countText.innerText = `Selected: ${size} of ${profiles.length} profiles`;
   } else {
     bar.style.display = "none";
   }
@@ -160,7 +160,7 @@ function updateBulkBar() {
 async function batchLaunchSelected() {
   const ids = Array.from(selectedProfileIds);
   if (ids.length === 0) return;
-  showToast(`Запуск ${ids.length} профилей...`, "info");
+  showToast(`Starting ${ids.length} profiles...`, "info");
   try {
     await fetch("/api/profiles/batch-launch", {
       method: "POST",
@@ -169,14 +169,14 @@ async function batchLaunchSelected() {
     });
     fetchProfiles();
   } catch (e) {
-    showToast(`Ошибка: ${e.message}`, "error");
+    showToast(`Error: ${e.message}`, "error");
   }
 }
 
 async function batchStopSelected() {
   const ids = Array.from(selectedProfileIds);
   if (ids.length === 0) return;
-  showToast(`Остановка ${ids.length} профилей...`, "info");
+  showToast(`Stopping ${ids.length} profiles...`, "info");
   try {
     await fetch("/api/profiles/batch-stop", {
       method: "POST",
@@ -185,19 +185,19 @@ async function batchStopSelected() {
     });
     fetchProfiles();
   } catch (e) {
-    showToast(`Ошибка: ${e.message}`, "error");
+    showToast(`Error: ${e.message}`, "error");
   }
 }
 
 async function batchCheckSelected() {
   const ids = Array.from(selectedProfileIds);
   if (ids.length === 0) return;
-  showToast(`Диагностика ${ids.length} профилей...`, "info");
+  showToast(`Running diagnostics for ${ids.length} profiles...`, "info");
   for (const id of ids) {
     try { await fetch(`/api/profiles/${id}/check`, { method: "POST" }); } catch (e) {}
   }
   fetchProfiles();
-  showToast(`Диагностика завершена!`, "success");
+  showToast(`Diagnostics complete!`, "success");
 }
 
 function renderProfiles() {
@@ -218,24 +218,24 @@ function renderProfiles() {
     return true;
   });
   if (filtered.length === 0) {
-    grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 48px; text-align: center; color: var(--text-muted); background: var(--bg-surface); border-radius: 8px; border: 1px dashed var(--border-subtle);"><p style="font-size: 16px; margin-bottom: 8px;">Профили не найдены</p><span style="font-size: 12px;">Попробуйте изменить параметры поиска или создайте новый профиль.</span></div>`;
+    grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 48px; text-align: center; color: var(--text-muted); background: var(--bg-surface); border-radius: 8px; border: 1px dashed var(--border-subtle);"><p style="font-size: 16px; margin-bottom: 8px;">No profiles found</p><span style="font-size: 12px;">Try adjusting your search or creating a new profile.</span></div>`;
     return;
   }
   grid.innerHTML = filtered.map(p => {
     const isRunning = p.status === "running";
     const statusClass = isRunning ? "badge-running" : (p.status === "error" ? "badge-error" : (p.status === "starting" ? "badge-checking" : "badge-stopped"));
-    const statusLabel = isRunning ? "● Запущен" : (p.status === "error" ? "✕ Ошибка" : (p.status === "starting" ? "▲ Запуск..." : "○ Остановлен"));
+    const statusLabel = isRunning ? "● Running" : (p.status === "error" ? "✕ Error" : (p.status === "starting" ? "▲ Starting..." : "○ Stopped"));
     const isSelected = selectedProfileIds.has(p.id);
     const proxyType = p.proxy.type ? p.proxy.type.toUpperCase() : "DIRECT";
-    let proxyText = "Прямое подключение";
+    let proxyText = "Direct connection";
     if (p.proxy.type !== "direct" && p.proxy.host) proxyText = `${proxyType}://${p.proxy.host}:${p.proxy.port}`;
     const hc = p.last_health_check;
-    const pingText = hc && hc.ping_ms ? `${hc.ping_ms} мс` : null;
+    const pingText = hc && hc.ping_ms ? `${hc.ping_ms} ms` : null;
     const ipText = hc && hc.ip ? hc.ip : null;
     const geoText = hc && hc.country ? `${hc.country}${hc.city ? ", " + hc.city : ""}` : null;
-    let gBadges = `<span class="health-badge unknown">G: ?</span><span class="health-badge unknown">Вход: ?</span><span class="health-badge unknown">Ads: ?</span><span class="health-badge unknown">YT: ?</span>`;
+    let gBadges = `<span class="health-badge unknown">G: ?</span><span class="health-badge unknown">Sign In: ?</span><span class="health-badge unknown">Ads: ?</span><span class="health-badge unknown">YT: ?</span>`;
     if (hc && hc.google) {
-      gBadges = `<span class="health-badge ${hc.google.google_main ? "ok" : "fail"}">${hc.google.google_main ? "✓ Поиск" : "✕ Поиск"}</span><span class="health-badge ${hc.google.google_accounts ? "ok" : "fail"}">${hc.google.google_accounts ? "✓ Вход" : "✕ Вход"}</span><span class="health-badge ${hc.google.google_ads ? "ok" : "fail"}">${hc.google.google_ads ? "✓ Реклама" : "✕ Реклама"}</span><span class="health-badge ${hc.google.youtube ? "ok" : "fail"}">${hc.google.youtube ? "✓ Ютуб" : "✕ Ютуб"}</span>`;
+      gBadges = `<span class="health-badge ${hc.google.google_main ? "ok" : "fail"}">${hc.google.google_main ? "✓ Search" : "✕ Search"}</span><span class="health-badge ${hc.google.google_accounts ? "ok" : "fail"}">${hc.google.google_accounts ? "✓ Sign In" : "✕ Sign In"}</span><span class="health-badge ${hc.google.google_ads ? "ok" : "fail"}">${hc.google.google_ads ? "✓ Ads" : "✕ Ads"}</span><span class="health-badge ${hc.google.youtube ? "ok" : "fail"}">${hc.google.youtube ? "✓ YouTube" : "✕ YouTube"}</span>`;
     }
     return `
       <div class="profile-card ${isRunning ? "running" : ""}" id="card-${p.id}">
@@ -245,7 +245,7 @@ function renderProfiles() {
             <div class="profile-identity">
               <div class="profile-name-row">
                 <span class="profile-name">${escapeHtml(p.name)}</span>
-                <span class="group-tag">${escapeHtml(p.group || "Общие")}</span>
+                <span class="group-tag">${escapeHtml(p.group || "General")}</span>
               </div>
               <div class="profile-notes">${escapeHtml(p.google.notes || (p.google.tags ? p.google.tags.join(", ") : ""))}</div>
             </div>
@@ -254,7 +254,7 @@ function renderProfiles() {
         </div>
         <div class="card-details-box">
           <div class="detail-row">
-            <span class="detail-label">ПРОКСИ:</span>
+            <span class="detail-label">PROXY:</span>
             <span class="detail-value">
               <span>${escapeHtml(proxyText)}</span>
               ${pingText ? `<span class="latency-pill">${pingText}</span>` : ""}
@@ -262,31 +262,31 @@ function renderProfiles() {
           </div>
           ${ipText ? `<div class="detail-row"><span class="detail-label">IP & GEO:</span><span class="detail-value" style="color: var(--accent-sky);">${escapeHtml(ipText)} ${geoText ? `(${escapeHtml(geoText)})` : ""}</span></div>` : ""}
           <div class="detail-row"><span class="detail-label">GOOGLE:</span><div class="google-health-row">${gBadges}</div></div>
-          <div class="detail-row"><span class="detail-label">ОТПЕЧАТОК:</span><span class="detail-value" style="color: var(--accent-emerald);"><span>${p.fingerprint.hardware_concurrency} ядер / ${p.fingerprint.device_memory} ГБ</span><span style="color: var(--text-muted);">| ${p.fingerprint.screen_width}x${p.fingerprint.screen_height}</span></span></div>
+          <div class="detail-row"><span class="detail-label">FINGERPRINT:</span><span class="detail-value" style="color: var(--accent-emerald);"><span>${p.fingerprint.hardware_concurrency} cores / ${p.fingerprint.device_memory} GB</span><span style="color: var(--text-muted);">| ${p.fingerprint.screen_width}x${p.fingerprint.screen_height}</span></span></div>
         </div>
         <div class="card-actions">
           <div class="launch-group">
-            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopProfile('${p.id}')"><span>⏹ Стоп</span></button>` : `<button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')"><span>🚀 Запуск</span></button>`}
+            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopProfile('${p.id}')"><span>⏹ Stop</span></button>` : `<button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')"><span>🚀 Launch</span></button>`}
             <div class="dropdown">
               <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('dropdown-${p.id}')"><span>⚡ Google ▾</span></button>
               <div class="dropdown-menu" id="dropdown-${p.id}">
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://accounts.google.com/ServiceLogin')">🔑 Google Вход (Auth)</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://ads.google.com')">📊 Google Ads Кабинет</div>
+                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://accounts.google.com/ServiceLogin')">🔑 Google Sign In (Auth)</div>
+                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://ads.google.com')">📊 Google Ads Dashboard</div>
                 <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://studio.youtube.com')">🎬 YouTube Studio</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://www.google.com')">🔍 Google Search (Прогрев)</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://whoer.net')">🛡 Whoer.net (IP Тест)</div>
+                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://www.google.com')">🔍 Google Search (Warmup)</div>
+                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://whoer.net')">🛡 Whoer.net (IP Test)</div>
                 <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://browserleaks.com/ip')">🌐 BrowserLeaks IP</div>
               </div>
             </div>
-            <button class="btn btn-warmup btn-sm" onclick="openWarmupModal('${p.id}')" title="Автоматический прогрев"><span>🔥 Прогрев</span></button>
+            <button class="btn btn-warmup btn-sm" onclick="openWarmupModal('${p.id}')" title="Automatic warmup"><span>🔥 Warmup</span></button>
           </div>
           <div class="more-group">
-            <button class="btn btn-secondary btn-sm" onclick="openDiagModal('${p.id}')" title="Диагностика"><span>🔍</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openCookieModal('${p.id}')" title="Куки"><span>🍪</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${p.id}')" title="Настройки"><span>⚙</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="cloneProfile('${p.id}')" title="Клонировать"><span>📋</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="clearCache('${p.id}')" title="Очистить кэш"><span>🧹</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="deleteProfile('${p.id}')" title="Удалить" style="color: var(--accent-rose);"><span>🗑</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openDiagModal('${p.id}')" title="Diagnostics"><span>🔍</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openCookieModal('${p.id}')" title="Cookies"><span>🍪</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${p.id}')" title="Settings"><span>⚙</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="cloneProfile('${p.id}')" title="Clone"><span>📋</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="clearCache('${p.id}')" title="Clear cache"><span>🧹</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="deleteProfile('${p.id}')" title="Delete" style="color: var(--accent-rose);"><span>🗑</span></button>
           </div>
         </div>
       </div>
@@ -312,11 +312,11 @@ async function launchProfile(id, customUrl = null) {
     });
     const data = await res.json();
     if (!res.ok) {
-      showToast(`Ошибка запуска: ${data.detail || "Неизвестная ошибка"}`, "error");
+      showToast(`Launch error: ${data.detail || "Unknown error"}`, "error");
       fetchProfiles();
     }
   } catch (e) {
-    showToast(`Ошибка сети: ${e.message}`, "error");
+    showToast(`Network error: ${e.message}`, "error");
   }
 }
 
@@ -325,7 +325,7 @@ async function stopProfile(id) {
     const res = await fetch(`/api/profiles/${id}/stop`, { method: "POST" });
     if (!res.ok) {
       const data = await res.json();
-      showToast(`Ошибка: ${data.detail}`, "error");
+      showToast(`Error: ${data.detail}`, "error");
     }
   } catch (e) {}
 }
@@ -335,7 +335,7 @@ async function openDiagModal(id) {
   const prof = profiles.find(p => p.id === id);
   if (!prof) return;
   const modal = document.getElementById("diag-modal");
-  document.getElementById("diag-modal-title").innerText = `🔍 Диагностика: ${prof.name}`;
+  document.getElementById("diag-modal-title").innerText = `🔍 Diagnostics: ${prof.name}`;
   modal.classList.add("open");
   renderDiagModalContent(prof, null, true);
   try {
@@ -343,28 +343,28 @@ async function openDiagModal(id) {
     const health = await res.json();
     renderDiagModalContent(prof, health, false);
   } catch (e) {
-    document.getElementById("diag-modal-body").innerHTML = `<div class="diag-step fail"><span>Ошибка: ${e.message}</span></div>`;
+    document.getElementById("diag-modal-body").innerHTML = `<div class="diag-step fail"><span>Error: ${e.message}</span></div>`;
   }
 }
 
 function renderDiagModalContent(prof, health, isLoading = false) {
   const body = document.getElementById("diag-modal-body");
   if (isLoading) {
-    body.innerHTML = `<div style="text-align: center; padding: 24px; color: var(--accent-amber); font-family: var(--font-mono);"><p style="font-size: 16px; margin-bottom: 8px;">⏳ Выполняется комплексная диагностика...</p><span style="font-size: 12px; color: var(--text-muted);">Проверка TCP пинга, IP геолокации, доступности Google/YouTube и изоляции диска</span></div>`;
+    body.innerHTML = `<div style="text-align: center; padding: 24px; color: var(--accent-amber); font-family: var(--font-mono);"><p style="font-size: 16px; margin-bottom: 8px;">⏳ Running full diagnostics...</p><span style="font-size: 12px; color: var(--text-muted);">Checking TCP latency, IP geolocation, Google/YouTube availability, and disk isolation</span></div>`;
     return;
   }
   if (!health) return;
 
   body.innerHTML = `
     <div style="display: flex; flex-direction: column; gap: 12px;">
-      <div class="diag-step ${health.ping_ms !== null ? "success" : "fail"}"><span>[1] TCP Пинг:</span><span style="font-weight: 700; color: ${health.ping_ms ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.ping_ms !== null ? `${health.ping_ms} ms` : "Таймаут"}</span></div>
-      <div class="diag-step ${health.ip ? "success" : "fail"}"><span>[2] Внешний IP:</span><span style="font-weight: 700; color: ${health.ip ? "var(--accent-sky)" : "var(--accent-rose)"};">${health.ip ? `${health.ip} (${health.country || "N/A"}, ${health.city || ""})` : "Ошибка IP"}</span></div>
-      ${health.isp ? `<div class="diag-step success"><span>[3] Провайдер / ASN:</span><span>${escapeHtml(health.isp)} (${escapeHtml(health.asn || "")})</span></div>` : ""}
-      <div class="diag-step ${health.google && health.google.google_main ? "success" : "fail"}"><span>[4] Google Search:</span><span style="color: ${health.google && health.google.google_main ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_main ? `✓ Доступен (${health.google.latencies_ms?.google_main || "-"} ms)` : "✕ Ошибка"}</span></div>
-      <div class="diag-step ${health.google && health.google.google_accounts ? "success" : "fail"}"><span>[5] Google Auth / Login:</span><span style="color: ${health.google && health.google.google_accounts ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_accounts ? `✓ Доступен (${health.google.latencies_ms?.google_accounts || "-"} ms)` : "✕ Ошибка"}</span></div>
-      <div class="diag-step ${health.google && health.google.google_ads ? "success" : "fail"}"><span>[6] Google Ads:</span><span style="color: ${health.google && health.google.google_ads ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_ads ? `✓ Доступен (${health.google.latencies_ms?.google_ads || "-"} ms)` : "✕ Ошибка"}</span></div>
-      <div class="diag-step ${health.google && health.google.youtube ? "success" : "fail"}"><span>[7] YouTube:</span><span style="color: ${health.google && health.google.youtube ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.youtube ? `✓ Доступен (${health.google.latencies_ms?.youtube || "-"} ms)` : "✕ Ошибка"}</span></div>
-      <div class="diag-step ${health.data_isolation_ok ? "success" : "fail"}"><span>[8] Изоляция данных:</span><span style="color: ${health.data_isolation_ok ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.data_isolation_ok ? "✓ Изолирован" : "✕ Ошибка"}</span></div>
+      <div class="diag-step ${health.ping_ms !== null ? "success" : "fail"}"><span>[1] TCP Ping:</span><span style="font-weight: 700; color: ${health.ping_ms ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.ping_ms !== null ? `${health.ping_ms} ms` : "Timeout"}</span></div>
+      <div class="diag-step ${health.ip ? "success" : "fail"}"><span>[2] Public IP:</span><span style="font-weight: 700; color: ${health.ip ? "var(--accent-sky)" : "var(--accent-rose)"};">${health.ip ? `${health.ip} (${health.country || "N/A"}, ${health.city || ""})` : "IP error"}</span></div>
+      ${health.isp ? `<div class="diag-step success"><span>[3] ISP / ASN:</span><span>${escapeHtml(health.isp)} (${escapeHtml(health.asn || "")})</span></div>` : ""}
+      <div class="diag-step ${health.google && health.google.google_main ? "success" : "fail"}"><span>[4] Google Search:</span><span style="color: ${health.google && health.google.google_main ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_main ? `✓ Available (${health.google.latencies_ms?.google_main || "-"} ms)` : "✕ Error"}</span></div>
+      <div class="diag-step ${health.google && health.google.google_accounts ? "success" : "fail"}"><span>[5] Google Auth / Login:</span><span style="color: ${health.google && health.google.google_accounts ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_accounts ? `✓ Available (${health.google.latencies_ms?.google_accounts || "-"} ms)` : "✕ Error"}</span></div>
+      <div class="diag-step ${health.google && health.google.google_ads ? "success" : "fail"}"><span>[6] Google Ads:</span><span style="color: ${health.google && health.google.google_ads ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_ads ? `✓ Available (${health.google.latencies_ms?.google_ads || "-"} ms)` : "✕ Error"}</span></div>
+      <div class="diag-step ${health.google && health.google.youtube ? "success" : "fail"}"><span>[7] YouTube:</span><span style="color: ${health.google && health.google.youtube ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.youtube ? `✓ Available (${health.google.latencies_ms?.youtube || "-"} ms)` : "✕ Error"}</span></div>
+      <div class="diag-step ${health.data_isolation_ok ? "success" : "fail"}"><span>[8] Data isolation:</span><span style="color: ${health.data_isolation_ok ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.data_isolation_ok ? "✓ Isolated" : "✕ Error"}</span></div>
       ${health.error_message ? `<div style="padding: 10px; background: var(--accent-rose-glow); border: 1px solid var(--accent-rose); border-radius: 6px; color: #fda4af; font-size: 12px;">⚠ ${escapeHtml(health.error_message)}</div>` : ""}
     </div>
   `;
@@ -391,14 +391,14 @@ async function randomizeFingerprintInModal() {
     document.getElementById("edit-language").value = fp.language;
     document.getElementById("edit-cores").value = fp.hardware_concurrency;
     document.getElementById("edit-ram").value = fp.device_memory;
-    showToast("Сгенерирован новый случайный отпечаток железа!", "success");
+    showToast("New random hardware fingerprint generated!", "success");
   } catch (e) {
-    showToast("Ошибка генерации", "error");
+    showToast("Generation failed", "error");
   }
 }
 
 function openCreateProfileModal() {
-  document.getElementById("profile-modal-title").innerText = "Создание нового профиля";
+  document.getElementById("profile-modal-title").innerText = "Create a new profile";
   document.getElementById("edit-profile-id").value = "";
   document.getElementById("edit-name").value = `Profile ${profiles.length + 1}`;
   document.getElementById("edit-group").value = "Google Ads";
@@ -419,7 +419,7 @@ function openCreateProfileModal() {
 function openEditProfileModal(id) {
   const prof = profiles.find(p => p.id === id);
   if (!prof) return;
-  document.getElementById("profile-modal-title").innerText = `Редактирование: ${prof.name}`;
+  document.getElementById("profile-modal-title").innerText = `Edit: ${prof.name}`;
   document.getElementById("edit-profile-id").value = prof.id;
   document.getElementById("edit-name").value = prof.name;
   document.getElementById("edit-group").value = prof.group || "";
@@ -451,7 +451,7 @@ async function testModalProxy() {
   const rawProxy = document.getElementById("edit-proxy-raw").value.trim();
   const resSpan = document.getElementById("proxy-test-result");
   resSpan.style.color = "var(--accent-amber)";
-  resSpan.innerText = "⏳ Проверка соединения...";
+  resSpan.innerText = "⏳ Testing connection...";
   try {
     const res = await fetch("/api/profiles/test-proxy", {
       method: "POST",
@@ -461,14 +461,14 @@ async function testModalProxy() {
     const health = await res.json();
     if (health.status === "healthy" || health.status === "degraded") {
       resSpan.style.color = "var(--accent-emerald)";
-      resSpan.innerText = `✓ Прокси активен! IP: ${health.ip} (${health.country || ""}) | Пинг: ${health.ping_ms || 0}ms | Google: OK`;
+      resSpan.innerText = `✓ Proxy is online! IP: ${health.ip} (${health.country || ""}) | Ping: ${health.ping_ms || 0}ms | Google: OK`;
     } else {
       resSpan.style.color = "var(--accent-rose)";
-      resSpan.innerText = `✕ Ошибка: ${health.error_message || "Не удалось подключиться"}`;
+      resSpan.innerText = `✕ Error: ${health.error_message || "Connection failed"}`;
     }
   } catch (e) {
     resSpan.style.color = "var(--accent-rose)";
-    resSpan.innerText = `✕ Ошибка: ${e.message}`;
+    resSpan.innerText = `✕ Error: ${e.message}`;
   }
 }
 
@@ -525,13 +525,13 @@ async function saveProfileModal() {
     if (res.ok) {
       closeProfileModal();
       fetchProfiles();
-      showToast("Профиль сохранен!", "success");
+      showToast("Profile saved!", "success");
     } else {
       const err = await res.json();
-      showToast(`Ошибка: ${err.detail || "Неизвестная ошибка"}`, "error");
+      showToast(`Error: ${err.detail || "Unknown error"}`, "error");
     }
   } catch (e) {
-    showToast(`Ошибка сети: ${e.message}`, "error");
+    showToast(`Network error: ${e.message}`, "error");
   }
 }
 
@@ -548,7 +548,7 @@ async function submitBulkImport() {
   const text = document.getElementById("bulk-proxy-text").value.trim();
   const group = document.getElementById("bulk-group").value.trim() || "Google Ads";
   const target = document.getElementById("bulk-target-page").value;
-  if (!text) { alert("Вставьте хотя бы один прокси."); return; }
+  if (!text) { alert("Enter at least one proxy."); return; }
   try {
     const res = await fetch("/api/profiles/bulk-import", {
       method: "POST",
@@ -558,9 +558,9 @@ async function submitBulkImport() {
     const data = await res.json();
     closeBulkImportModal();
     fetchProfiles();
-    showToast(`Создано ${data.created_count} новых профилей!`, "success");
+    showToast(`Created ${data.created_count} new profiles!`, "success");
   } catch (e) {
-    showToast(`Ошибка: ${e.message}`, "error");
+    showToast(`Error: ${e.message}`, "error");
   }
 }
 
@@ -568,7 +568,7 @@ function openWarmupModal(id) {
   const prof = profiles.find(p => p.id === id);
   if (!prof) return;
   document.getElementById("warmup-profile-id").value = id;
-  document.getElementById("warmup-modal-title").innerText = `🔥 Автопрогрев: ${prof.name}`;
+  document.getElementById("warmup-modal-title").innerText = `🔥 Automatic warmup: ${prof.name}`;
   document.getElementById("warmup-modal").classList.add("open");
   previewWarmupPlan();
 }
@@ -582,7 +582,7 @@ async function previewWarmupPlan() {
   const niche = document.getElementById("warmup-niche").value;
   const steps = parseInt(document.getElementById("warmup-steps").value) || 5;
   const previewBox = document.getElementById("warmup-plan-preview");
-  previewBox.innerText = "Генерация плана...";
+  previewBox.innerText = "Generating plan...";
   try {
     const res = await fetch(`/api/profiles/${id}/warmup/plan`, {
       method: "POST",
@@ -590,9 +590,9 @@ async function previewWarmupPlan() {
       body: JSON.stringify({ niche: niche, steps_count: steps })
     });
     const data = await res.json();
-    previewBox.innerHTML = data.search_queries.map((q, idx) => `<div>${idx + 1}. Поиск: <span style="color: var(--accent-amber);">${escapeHtml(q)}</span></div>`).join("");
+    previewBox.innerHTML = data.search_queries.map((q, idx) => `<div>${idx + 1}. Search: <span style="color: var(--accent-amber);">${escapeHtml(q)}</span></div>`).join("");
   } catch (e) {
-    previewBox.innerText = "Ошибка загрузки.";
+    previewBox.innerText = "Failed to load.";
   }
 }
 
@@ -609,9 +609,9 @@ async function startWarmup() {
     const data = await res.json();
     closeWarmupModal();
     fetchProfiles();
-    showToast(`Прогрев запущен (${data.plan.steps_count} запросов)!`, "success");
+    showToast(`Warmup started (${data.plan.steps_count} queries)!`, "success");
   } catch (e) {
-    showToast(`Ошибка: ${e.message}`, "error");
+    showToast(`Error: ${e.message}`, "error");
   }
 }
 
@@ -619,7 +619,7 @@ function openCookieModal(id) {
   const prof = profiles.find(p => p.id === id);
   if (!prof) return;
   document.getElementById("cookie-profile-id").value = id;
-  document.getElementById("cookie-modal-title").innerText = `🍪 Куки Менеджер: ${prof.name}`;
+  document.getElementById("cookie-modal-title").innerText = `🍪 Cookie Manager: ${prof.name}`;
   document.getElementById("cookie-input-text").value = "";
   document.getElementById("cookie-modal").classList.add("open");
 }
@@ -631,7 +631,7 @@ function closeCookieModal() {
 async function submitCookiesImport() {
   const id = document.getElementById("cookie-profile-id").value;
   const text = document.getElementById("cookie-input-text").value.trim();
-  if (!text) { alert("Вставьте куки в формате JSON или Netscape."); return; }
+  if (!text) { alert("Paste cookies in JSON or Netscape format."); return; }
   try {
     const res = await fetch(`/api/profiles/${id}/cookies/import`, {
       method: "POST",
@@ -640,27 +640,27 @@ async function submitCookiesImport() {
     });
     const data = await res.json();
     closeCookieModal();
-    showToast(`Импортировано ${data.parsed_cookies_count} куки!`, "success");
+    showToast(`Imported ${data.parsed_cookies_count} cookies!`, "success");
   } catch (e) {
-    showToast(`Ошибка импорта: ${e.message}`, "error");
+    showToast(`Import error: ${e.message}`, "error");
   }
 }
 
 async function cloneProfile(id) {
   try {
     const res = await fetch(`/api/profiles/${id}/clone`, { method: "POST" });
-    if (res.ok) { fetchProfiles(); showToast("Профиль клонирован!", "success"); }
+    if (res.ok) { fetchProfiles(); showToast("Profile cloned!", "success"); }
   } catch (e) {}
 }
 
 async function deleteProfile(id) {
-  if (!confirm("Удалить этот профиль и все изолированные данные?")) return;
+  if (!confirm("Delete this profile and all its isolated data?")) return;
   try {
     const res = await fetch(`/api/profiles/${id}`, { method: "DELETE" });
     if (res.ok) {
       selectedProfileIds.delete(id);
       fetchProfiles();
-      showToast("Профиль удален", "info");
+      showToast("Profile deleted", "info");
     }
   } catch (e) {}
 }
@@ -668,25 +668,25 @@ async function deleteProfile(id) {
 async function clearCache(id) {
   try {
     const res = await fetch(`/api/profiles/${id}/clear-cache`, { method: "POST" });
-    if (res.ok) { showToast("Кэш браузера очищен!", "success"); }
-    else { const d = await res.json(); showToast(`Ошибка: ${d.detail}`, "error"); }
+    if (res.ok) { showToast("Browser cache cleared!", "success"); }
+    else { const d = await res.json(); showToast(`Error: ${d.detail}`, "error"); }
   } catch (e) {}
 }
 
 async function checkAllProfiles() {
   const btn = document.getElementById("btn-check-all");
   btn.disabled = true;
-  btn.innerHTML = "<span>⏳ Проверка всех...</span>";
-  showToast("Запущена проверка всех прокси...", "info");
+  btn.innerHTML = "<span>⏳ Checking all proxies...</span>";
+  showToast("Checking all proxies...", "info");
   try {
     await fetch("/api/profiles/check-all", { method: "POST" });
     fetchProfiles();
-    showToast("Проверка всех завершена!", "success");
+    showToast("All proxy checks complete!", "success");
   } catch (e) {
-    showToast(`Ошибка: ${e.message}`, "error");
+    showToast(`Error: ${e.message}`, "error");
   } finally {
     btn.disabled = false;
-    btn.innerHTML = "<span>🔍 Проверить все прокси</span>";
+    btn.innerHTML = "<span>🔍 Check all proxies</span>";
   }
 }
 
@@ -745,7 +745,7 @@ async function previewAutopostSpintax() {
   const platform = document.getElementById("autopost-platform").value;
   const ids = Array.from(autopostSelectedProfiles);
 
-  if (ids.length === 0) { alert("Выберите хотя бы один профиль"); return; }
+  if (ids.length === 0) { alert("Select at least one profile"); return; }
 
   try {
     const res = await fetch("/api/autopost/preview-spintax", {
@@ -760,12 +760,12 @@ async function previewAutopostSpintax() {
     list.innerHTML = data.samples.map(s => `
       <div style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed var(--border-subtle);">
         <div style="color: var(--accent-sky); font-weight: 700;">[${escapeHtml(s.profile_name)}]</div>
-        <div><strong>Заголовок:</strong> <span style="color: var(--accent-amber);">${escapeHtml(s.title)}</span></div>
+        <div><strong>Title:</strong> <span style="color: var(--accent-amber);">${escapeHtml(s.title)}</span></div>
         <div style="color: var(--text-muted); font-size: 10px; white-space: pre-wrap; margin-top: 2px;">${escapeHtml(s.description)}</div>
       </div>
     `).join("");
   } catch (e) {
-    showToast(`Ошибка превью: ${e.message}`, "error");
+    showToast(`Preview error: ${e.message}`, "error");
   }
 }
 
@@ -777,7 +777,7 @@ async function startAutopostBatch() {
   const platform = document.getElementById("autopost-platform").value;
   const ids = Array.from(autopostSelectedProfiles);
 
-  if (ids.length === 0) { alert("Выберите хотя бы один профиль"); return; }
+  if (ids.length === 0) { alert("Select at least one profile"); return; }
 
   try {
     const res = await fetch("/api/autopost/launch", {
@@ -795,21 +795,21 @@ async function startAutopostBatch() {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast("Очередь автопостинга запущена в фоновом режиме!", "success");
+      showToast("Auto-posting queue started in the background!", "success");
       document.getElementById("btn-cancel-autopost").style.display = "inline-block";
       updateAutopostStatusView();
     } else {
-      showToast(`Ошибка: ${data.detail || "Не удалось запустить"}`, "error");
+      showToast(`Error: ${data.detail || "Failed to start"}`, "error");
     }
   } catch (e) {
-    showToast(`Ошибка сети: ${e.message}`, "error");
+    showToast(`Network error: ${e.message}`, "error");
   }
 }
 
 async function cancelAutopost() {
   try {
     await fetch("/api/autopost/cancel", { method: "POST" });
-    showToast("Запрошена остановка автопостинга", "info");
+    showToast("Auto-posting stop requested", "info");
     document.getElementById("btn-cancel-autopost").style.display = "none";
     updateAutopostStatusView();
   } catch (e) {}
@@ -827,7 +827,7 @@ async function updateAutopostStatusView() {
     }
 
     if (!data.jobs || data.jobs.length === 0) {
-      table.innerHTML = `<div style="color: var(--text-muted); text-align: center;">Очередь готова к запуску (FFmpeg: ${data.ffmpeg_available ? '✓ Обнаружен' : '✕ Не найден'})</div>`;
+      table.innerHTML = `<div style="color: var(--text-muted); text-align: center;">Queue ready to start (FFmpeg: ${data.ffmpeg_available ? '✓ Detected' : '✕ Not found'})</div>`;
       return;
     }
 
@@ -845,10 +845,10 @@ async function updateAutopostStatusView() {
           <div>
             <strong style="color: var(--text-primary);">${escapeHtml(j.profile_name)}:</strong>
             <span style="color: ${statusColor}; margin-left: 6px;">${icon} ${escapeHtml(j.progress_message)}</span>
-            ${j.title ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Тема: ${escapeHtml(j.title)}</div>` : ''}
+            ${j.title ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Title: ${escapeHtml(j.title)}</div>` : ''}
           </div>
           <div>
-            ${j.video_url ? `<a href="${escapeHtml(j.video_url)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Открыть ${platformName} ↗</a>` : ''}
+            ${j.video_url ? `<a href="${escapeHtml(j.video_url)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</a>` : ''}
           </div>
         </div>
       `;

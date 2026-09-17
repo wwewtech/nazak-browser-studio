@@ -55,20 +55,20 @@ def run_cli():
         list_profiles(pm, bl)
     elif cmd == "launch":
         if len(args) < 2:
-            console.print("[red]Ошибка: Укажите ID профиля (например: NazakBrowserStudio.exe launch prof_01)[/red]")
+            console.print("[red]Error: Provide a profile ID (e.g.: NazakBrowserStudio.exe launch prof_01)[/red]")
             return
         profile_id = args[1]
         custom_url = args[2] if len(args) > 2 else None
         launch_profile_cli(pm, bl, profile_id, custom_url)
     elif cmd == "stop":
         if len(args) < 2:
-            console.print("[red]Ошибка: Укажите ID профиля (например: NazakBrowserStudio.exe stop prof_01)[/red]")
+            console.print("[red]Error: Provide a profile ID (e.g.: NazakBrowserStudio.exe stop prof_01)[/red]")
             return
         profile_id = args[1]
         stop_profile_cli(pm, bl, profile_id)
     elif cmd == "check":
         if len(args) < 2:
-            console.print("[red]Ошибка: Укажите ID профиля (например: NazakBrowserStudio.exe check prof_01)[/red]")
+            console.print("[red]Error: Provide a profile ID (e.g.: NazakBrowserStudio.exe check prof_01)[/red]")
             return
         profile_id = args[1]
         check_profile_cli(pm, profile_id)
@@ -77,7 +77,7 @@ def run_cli():
     elif cmd == "info":
         show_system_info()
     else:
-        console.print(f"[red]Неизвестная команда: {cmd}[/red]")
+        console.print(f"[red]Unknown command: {cmd}[/red]")
         print_help()
 
 
@@ -85,40 +85,40 @@ def print_help():
     console.print(
         Panel(
             """
-[bold yellow]Nazak Browser Studio - CLI Инструмент[/bold yellow]
+[bold yellow]Nazak Browser Studio - CLI Tool[/bold yellow]
 
-[bold]Команды:[/bold]
-  [green]list[/green]                     - Список всех профилей и их статус
-  [green]launch <id> [url][/green]        - Запустить браузер для профиля (с опциональным URL)
-  [green]stop <id>[/green]                - Остановить запущенный профиль
-  [green]check <id>[/green]               - Полная диагностика прокси, Google и изоляции
-  [green]check-all[/green]                - Диагностика всех профилей
-  [green]info[/green]                     - Информация о системе и пути к Chrome
+[bold]Commands:[/bold]
+  [green]list[/green]                     - List all profiles and their status
+  [green]launch <id> [url][/green]        - Launch the browser for a profile (with an optional URL)
+  [green]stop <id>[/green]                - Stop a running profile
+  [green]check <id>[/green]               - Full diagnostics of proxy, Google and isolation
+  [green]check-all[/green]                - Run diagnostics on all profiles
+  [green]info[/green]                     - System info and Chrome executable path
     """,
-            title="Справка",
+            title="Help",
         )
     )
 
 
 def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
     profiles = pm.list_profiles()
-    table = Table(title=f"Профили браузеров (Всего: {len(profiles)})")
+    table = Table(title=f"Browser Profiles (Total: {len(profiles)})")
     table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Имя профиля", style="bold white")
-    table.add_column("Группа", style="yellow")
-    table.add_column("Статус", style="green")
-    table.add_column("Прокси", style="blue")
-    table.add_column("Пинг", justify="right")
-    table.add_column("Google Статус", style="magenta")
+    table.add_column("Profile Name", style="bold white")
+    table.add_column("Group", style="yellow")
+    table.add_column("Status", style="green")
+    table.add_column("Proxy", style="blue")
+    table.add_column("Ping", justify="right")
+    table.add_column("Google Status", style="magenta")
 
     for p in profiles:
         running = bl.is_profile_running(p.id)
-        status = "[bold green]АКТИВЕН[/bold green]" if running else "[dim]ОСТАНОВЛЕН[/dim]"
-        proxy_str = p.proxy.to_display_string() if not p.proxy.is_direct() else "Прямое"
+        status = "[bold green]ACTIVE[/bold green]" if running else "[dim]STOPPED[/dim]"
+        proxy_str = p.proxy.to_display_string() if not p.proxy.is_direct() else "Direct"
 
         hc = p.last_health_check
-        ping_str = f"{hc.ping_ms} мс" if hc and hc.ping_ms else "-"
-        g_status = "[green]✓ Готов[/green]" if (hc and hc.google and hc.google.all_ok) else "[dim]Не проверен[/dim]"
+        ping_str = f"{hc.ping_ms} ms" if hc and hc.ping_ms else "-"
+        g_status = "[green]✓ Ready[/green]" if (hc and hc.google and hc.google.all_ok) else "[dim]Not checked[/dim]"
 
         table.add_row(p.id, p.name, p.group, status, proxy_str, ping_str, g_status)
 
@@ -128,56 +128,56 @@ def list_profiles(pm: ProfileManager, bl: BrowserLauncher):
 def launch_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str, custom_url: str | None = None):
     profile = pm.get_profile(profile_id)
     if not profile:
-        console.print(f"[red]Профиль '{profile_id}' не найден![/red]")
+        console.print(f"[red]Profile '{profile_id}' not found![/red]")
         return
-    console.print(f"[cyan]Запуск браузера для профиля '{profile.name}'...[/cyan]")
+    console.print(f"[cyan]Launching browser for profile '{profile.name}'...[/cyan]")
     ok, pid, err = bl.launch(profile, custom_url=custom_url)
     if ok:
         profile.status = ProfileStatus.RUNNING
         profile.pid = pid
         pm.update_profile(profile)
-        console.print(f"[bold green]✓ Профиль запущен успешно (PID: {pid})[/bold green]")
+        console.print(f"[bold green]✓ Profile launched successfully (PID: {pid})[/bold green]")
     else:
-        console.print(f"[bold red]✕ Ошибка запуска: {err}[/bold red]")
+        console.print(f"[bold red]✕ Launch error: {err}[/bold red]")
 
 
 def stop_profile_cli(pm: ProfileManager, bl: BrowserLauncher, profile_id: str):
     profile = pm.get_profile(profile_id)
     if not profile:
-        console.print(f"[red]Профиль '{profile_id}' не найден![/red]")
+        console.print(f"[red]Profile '{profile_id}' not found![/red]")
         return
     bl.stop(profile_id)
     profile.status = ProfileStatus.STOPPED
     profile.pid = None
     pm.update_profile(profile)
-    console.print(f"[bold green]✓ Профиль '{profile.name}' остановлен.[/bold green]")
+    console.print(f"[bold green]✓ Profile '{profile.name}' stopped.[/bold green]")
 
 
 def check_profile_cli(pm: ProfileManager, profile_id: str):
     profile = pm.get_profile(profile_id)
     if not profile:
-        console.print(f"[red]Профиль '{profile_id}' не найден![/red]")
+        console.print(f"[red]Profile '{profile_id}' not found![/red]")
         return
-    console.print(f"[cyan]Выполнение диагностики для '{profile.name}'...[/cyan]")
+    console.print(f"[cyan]Running diagnostics for '{profile.name}'...[/cyan]")
     res = asyncio.run(check_proxy_health(profile.proxy, profile_dir=PROFILES_DIR / profile.id))
     profile.last_health_check = res
     pm.update_profile(profile)
 
-    console.print("[bold]Результаты диагностики:[/bold]")
-    console.print(f" • Статус: {res.status.value.upper()}")
-    console.print(f" • Пинг: {res.ping_ms} ms")
+    console.print("[bold]Diagnostics results:[/bold]")
+    console.print(f" • Status: {res.status.value.upper()}")
+    console.print(f" • Ping: {res.ping_ms} ms")
     console.print(f" • IP: {res.ip} ({res.country}, {res.city})")
-    console.print(f" • Провайдер: {res.isp} ({res.asn})")
+    console.print(f" • ISP: {res.isp} ({res.asn})")
     console.print(f" • Google Search: {'[green]OK[/green]' if res.google.google_main else '[red]FAIL[/red]'}")
     console.print(f" • Google Auth: {'[green]OK[/green]' if res.google.google_accounts else '[red]FAIL[/red]'}")
     console.print(f" • Google Ads: {'[green]OK[/green]' if res.google.google_ads else '[red]FAIL[/red]'}")
     console.print(f" • YouTube: {'[green]OK[/green]' if res.google.youtube else '[red]FAIL[/red]'}")
-    console.print(f" • Изоляция диска: {'[green]OK[/green]' if res.data_isolation_ok else '[red]FAIL[/red]'}")
+    console.print(f" • Disk isolation: {'[green]OK[/green]' if res.data_isolation_ok else '[red]FAIL[/red]'}")
 
 
 def check_all_cli(pm: ProfileManager):
     profiles = pm.list_profiles()
-    console.print(f"[cyan]Запуск проверки всех {len(profiles)} профилей...[/cyan]")
+    console.print(f"[cyan]Checking all {len(profiles)} profiles...[/cyan]")
     for p in profiles:
         check_profile_cli(pm, p.id)
         console.print("-" * 40)
@@ -188,11 +188,11 @@ def show_system_info():
     console.print(
         Panel(
             f"""
-[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or "[red]Не найден[/red]"}
+[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or "[red]Not found[/red]"}
 [bold]Profiles Directory:[/bold] {PROFILES_DIR.resolve()!s}
 [bold]Extensions Directory:[/bold] {EXTENSIONS_DIR.resolve()!s}
     """,
-            title="Системная конфигурация",
+            title="System Configuration",
         )
     )
 

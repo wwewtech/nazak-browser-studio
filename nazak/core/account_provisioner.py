@@ -132,8 +132,8 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
                 "<html><head><title>Nazak Browser Studio</title></head>"
                 "<body style='font-family: sans-serif; background: #121214; color: #f4f4f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;'>"
                 "<div style='background: #1a1a1e; border: 1px solid #27272e; border-radius: 12px; padding: 32px 48px; text-align: center;'>"
-                "<h2 style='color: #22c55e;'>Авторизация YouTube завершена!</h2>"
-                "<p style='color: #a1a1aa;'>OAuth токен успешно сохранен. Можете закрыть эту вкладку.</p>"
+                "<h2 style='color: #22c55e;'>YouTube authorization complete!</h2>"
+                "<p style='color: #a1a1aa;'>OAuth token saved successfully. You can close this tab.</p>"
                 "</div></body></html>"
             )
             self.wfile.write(html.encode("utf-8"))
@@ -143,7 +143,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(f"Ошибка авторизации: {err}".encode())
+            self.wfile.write(f"Authorization error: {err}".encode())
 
     def log_message(self, format, *args):
         pass
@@ -379,7 +379,7 @@ class AccountProvisioner:
         recovery = notes.get("recovery_email", "")
 
         if not email or not password:
-            return False, "Отсутствует email или пароль в профиле."
+            return False, "Email or password is missing from the profile."
 
         async with async_playwright() as p:
             try:
@@ -388,7 +388,7 @@ class AccountProvisioner:
                 page = context.pages[0] if context.pages else await context.new_page()
 
                 if progress_callback:
-                    await progress_callback("Открытие страницы авторизации Google...")
+                    await progress_callback("Opening the Google sign-in page...")
 
                 await page.goto(
                     "https://accounts.google.com/signin/v2/identifier?service=youtube",
@@ -400,19 +400,19 @@ class AccountProvisioner:
                 # Check if already logged in
                 if "myaccount.google.com" in page.url or "studio.youtube.com" in page.url:
                     await browser.close()
-                    return True, "Аккаунт уже авторизован."
+                    return True, "Account is already signed in."
 
                 # 1. Fill Email
                 email_input = page.locator("input[type='email'], #identifierId").first
                 if await email_input.is_visible():
                     if progress_callback:
-                        await progress_callback("Ввод Email...")
+                        await progress_callback("Entering email...")
                     await email_input.click()
                     for ch in email:
                         await email_input.type(ch, delay=45)
                     await asyncio.sleep(0.5)
 
-                    next_btn = page.locator("#identifierNext, button:has-text('Next'), button:has-text('Далее')").first
+                    next_btn = page.locator("#identifierNext, button:has-text('Next')").first
                     await next_btn.click()
                     await asyncio.sleep(3)
 
@@ -420,35 +420,35 @@ class AccountProvisioner:
                 pwd_input = page.locator("input[type='password'], [name='Passwd'], [name='password']").first
                 await pwd_input.wait_for(state="visible", timeout=15000)
                 if progress_callback:
-                    await progress_callback("Ввод пароля...")
+                    await progress_callback("Entering password...")
                 await pwd_input.click()
                 for ch in password:
                     await pwd_input.type(ch, delay=45)
                 await asyncio.sleep(0.5)
 
-                next_btn_pwd = page.locator("#passwordNext, button:has-text('Next'), button:has-text('Далее')").first
+                next_btn_pwd = page.locator("#passwordNext, button:has-text('Next')").first
                 await next_btn_pwd.click()
                 await asyncio.sleep(4)
 
                 # 3. Handle 2FA TOTP prompt if presented
                 totp_input = page.locator(
-                    "input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='код' i], [aria-label*='code' i]"
+                    "input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='code' i]"
                 ).first
                 if await totp_input.is_visible():
                     if not totp_secret:
                         await browser.close()
-                        return False, "Требуется 2FA код, но TOTP ключ не указан."
+                        return False, "A 2FA code is required, but no TOTP secret was provided."
 
                     code = generate_totp_rfc6238(totp_secret)
                     if progress_callback:
-                        await progress_callback(f"Генерация и ввод 2FA кода ({code})...")
+                        await progress_callback(f"Generating and entering the 2FA code ({code})...")
 
                     await totp_input.click()
                     for ch in code:
                         await totp_input.type(ch, delay=55)
                     await asyncio.sleep(0.5)
 
-                    next_btn_totp = page.locator("#totpNext, button:has-text('Next'), button:has-text('Далее')").first
+                    next_btn_totp = page.locator("#totpNext, button:has-text('Next')").first
                     await next_btn_totp.click()
                     await asyncio.sleep(4)
 
@@ -461,12 +461,12 @@ class AccountProvisioner:
                 rec_input = page.locator("input[type='email'], [name='knowledgePreregisteredEmailResponse']").first
                 if await rec_input.is_visible() and recovery:
                     if progress_callback:
-                        await progress_callback("Ввод резервной почты...")
+                        await progress_callback("Entering recovery email...")
                     await rec_input.click()
                     for ch in recovery:
                         await rec_input.type(ch, delay=45)
                     await asyncio.sleep(0.5)
-                    next_btn_rec = page.locator("button:has-text('Next'), button:has-text('Далее')").first
+                    next_btn_rec = page.locator("button:has-text('Next')").first
                     await next_btn_rec.click()
                     await asyncio.sleep(4)
 
@@ -478,8 +478,8 @@ class AccountProvisioner:
 
                 await browser.close()
                 if progress_callback:
-                    await progress_callback("Авторизация Google успешно завершена!")
-                return True, "Авторизация Google успешно завершена!"
+                    await progress_callback("Google sign-in completed successfully!")
+                return True, "Google sign-in completed successfully!"
 
             except Exception as e:
-                return False, f"Ошибка авто-логина: {e!s}"
+                return False, f"Automatic sign-in error: {e!s}"

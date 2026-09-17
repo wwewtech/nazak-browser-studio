@@ -27,7 +27,7 @@ class SynchronizerDialog(QDialog):
         self.profile_manager = profile_manager
         self.browser_launcher = browser_launcher
         self.synchronizer_mgr = synchronizer_mgr
-        self.setWindowTitle("Синхронизатор действий браузеров")
+        self.setWindowTitle("Browser Action Synchronizer")
         self.resize(700, 580)
         self.setMinimumSize(640, 520)
         self.setStyleSheet(FLUENT_DARK_QSS)
@@ -39,12 +39,12 @@ class SynchronizerDialog(QDialog):
         main_layout.setContentsMargins(24, 20, 24, 20)
 
         # Title & Subtitle
-        lbl_title = QLabel("Синхронизатор действий (Master -> Workers)", self)
+        lbl_title = QLabel("Action Synchronizer (Master -> Workers)", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 18px; font-weight: 700;")
         main_layout.addWidget(lbl_title)
 
         lbl_desc = QLabel(
-            "Позволяет управлять одним главным профилем и дублировать клики, ввод текста и скролл во все дочерние профили с защитой от детекта.",
+            "Control one master profile and replicate clicks, text input, and scrolling to all worker profiles with detection protection.",
             self,
         )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
@@ -56,7 +56,7 @@ class SynchronizerDialog(QDialog):
         l_m.setContentsMargins(16, 12, 16, 12)
         l_m.setSpacing(8)
 
-        lbl_m_title = QLabel("Главный профиль (Master):", card_master)
+        lbl_m_title = QLabel("Master profile:", card_master)
         lbl_m_title.setStyleSheet("color: #ffffff; font-weight: 600; font-size: 12px;")
         l_m.addWidget(lbl_m_title)
 
@@ -75,17 +75,17 @@ class SynchronizerDialog(QDialog):
         l_w.setSpacing(8)
 
         h_w_head = QHBoxLayout()
-        lbl_w_title = QLabel("Ведомые профили (Workers):", card_workers)
+        lbl_w_title = QLabel("Worker profiles:", card_workers)
         lbl_w_title.setStyleSheet("color: #ffffff; font-weight: 600; font-size: 12px;")
         h_w_head.addWidget(lbl_w_title)
         h_w_head.addStretch()
 
-        btn_select_all = PushButton(FluentIcon.ACCEPT, "Выбрать все", card_workers)
+        btn_select_all = PushButton(FluentIcon.ACCEPT, "Select All", card_workers)
         btn_select_all.setFixedHeight(28)
         btn_select_all.clicked.connect(self.select_all_workers)
         h_w_head.addWidget(btn_select_all)
 
-        btn_clear_all = PushButton(FluentIcon.CANCEL, "Снять выбор", card_workers)
+        btn_clear_all = PushButton(FluentIcon.CANCEL, "Deselect All", card_workers)
         btn_clear_all.setFixedHeight(28)
         btn_clear_all.clicked.connect(self.clear_all_workers)
         h_w_head.addWidget(btn_clear_all)
@@ -111,13 +111,13 @@ class SynchronizerDialog(QDialog):
         l_s.setContentsMargins(16, 12, 16, 12)
         l_s.setSpacing(12)
 
-        self.chk_jitter = CheckBox("Случайные задержки и смещения мыши (Humanizer)", card_settings)
+        self.chk_jitter = CheckBox("Random delays and mouse offsets (Humanizer)", card_settings)
         self.chk_jitter.setChecked(True)
         l_s.addWidget(self.chk_jitter)
 
         l_s.addStretch()
 
-        btn_tile = PushButton(FluentIcon.LAYOUT, "Выровнять окна по сетке", card_settings)
+        btn_tile = PushButton(FluentIcon.LAYOUT, "Tile Windows", card_settings)
         btn_tile.clicked.connect(self.on_tile_windows)
         l_s.addWidget(btn_tile)
 
@@ -127,11 +127,11 @@ class SynchronizerDialog(QDialog):
         h_footer = QHBoxLayout()
         h_footer.addStretch()
 
-        btn_cancel = PushButton("Закрыть", self)
+        btn_cancel = PushButton("Close", self)
         btn_cancel.clicked.connect(self.reject)
         h_footer.addWidget(btn_cancel)
 
-        self.btn_toggle_sync = PrimaryPushButton(FluentIcon.SYNC, "Запустить синхронизацию", self)
+        self.btn_toggle_sync = PrimaryPushButton(FluentIcon.SYNC, "Start Synchronization", self)
         self.btn_toggle_sync.clicked.connect(self.on_start_sync)
         h_footer.addWidget(self.btn_toggle_sync)
         main_layout.addLayout(h_footer)
@@ -162,8 +162,8 @@ class SynchronizerDialog(QDialog):
         pids = list(self.browser_launcher.profile_pids.values())
         if not pids:
             InfoBar.warning(
-                "Нет запущенных окон",
-                "Запустите профили перед выравниванием окон по сетке",
+                "No Open Windows",
+                "Launch profiles before tiling windows",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
@@ -171,15 +171,15 @@ class SynchronizerDialog(QDialog):
         ok = tile_windows_win32(pids)
         if ok:
             InfoBar.success(
-                "Сетка готова",
-                f"Выровнено {len(pids)} окон на рабочем столе",
+                "Windows Tiled",
+                f"Tiled {len(pids)} windows on the desktop",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
         else:
             InfoBar.warning(
-                "Сетка",
-                "Не удалось выровнять окна на рабочем столе",
+                "Window Tiling",
+                "Could not tile windows on the desktop",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
@@ -189,12 +189,12 @@ class SynchronizerDialog(QDialog):
         workers = self.get_selected_workers()
 
         if not master_id:
-            InfoBar.warning("Ошибка", "Выберите главный профиль", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning("Error", "Select a master profile", parent=self, position=InfoBarPosition.TOP)
             return
 
         if not workers:
             InfoBar.warning(
-                "Ошибка", "Выберите хотя бы один ведомый профиль (Worker)", parent=self, position=InfoBarPosition.TOP
+                "Error", "Select at least one worker profile", parent=self, position=InfoBarPosition.TOP
             )
             return
 
@@ -203,15 +203,15 @@ class SynchronizerDialog(QDialog):
                 master_profile_id=master_id, worker_profile_ids=workers, humanize_jitter=self.chk_jitter.isChecked()
             )
             InfoBar.info(
-                "Синхронизация создана",
-                f"Сессия создана для {len(workers)} ведомых профилей с Master ({master_id}). Фоновая репликация ввода CDP находится в разработке.",
+                "Synchronization Created",
+                f"Session created for {len(workers)} worker profiles with Master ({master_id}). Background CDP input replication is under development.",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
         else:
             InfoBar.warning(
-                "Ошибка синхронизатора",
-                "Менеджер синхронизации недоступен",
+                "Synchronizer Error",
+                "Synchronization manager is unavailable",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )

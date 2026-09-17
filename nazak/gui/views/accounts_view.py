@@ -64,13 +64,13 @@ class AccountsView(QWidget):
         titles_layout = QVBoxLayout()
         titles_layout.setSpacing(4)
 
-        self.title_label = SubtitleLabel("Импорт и подготовка аккаунтов", self)
+        self.title_label = SubtitleLabel("Import & Provision Accounts", self)
         self.title_label.setStyleSheet(
             "font-family: 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 22px; font-weight: 700; color: #ffffff;"
         )
 
         self.desc_label = CaptionLabel(
-            "Пакетный импорт Gmail (Login:Pass:2FA:Recovery), создание отпечатков железа и авто-активация", self
+            "Bulk Gmail import (Login:Pass:2FA:Recovery), hardware fingerprint creation and auto-activation", self
         )
         self.desc_label.setStyleSheet(
             "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 12px; color: #a1a1aa;"
@@ -81,7 +81,7 @@ class AccountsView(QWidget):
         header_layout.addLayout(titles_layout)
         header_layout.addStretch()
 
-        self.btn_provision = PrimaryPushButton(FluentIcon.ADD, "Создать профили и активировать", self)
+        self.btn_provision = PrimaryPushButton(FluentIcon.ADD, "Create Profiles & Activate", self)
         self.btn_provision.clicked.connect(self.on_provision_clicked)
         header_layout.addWidget(self.btn_provision)
 
@@ -94,7 +94,7 @@ class AccountsView(QWidget):
         self.card_total = SimpleCardWidget(self)
         l_total = QVBoxLayout(self.card_total)
         l_total.setContentsMargins(16, 12, 16, 12)
-        lbl_t1 = CaptionLabel("ВСЕГО ИМПОРТИРОВАНО", self.card_total)
+        lbl_t1 = CaptionLabel("TOTAL IMPORTED", self.card_total)
         lbl_t1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
         self.lbl_val_total = BodyLabel("0", self.card_total)
         self.lbl_val_total.setStyleSheet(
@@ -106,9 +106,9 @@ class AccountsView(QWidget):
         self.card_mode = SimpleCardWidget(self)
         l_mode = QVBoxLayout(self.card_mode)
         l_mode.setContentsMargins(16, 12, 16, 12)
-        lbl_m1 = CaptionLabel("РЕЖИМ ПОСТИНГА", self.card_mode)
+        lbl_m1 = CaptionLabel("POSTING MODE", self.card_mode)
         lbl_m1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
-        self.lbl_val_mode = BodyLabel("Браузерный Stealth • YouTube Studio", self.card_mode)
+        self.lbl_val_mode = BodyLabel("Browser Stealth • YouTube Studio", self.card_mode)
         self.lbl_val_mode.setStyleSheet(
             "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #38bdf8;"
         )
@@ -118,9 +118,9 @@ class AccountsView(QWidget):
         self.card_status = SimpleCardWidget(self)
         l_stat = QVBoxLayout(self.card_status)
         l_stat.setContentsMargins(16, 12, 16, 12)
-        lbl_s1 = CaptionLabel("СТАТУС ИЗОЛЯЦИИ", self.card_status)
+        lbl_s1 = CaptionLabel("ISOLATION STATUS", self.card_status)
         lbl_s1.setStyleSheet("color: #71717a; font-weight: 700; font-size: 11px;")
-        self.lbl_val_status = BodyLabel("100% Аппаратная маскировка", self.card_status)
+        self.lbl_val_status = BodyLabel("100% Hardware Masking", self.card_status)
         self.lbl_val_status.setStyleSheet(
             "font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 15px; font-weight: 700; color: #22c55e;"
         )
@@ -138,13 +138,13 @@ class AccountsView(QWidget):
         config_layout.setContentsMargins(18, 16, 18, 16)
         config_layout.setSpacing(12)
 
-        lbl_input_title = BodyLabel("Пакетный ввод строк с маркетов (Retriv / DarkStore)", config_card)
+        lbl_input_title = BodyLabel("Bulk paste of marketplace lines (Retriv / DarkStore)", config_card)
         lbl_input_title.setStyleSheet("font-weight: 700; color: #ffffff;")
         config_layout.addWidget(lbl_input_title)
 
         self.txt_accounts = TextEdit(config_card)
         self.txt_accounts.setPlaceholderText(
-            "Вставьте строки в формате:\n"
+            "Paste lines in the format:\n"
             "login@gmail.com:Password123:JBSWY3DPEHPK3PXP:recovery@mail.com\n"
             "login@gmail.com;Password123;JBSWY3DPEHPK3PXP;recovery@mail.com\n"
             "login@gmail.com|Password123|JBSWY3DPEHPK3PXP|recovery@mail.com"
@@ -156,17 +156,17 @@ class AccountsView(QWidget):
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(12)
 
-        lbl_grp = CaptionLabel("Группа:", config_card)
+        lbl_grp = CaptionLabel("Group:", config_card)
         lbl_grp.setStyleSheet("color: #a1a1aa; font-weight: 600;")
         self.edit_group = LineEdit(config_card)
         self.edit_group.setText("Retriv Gmail 2020-2024")
         self.edit_group.setFixedWidth(200)
 
-        lbl_pm = CaptionLabel("Режим постинга:", config_card)
+        lbl_pm = CaptionLabel("Posting mode:", config_card)
         lbl_pm.setStyleSheet("color: #a1a1aa; font-weight: 600;")
         self.cmb_mode = ComboBox(config_card)
         self.cmb_mode.addItems(
-            ["Браузерный Stealth • YouTube Studio (Без лимитов API)", "YouTube Data API v3 • Google Cloud OAuth 2.0"]
+            ["Browser Stealth • YouTube Studio (No API limits)", "YouTube Data API v3 • Google Cloud OAuth 2.0"]
         )
         self.cmb_mode.currentIndexChanged.connect(self.on_mode_changed)
 
@@ -184,7 +184,7 @@ class AccountsView(QWidget):
         self.table = TableWidget(self)
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
-            ["Email / Профиль", "Группа", "2FA Ключ", "Текущий 2FA Код", "Режим", "Действия"]
+            ["Email / Profile", "Group", "2FA Key", "Current 2FA Code", "Mode", "Actions"]
         )
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -204,7 +204,7 @@ class AccountsView(QWidget):
 
     def on_mode_changed(self, idx):
         if idx == 0:
-            self.lbl_val_mode.setText("Браузерный Stealth • YouTube Studio")
+            self.lbl_val_mode.setText("Browser Stealth • YouTube Studio")
         else:
             self.lbl_val_mode.setText("Google Cloud OAuth 2.0 • Data API v3")
 
@@ -212,8 +212,8 @@ class AccountsView(QWidget):
         raw_text = self.txt_accounts.toPlainText().strip()
         if not raw_text:
             InfoBar.warning(
-                title="Пустой ввод",
-                content="Вставьте хотя бы одну строку в формате login:pass:2fa:recovery.",
+                title="Empty input",
+                content="Paste at least one line in login:pass:2fa:recovery format.",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=3500,
@@ -231,16 +231,16 @@ class AccountsView(QWidget):
             self.txt_accounts.clear()
             self.refresh_table()
             InfoBar.success(
-                title="Успешный импорт",
-                content=f"Создано {len(created)} изолированных профилей с аппаратными отпечатками железа!",
+                title="Import successful",
+                content=f"Created {len(created)} isolated profiles with hardware fingerprints!",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=4000,
             )
         else:
             InfoBar.error(
-                title="Ошибка парсинга",
-                content="Не удалось распознать формат строк. Проверьте разделители (login:pass:2fa:recovery).",
+                title="Parsing error",
+                content="Could not recognize the line format. Check the delimiters (login:pass:2fa:recovery).",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=4000,
@@ -272,7 +272,7 @@ class AccountsView(QWidget):
             email = notes.get("account_email", prof.google.target_account_email or prof.name)
             totp_sec = notes.get("totp_secret", "")
             current_totp = generate_totp_rfc6238(totp_sec) if totp_sec else "—"
-            mode = "Браузер" if notes.get("posting_mode") == "browser_stealth" else "OAuth API"
+            mode = "Browser" if notes.get("posting_mode") == "browser_stealth" else "OAuth API"
 
             item_email = QTableWidgetItem(f"{email} • {prof.name}")
             self.table.setItem(row, 0, item_email)
@@ -297,7 +297,7 @@ class AccountsView(QWidget):
             act_layout.setContentsMargins(4, 2, 4, 2)
             act_layout.setSpacing(6)
 
-            btn_launch = PrimaryPushButton(FluentIcon.PLAY, "Запуск", actions_widget)
+            btn_launch = PrimaryPushButton(FluentIcon.PLAY, "Launch", actions_widget)
             btn_launch.setFixedHeight(26)
             btn_launch.setFixedWidth(95)
             btn_launch.clicked.connect(lambda _, p=prof: self.launch_profile(p))
@@ -322,23 +322,23 @@ class AccountsView(QWidget):
                 profile.pid = pid
                 self.profile_manager.update_profile(profile)
                 InfoBar.success(
-                    title="Браузер запущен",
-                    content=f"Профиль {profile.name} открыт в изолированном окне (PID {pid}).",
+                    title="Browser launched",
+                    content=f"Profile {profile.name} opened in an isolated window (PID {pid}).",
                     parent=self,
                     position=InfoBarPosition.TOP_RIGHT,
                     duration=3000,
                 )
             else:
                 InfoBar.error(
-                    title="Ошибка запуска",
-                    content=err or "Не удалось запустить браузер",
+                    title="Launch error",
+                    content=err or "Could not launch the browser",
                     parent=self,
                     position=InfoBarPosition.TOP_RIGHT,
                     duration=4000,
                 )
         except Exception as e:
             InfoBar.error(
-                title="Исключение при запуске",
+                title="Launch exception",
                 content=str(e),
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT,

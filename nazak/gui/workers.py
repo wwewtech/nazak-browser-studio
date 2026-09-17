@@ -108,10 +108,10 @@ class AutopostBatchWorker(QThread):
                 if not prof:
                     continue
 
-                self.job_update_signal.emit(pid, "uniqueizing", "Уникализация видео и сдвиг частот...")
+                self.job_update_signal.emit(pid, "uniqueizing", "Creating a unique video variant and shifting frequencies...")
                 ok, out_path, err = self.uniquifier.uniquify_video(self.source_video_path, pid, profile_index=idx)
                 if not ok or not out_path:
-                    self.job_update_signal.emit(pid, "failed", f"Ошибка видео: {err}")
+                    self.job_update_signal.emit(pid, "failed", f"Video error: {err}")
                     continue
 
                 meta = format_video_metadata(
@@ -122,11 +122,11 @@ class AutopostBatchWorker(QThread):
                     tg_channel=self.tg_channel,
                 )
 
-                self.job_update_signal.emit(pid, "launching", "Запуск изолированного браузера...")
+                self.job_update_signal.emit(pid, "launching", "Launching isolated browser...")
                 cdp_port = 9350 + idx
                 launch_ok, pid_num, launch_err = self.browser_launcher.launch(prof, cdp_port=cdp_port)
                 if not launch_ok:
-                    self.job_update_signal.emit(pid, "failed", f"Ошибка запуска: {launch_err}")
+                    self.job_update_signal.emit(pid, "failed", f"Launch error: {launch_err}")
                     continue
 
                 prof.status = ProfileStatus.RUNNING
@@ -134,7 +134,7 @@ class AutopostBatchWorker(QThread):
                 self.profile_manager.update_profile(prof)
                 await asyncio.sleep(4)
 
-                self.job_update_signal.emit(pid, "uploading", "Загрузка Shorts в YouTube Studio...")
+                self.job_update_signal.emit(pid, "uploading", "Uploading Shorts to YouTube Studio...")
 
                 curr_pid = pid
 
@@ -155,10 +155,10 @@ class AutopostBatchWorker(QThread):
                 self.profile_manager.update_profile(prof)
 
                 if upload_ok:
-                    self.job_update_signal.emit(pid, "published", f"Опубликовано! {video_url or ''}")
+                    self.job_update_signal.emit(pid, "published", f"Published! {video_url or ''}")
                     results.append({"profile_id": pid, "status": "published", "url": video_url})
                 else:
-                    self.job_update_signal.emit(pid, "failed", upload_err or "Ошибка загрузки")
+                    self.job_update_signal.emit(pid, "failed", upload_err or "Upload error")
                     results.append({"profile_id": pid, "status": "failed", "error": upload_err})
 
                 await asyncio.sleep(3)

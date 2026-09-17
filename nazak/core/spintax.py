@@ -1,6 +1,6 @@
 """
 Spintax Parser & SEO Title/Description Template Engine for YouTube Shorts.
-Supports nested spintax like {Лучший|Топ|Рабочий {впн|vpn}} and placeholders {tg}, {promo}, {year}.
+Supports nested spintax like {Best|Top|Working {VPN|vpn}} and placeholders {tg}, {promo}, {year}.
 """
 
 import random
@@ -64,5 +64,5 @@ def format_video_metadata(
     return {
         "title": spun_title.strip(),
         "description": spun_desc.strip(),
-        "tags": ["#shorts", "#vpn", "#впн", "#ютуб", "#shortsyoutube", "#tech"],
+        "tags": ["#shorts", "#vpn", "#virtualprivatenetwork", "#youtube", "#shortsyoutube", "#tech"],
     }

@@ -74,18 +74,19 @@ def test_search_filter_case_insensitivity(temp_profile_manager):
         assert res[0].id == p.id
 
 
-def test_search_filter_cyrillic_and_unicode(temp_profile_manager):
-    """Cyrillic and unicode queries in search must filter accurately."""
+def test_search_filter_fullwidth_english_and_unicode(temp_profile_manager):
+    """Fullwidth English and Unicode typography queries must filter accurately regardless of case."""
     pm = temp_profile_manager
     p = pm.list_profiles()[0]
-    p.name = "Тестовый Профиль Москва RTX 4080"
-    p.group = "Россия Фарм"
+    p.name = "Ｔｅｓｔ Profile — Ｌｏｎｄｏｎ RTX 4080"
+    p.group = "Ｅｎｇｌａｎｄ Ｆａｒｍ"
     pm.save_profiles()
 
-    for term in ["Тестовый", "москва", "РОССИЯ", "Фарм", "4080"]:
+    for term in ["Ｔｅｓｔ", "ｌｏｎｄｏｎ", "ＥＮＧＬＡＮＤ", "Ｆａｒｍ", "—", "4080"]:
         q_lower = term.lower()
         res = [x for x in pm.list_profiles() if q_lower in x.name.lower() or q_lower in x.group.lower()]
         assert len(res) >= 1
+        assert p.id in [x.id for x in res]
 
 
 def test_search_filter_whitespace_only(temp_profile_manager):
@@ -230,11 +231,11 @@ def test_batch_import_mixed_delimiters_in_single_batch():
 def test_batch_import_malformed_lines_skipped():
     """Receipt banners, order IDs, and advertising lines without '@' are filtered out."""
     raw = (
-        "Заказ: #9991234\n"
-        "Сайт магазина: https://market.shop\n"
+        "Order: #9991234\n"
+        "Store website: https://market.shop\n"
         "======================================\n"
         "user_valid@gmail.com:SecretPass:TOTPKEY:rec@gmail.com\n"
-        "Спасибо за покупку!\n"
+        "Thank you for your purchase!\n"
     )
     with tempfile.TemporaryDirectory() as td:
         pm = ProfileManager(Path(td) / "p.json", Path(td))

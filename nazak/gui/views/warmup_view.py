@@ -56,11 +56,11 @@ class WarmupView(QWidget):
         # 1. Header with Top Actions
         h_head = QHBoxLayout()
         v_title = QVBoxLayout()
-        lbl_title = QLabel("Конструктор сценариев & Органический автопрогрев", self)
+        lbl_title = QLabel("Scenario Builder & Organic Auto-Warmup", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
 
         lbl_desc = QLabel(
-            "Многошаговые органические маршруты (Google Search, YouTube Shorts, E-Commerce) и накопление Cookie Trust Score",
+            "Multi-step organic browsing routes (Google Search, YouTube Shorts, E-Commerce) and Cookie Trust Score building",
             self,
         )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
@@ -70,11 +70,11 @@ class WarmupView(QWidget):
         h_head.addLayout(v_title)
         h_head.addStretch()
 
-        btn_stop = PushButton(FluentIcon.CANCEL, "Прервать", self)
+        btn_stop = PushButton(FluentIcon.CANCEL, "Abort", self)
         btn_stop.clicked.connect(self.on_stop_warmup)
         h_head.addWidget(btn_stop)
 
-        self.btn_launch = PrimaryPushButton(FluentIcon.PLAY, "Запустить прогрев", self)
+        self.btn_launch = PrimaryPushButton(FluentIcon.PLAY, "Start Warmup", self)
         self.btn_launch.clicked.connect(self.on_launch_warmup)
         h_head.addWidget(self.btn_launch)
         main_layout.addLayout(h_head)
@@ -93,7 +93,7 @@ class WarmupView(QWidget):
         l_set = QVBoxLayout(card_set)
         l_set.setContentsMargins(16, 14, 16, 14)
 
-        lbl_w1 = QLabel("Параметры и сценарий прогревочной сессии", card_set)
+        lbl_w1 = QLabel("Warmup Session Settings & Scenario", card_set)
         lbl_w1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_set.addWidget(lbl_w1)
 
@@ -101,7 +101,7 @@ class WarmupView(QWidget):
         grid.setVerticalSpacing(8)
 
         # Profile Select
-        lbl_p = QLabel("Целевой профиль:", card_set)
+        lbl_p = QLabel("Target profile:", card_set)
         lbl_p.setStyleSheet("color: #d4d4d8; font-size: 12px;")
         grid.addWidget(lbl_p, 0, 0)
 
@@ -110,27 +110,27 @@ class WarmupView(QWidget):
         grid.addWidget(self.combo_profile, 0, 1)
 
         # Scenario Presets Select
-        lbl_scen = QLabel("Готовый сценарий прогрева:", card_set)
+        lbl_scen = QLabel("Warmup scenario preset:", card_set)
         lbl_scen.setStyleSheet("color: #d4d4d8; font-size: 12px;")
         grid.addWidget(lbl_scen, 1, 0)
 
         self.combo_scenario = ComboBox(card_set)
         for scen in BUILTIN_SCENARIOS:
-            self.combo_scenario.addItem(f"{scen.name} ({len(scen.steps)} шагов)", userData=scen.id)
+            self.combo_scenario.addItem(f"{scen.name} ({len(scen.steps)} steps)", userData=scen.id)
         self.combo_scenario.currentIndexChanged.connect(self.update_scenario_preview)
         grid.addWidget(self.combo_scenario, 1, 1)
 
         # Niche Select (Fallback/Search mode)
-        lbl_n = QLabel("Тематическая ниша поиска:", card_set)
+        lbl_n = QLabel("Search niche:", card_set)
         lbl_n.setStyleSheet("color: #d4d4d8; font-size: 12px;")
         grid.addWidget(lbl_n, 2, 0)
 
         self.combo_niche = ComboBox(card_set)
-        self.combo_niche.addItem("E-Commerce & Ритейл • Электроника, Одежда", userData="ecommerce")
-        self.combo_niche.addItem("Финансы & Инвестиции • ETF, Акции, Вклады", userData="finance")
-        self.combo_niche.addItem("IT & Разработка • Python, Docker, Cloud", userData="tech")
-        self.combo_niche.addItem("Путешествия & Туризм • Отели, Авиабилеты", userData="travel")
-        self.combo_niche.addItem("Криптовалюта & Web3 • Bitcoin, DeFi", userData="crypto")
+        self.combo_niche.addItem("E-Commerce & Retail • Electronics, Clothing", userData="ecommerce")
+        self.combo_niche.addItem("Finance & Investments • ETFs, Stocks, Deposits", userData="finance")
+        self.combo_niche.addItem("IT & Development • Python, Docker, Cloud", userData="tech")
+        self.combo_niche.addItem("Travel & Tourism • Hotels, Flights", userData="travel")
+        self.combo_niche.addItem("Cryptocurrency & Web3 • Bitcoin, DeFi", userData="crypto")
         self.combo_niche.currentIndexChanged.connect(self.update_scenario_preview)
         grid.addWidget(self.combo_niche, 2, 1)
 
@@ -142,13 +142,13 @@ class WarmupView(QWidget):
         l_prev = QVBoxLayout(card_preview)
         l_prev.setContentsMargins(16, 14, 16, 14)
 
-        lbl_w2 = QLabel("Шаги выбранного сценария", card_preview)
+        lbl_w2 = QLabel("Selected Scenario Steps", card_preview)
         lbl_w2.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_prev.addWidget(lbl_w2)
 
         self.table_steps = TableWidget(card_preview)
         self.table_steps.setColumnCount(3)
-        self.table_steps.setHorizontalHeaderLabels(["Шаг #", "Тип действия", "Описание и параметры"])
+        self.table_steps.setHorizontalHeaderLabels(["Step #", "Action Type", "Description & Parameters"])
         h = self.table_steps.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         h.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
@@ -164,24 +164,24 @@ class WarmupView(QWidget):
         l_tel = QVBoxLayout(card_telemetry)
         l_tel.setContentsMargins(16, 14, 16, 14)
 
-        lbl_w3 = QLabel("Метрики доверия и параметров прогрева", card_telemetry)
+        lbl_w3 = QLabel("Trust Metrics & Warmup Settings", card_telemetry)
         lbl_w3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_tel.addWidget(lbl_w3)
 
         h_chips = QHBoxLayout()
-        lbl_c1 = QLabel("Задержка действий: 4.5с – 12.0с", card_telemetry)
+        lbl_c1 = QLabel("Action delay: 4.5s – 12.0s", card_telemetry)
         lbl_c1.setStyleSheet(
             "background: #22222a; color: #a1a1aa; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
         h_chips.addWidget(lbl_c1)
 
-        lbl_c2 = QLabel("Сохранение куки: Включено", card_telemetry)
+        lbl_c2 = QLabel("Cookie persistence: Enabled", card_telemetry)
         lbl_c2.setStyleSheet(
             "background: #22222a; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
         h_chips.addWidget(lbl_c2)
 
-        lbl_c3 = QLabel("Прирост Trust Score: +18 баллов", card_telemetry)
+        lbl_c3 = QLabel("Trust Score increase: +18 points", card_telemetry)
         lbl_c3.setStyleSheet(
             "background: #22222a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
@@ -236,7 +236,7 @@ class WarmupView(QWidget):
     def on_launch_warmup(self):
         pid = self.combo_profile.currentData()
         if not pid:
-            InfoBar.warning("Внимание", "Выберите профиль", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning("Warning", "Select a profile", parent=self, position=InfoBarPosition.TOP)
             return
 
         prof = self.profile_manager.get_profile(pid)
@@ -269,14 +269,14 @@ class WarmupView(QWidget):
             prof.pid = proc_id
             self.profile_manager.update_profile(prof)
             InfoBar.success(
-                "Сценарий запущен",
-                f"Профиль '{prof.name}' выполняет сценарий '{selected_scenario.name}'",
+                "Scenario started",
+                f"Profile '{prof.name}' is running scenario '{selected_scenario.name}'",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
         else:
             InfoBar.error(
-                "Ошибка запуска", err or "Не удалось запустить браузер", parent=self, position=InfoBarPosition.TOP
+                "Launch error", err or "Could not launch the browser", parent=self, position=InfoBarPosition.TOP
             )
 
     def on_stop_warmup(self):
@@ -288,4 +288,4 @@ class WarmupView(QWidget):
                 prof.status = ProfileStatus.STOPPED
                 prof.pid = None
                 self.profile_manager.update_profile(prof)
-            InfoBar.info("Остановлено", "Прогревочная сессия завершена", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.info("Stopped", "Warmup session ended", parent=self, position=InfoBarPosition.TOP)

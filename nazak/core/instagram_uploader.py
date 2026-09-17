@@ -186,7 +186,7 @@ class InstagramUploader:
 
                 caption_box = self._first(
                     page.locator(
-                        "textarea[aria-label*='Write a caption' i], textarea[aria-label*='Добавить подпись' i], textarea[aria-label*='Caption' i]"
+                        "textarea[aria-label*='Write a caption' i], textarea[aria-label*='Caption' i]"
                     )
                 )
                 if await asyncio.wait_for(caption_box.is_visible(), timeout=15.0):
@@ -194,12 +194,12 @@ class InstagramUploader:
                     await human_type(caption_box, caption)
                     await asyncio.sleep(1.0)
 
-                next_btn = self._first(page.locator("button:has-text('Next'), button:has-text('Далее')"))
+                next_btn = self._first(page.locator("button:has-text('Next')"))
                 if await asyncio.wait_for(next_btn.is_visible(), timeout=10.0):
                     await self._safe_wait(next_btn.click(), timeout=10.0, label="next button click")
                     await asyncio.sleep(2)
 
-                share_btn = self._first(page.locator("button:has-text('Share'), button:has-text('Поделиться')"))
+                share_btn = self._first(page.locator("button:has-text('Share')"))
                 if await asyncio.wait_for(share_btn.is_visible(), timeout=20.0):
                     await self._safe_wait(share_btn.click(), timeout=15.0, label="share button click")
                     await asyncio.sleep(5)

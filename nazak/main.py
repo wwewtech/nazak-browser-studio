@@ -1,5 +1,5 @@
 """
-Nazak Browser Studio PRO - Main Application Entry Point.
+Nazak Browser Studio - Main Application Entry Point.
 Supports Pure Desktop Fluent GUI (no console), Web Mode, and CLI.
 """
 
@@ -49,7 +49,7 @@ if sys.stderr is None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Nazak Browser Studio PRO - Windows 11 Multi-Profile Anti-Detect Browser"
+        description="Nazak Browser Studio - Windows 11 Multi-Profile Anti-Detect Browser"
     )
     parser.add_argument(
         "--mode",

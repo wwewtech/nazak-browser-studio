@@ -78,12 +78,19 @@ def test_spintax_special_characters_inside_options():
     assert res in ("50% OFF!", "Special $10 Deal!", "#1 Rated")
 
 
-def test_spintax_cyrillic_text():
-    template = "{Лучший|Топ|Рабочий} {Впн|VPN} для {Ютуб|YouTube}"
+def test_spintax_fullwidth_english_text():
+    template = "{Ｂｅｓｔ|Ｔｏｐ|Ｗｏｒｋｉｎｇ} {ＶＰＮ|VPN} for {ＹｏｕＴｕｂｅ|YouTube}"
     results = set()
     for _ in range(50):
         results.add(parse_spintax(template))
     assert len(results) >= 4
+    expected = {
+        f"{quality} {vpn} for {platform}"
+        for quality in ("Ｂｅｓｔ", "Ｔｏｐ", "Ｗｏｒｋｉｎｇ")
+        for vpn in ("ＶＰＮ", "VPN")
+        for platform in ("ＹｏｕＴｕｂｅ", "YouTube")
+    }
+    assert results <= expected
 
 
 def test_find_ffmpeg_returns_valid_string():

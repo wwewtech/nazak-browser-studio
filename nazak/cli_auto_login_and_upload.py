@@ -27,7 +27,7 @@ SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 async def run_live_flow():
     print("=========================================================")
-    print("🚀 НАЧАЛО АВТОМАТИЧЕСКОГО ВХОДА И ПУБЛИКАЦИИ YOUTUBE SHORTS")
+    print("🚀 STARTING AUTOMATIC SIGN-IN AND YOUTUBE SHORTS PUBLISHING")
     print("=========================================================")
 
     # 1. Load Profile
@@ -54,14 +54,14 @@ async def run_live_flow():
     if not profiles:
         data_file = Path(os.environ.get("NAZAK_DATA_FILE", DATA_DIR / "data1.txt"))
         if data_file.exists():
-            print(f"Профиль не найден в базе, импортируем из {data_file}...")
+            print(f"Profile not found in the database, importing from {data_file}...")
             raw_text = data_file.read_text(encoding="utf-8")
             profiles = prov.batch_import_and_create_profiles(
                 raw_text, group_name="DarkStore Gmail", posting_mode="browser_stealth"
             )
 
     if not profiles:
-        print("❌ Профили для авторизации не найдены. Создайте профиль или укажите NAZAK_DATA_FILE.")
+        print("❌ No profiles found for sign-in. Create a profile or set NAZAK_DATA_FILE.")
         return
 
     target_prof = profiles[-1]
@@ -81,16 +81,16 @@ async def run_live_flow():
     totp_secret = notes.get("totp_secret") or os.environ.get("GOOGLE_TOTP_SECRET", "")
     recovery = notes.get("recovery_email") or os.environ.get("GOOGLE_RECOVERY_EMAIL", "")
 
-    masked_pw = ("*" * len(password)) if password else "НЕ ЗАДАН"
+    masked_pw = ("*" * len(password)) if password else "NOT SET"
     masked_totp = (
         (totp_secret[:2] + "****" + totp_secret[-2:])
         if len(totp_secret) > 4
-        else ("****" if totp_secret else "НЕ ЗАДАН")
+        else ("****" if totp_secret else "NOT SET")
     )
 
-    print(f"📌 Аккаунт: {email or 'не указан'}")
-    print(f"🔑 Пароль: {masked_pw}")
-    print(f"🛡️ TOTP Ключ: {masked_totp}")
+    print(f"📌 Account: {email or 'not specified'}")
+    print(f"🔑 Password: {masked_pw}")
+    print(f"🛡️ TOTP Key: {masked_totp}")
 
     # 2. Build Browser Arguments
     bl = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
@@ -105,7 +105,7 @@ async def run_live_flow():
         if not a.startswith("--user-data-dir=") and not a.startswith("http") and a != "about:blank" and a != chrome_exe
     ]
 
-    print("🌐 Запуск изолированного браузера с отпечатком железа...")
+    print("🌐 Launching an isolated browser with a hardware fingerprint...")
 
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
@@ -120,7 +120,7 @@ async def run_live_flow():
 
         try:
             # 3. Navigate to Google / YouTube
-            print("⏳ Шаг 1: Проверка сессии Google / YouTube...")
+            print("⏳ Step 1: Checking the Google / YouTube session...")
             try:
                 await page.goto(
                     "https://accounts.google.com/signin/v2/identifier?service=youtube",
@@ -139,25 +139,25 @@ async def run_live_flow():
                 or "studio.youtube.com" in current_url
                 or ("youtube.com" in current_url and "signin" not in current_url)
             ):
-                print("✅ Профиль уже успешно авторизован в Google / YouTube!")
+                print("✅ Profile is already signed in to Google / YouTube!")
             else:
                 try:
                     # 4. Fill Email if not logged in
                     email_input = page.locator("input[type='email'], #identifierId").first
                     if await email_input.is_visible(timeout=5000):
-                        print(f"⌨️ Шаг 2: Ввод Email ({email})...")
+                        print(f"⌨️ Step 2: Entering email ({email})...")
                         await email_input.click()
                         for ch in email:
                             await email_input.type(ch, delay=35)
                         await asyncio.sleep(0.8)
 
                         next_btn = page.locator(
-                            "#identifierNext, button:has-text('Next'), button:has-text('Далее')"
+                            "#identifierNext, button:has-text('Next')"
                         ).first
                         await next_btn.click()
                         await asyncio.sleep(4)
                         await page.screenshot(path=str(SCREENSHOTS_DIR / "02_after_email.png"))
-                        print("📸 Скриншот 2 сохранен: 02_after_email.png")
+                        print("📸 Screenshot 2 saved: 02_after_email.png")
                 except Exception:
                     pass
 
@@ -165,55 +165,55 @@ async def run_live_flow():
                 pwd_input = page.locator("input[type='password'], [name='Passwd'], [name='password']").first
                 try:
                     await pwd_input.wait_for(state="visible", timeout=12000)
-                    print("⌨️ Шаг 3: Ввод пароля...")
+                    print("⌨️ Step 3: Entering password...")
                     await pwd_input.click()
                     for ch in password:
                         await pwd_input.type(ch, delay=40)
                     await asyncio.sleep(0.8)
 
                     next_btn_pwd = page.locator(
-                        "#passwordNext, button:has-text('Next'), button:has-text('Далее')"
+                        "#passwordNext, button:has-text('Next')"
                     ).first
                     await next_btn_pwd.click()
                     await asyncio.sleep(5)
                     await page.screenshot(path=str(SCREENSHOTS_DIR / "03_after_password.png"))
-                    print("📸 Скриншот 3 сохранен: 03_after_password.png")
+                    print("📸 Screenshot 3 saved: 03_after_password.png")
                 except Exception as e:
-                    print(f"Поле пароля не появилось сразу: {e}")
+                    print(f"Password field did not appear immediately: {e}")
 
                 # 6. 2FA TOTP Prompt
                 totp_input = page.locator(
-                    "input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='код' i], [aria-label*='code' i]"
+                    "input[type='tel'], input[name='totpPin'], input[id='totpPin'], [aria-label*='code' i]"
                 ).first
                 try:
                     if await totp_input.is_visible(timeout=8000):
                         code = generate_totp_rfc6238(totp_secret)
-                        print(f"🛡️ Шаг 4: Обнаружен 2FA запрос! Генерация живого TOTP кода: {code}...")
+                        print(f"🛡️ Step 4: 2FA prompt detected! Generating current TOTP code: {code}...")
                         await totp_input.click()
                         for ch in code:
                             await totp_input.type(ch, delay=50)
                         await asyncio.sleep(0.8)
 
                         next_btn_totp = page.locator(
-                            "#totpNext, button:has-text('Next'), button:has-text('Далее')"
+                            "#totpNext, button:has-text('Next')"
                         ).first
                         await next_btn_totp.click()
                         await asyncio.sleep(5)
                         await page.screenshot(path=str(SCREENSHOTS_DIR / "04_after_totp.png"))
-                        print("📸 Скриншот 4 сохранен: 04_after_totp.png")
+                        print("📸 Screenshot 4 saved: 04_after_totp.png")
                 except Exception as e:
-                    print(f"2FA не потребовалось или уже пройдено: {e}")
+                    print(f"2FA was not required or was already completed: {e}")
 
                 # 7. Recovery Challenge
                 rec_input = page.locator("input[type='email'], [name='knowledgePreregisteredEmailResponse']").first
                 try:
                     if await rec_input.is_visible(timeout=5000) and recovery:
-                        print("⌨️ Ввод резервной почты...")
+                        print("⌨️ Entering recovery email...")
                         await rec_input.click()
                         for ch in recovery:
                             await rec_input.type(ch, delay=35)
                         await asyncio.sleep(0.8)
-                        next_btn_rec = page.locator("button:has-text('Next'), button:has-text('Далее')").first
+                        next_btn_rec = page.locator("button:has-text('Next')").first
                         await next_btn_rec.click()
                         await asyncio.sleep(5)
                         await page.screenshot(path=str(SCREENSHOTS_DIR / "05_after_recovery.png"))
@@ -221,7 +221,7 @@ async def run_live_flow():
                     pass
 
             # 8. Navigate to YouTube Studio
-            print("⏳ Шаг 5: Переход в Творческую студию YouTube (studio.youtube.com)...")
+            print("⏳ Step 5: Navigating to YouTube Studio (studio.youtube.com)...")
             try:
                 await page.goto("https://studio.youtube.com", wait_until="commit", timeout=25000)
             except Exception:
@@ -231,10 +231,10 @@ async def run_live_flow():
             # Dismiss 'Welcome to YouTube Studio' modal if present
             try:
                 continue_btn = page.locator(
-                    "button:has-text('Continue'), button:has-text('Продолжить'), #continue-button"
+                    "button:has-text('Continue'), #continue-button"
                 ).first
                 if await continue_btn.is_visible(timeout=4000):
-                    print("👋 Закрытие приветственного окна 'Welcome to YouTube Studio'...")
+                    print("👋 Closing the 'Welcome to YouTube Studio' window...")
                     await continue_btn.click()
                     await asyncio.sleep(1.5)
             except Exception:
@@ -243,7 +243,7 @@ async def run_live_flow():
             # Dismiss any tooltip
             try:
                 close_tip = page.locator(
-                    "button:has-text('Close'), button:has-text('Dismiss'), button:has-text('Понятно')"
+                    "button:has-text('Close'), button:has-text('Dismiss')"
                 ).first
                 if await close_tip.is_visible(timeout=3000):
                     await close_tip.click()
@@ -252,15 +252,15 @@ async def run_live_flow():
                 pass
 
             await page.screenshot(path=str(SCREENSHOTS_DIR / "06_youtube_studio.png"))
-            print("📸 Скриншот 5 сохранен: 06_youtube_studio.png")
+            print("📸 Screenshot 5 saved: 06_youtube_studio.png")
 
             # Check for "Create Channel" button if needed
             try:
                 create_channel_btn = page.locator(
-                    "#create-channel-button, button:has-text('Create channel'), button:has-text('Создать канал')"
+                    "#create-channel-button, button:has-text('Create channel')"
                 ).first
                 if await create_channel_btn.is_visible(timeout=4000):
-                    print("🎬 Шаг 6: Обнаружено окно создания канала! Нажатие 'Создать канал'...")
+                    print("🎬 Step 6: Channel creation window detected! Clicking 'Create channel'...")
                     await create_channel_btn.click()
                     await asyncio.sleep(5)
                     await page.screenshot(path=str(SCREENSHOTS_DIR / "07_channel_created.png"))
@@ -275,24 +275,24 @@ async def run_live_flow():
             if not video_file.exists():
                 video_file.parent.mkdir(parents=True, exist_ok=True)
                 video_file.write_bytes(b"DEMO_MP4_HEADER" + b"0" * 1024)
-            print(f"🎬 Шаг 7: Загрузка Shorts видео ({video_file.name})...")
+            print(f"🎬 Step 7: Uploading Shorts video ({video_file.name})...")
 
             # Try center 'Upload videos' button first, or fallback to Create menu
             center_upload = page.locator(
-                "button:has-text('Upload videos'), button:has-text('Добавить видео'), #upload-button, [aria-label*='Upload' i]"
+                "button:has-text('Upload videos'), #upload-button, [aria-label*='Upload' i]"
             ).first
             if await center_upload.is_visible(timeout=4000):
-                print("Клик по кнопке 'Upload videos' на дашборде...")
+                print("Clicking the 'Upload videos' button on the dashboard...")
                 await center_upload.click()
             else:
                 create_btn = page.locator(
-                    "#create-icon, [aria-label='Create'], [aria-label='Создать'], button:has-text('Create'), button:has-text('Создать')"
+                    "#create-icon, [aria-label='Create'], button:has-text('Create')"
                 ).first
                 await create_btn.wait_for(state="visible", timeout=15000)
                 await create_btn.click()
                 await asyncio.sleep(1.5)
                 upload_item = page.locator(
-                    "#text-item-0, tp-yt-paper-item:has-text('Upload videos'), tp-yt-paper-item:has-text('Добавить видео')"
+                    "#text-item-0, tp-yt-paper-item:has-text('Upload videos')"
                 ).first
                 await upload_item.click()
 
@@ -301,14 +301,14 @@ async def run_live_flow():
             # Attach video file
             file_input = page.locator("input[type='file']").first
             await file_input.wait_for(state="attached", timeout=20000)
-            print("📁 Передача файла в форму загрузки...")
+            print("📁 Sending the file to the upload form...")
             await file_input.set_input_files(str(video_file.resolve()))
             await asyncio.sleep(6)
             await page.screenshot(path=str(SCREENSHOTS_DIR / "08_file_uploading.png"))
 
             # Fill Title
             title_box = page.locator(
-                "#title-textarea #textbox, [aria-label*='title' i], [aria-label*='название' i]"
+                "#title-textarea #textbox, [aria-label*='title' i]"
             ).first
             await title_box.wait_for(state="visible", timeout=30000)
             await title_box.click()
@@ -317,7 +317,7 @@ async def run_live_flow():
             await asyncio.sleep(0.5)
 
             test_title = f"Nazak Studio Auto Shorts #{int(time.time()) % 10000} #shorts #viral"
-            print(f"⌨️ Шаг 8: Ввод заголовка: {test_title}")
+            print(f"⌨️ Step 8: Entering title: {test_title}")
             await human_type(title_box, test_title)
             await asyncio.sleep(1.5)
 
@@ -338,7 +338,7 @@ async def run_live_flow():
                 await asyncio.sleep(2.5)
 
             # Select Public
-            print("🌍 Шаг 9: Установка видимости 'Открытый доступ'...")
+            print("🌍 Step 9: Setting visibility to 'Public'...")
             public_radio = page.locator("tp-yt-paper-radio-button[name='PUBLIC'], [name='PUBLIC']").first
             await public_radio.wait_for(state="visible", timeout=15000)
             await public_radio.click()
@@ -346,7 +346,7 @@ async def run_live_flow():
             await page.screenshot(path=str(SCREENSHOTS_DIR / "10_visibility_public.png"))
 
             # Click Publish
-            print("🚀 Шаг 10: Публикация видео (клик 'Опубликовать')...")
+            print("🚀 Step 10: Publishing video (clicking 'Publish')...")
             done_btn = page.locator("#done-button").first
             await done_btn.click()
             await asyncio.sleep(6)
@@ -361,7 +361,7 @@ async def run_live_flow():
             except Exception:
                 pass
 
-            print(f"🎉 УСПЕШНО ОПУБЛИКОВАНО! Ссылка: {video_url or 'https://youtube.com/shorts'}")
+            print(f"🎉 PUBLISHED SUCCESSFULLY! Link: {video_url or 'https://youtube.com/shorts'}")
 
             notes["auth_status"] = "authenticated"
             notes["last_upload_time"] = time.time()
@@ -370,15 +370,15 @@ async def run_live_flow():
 
             await context.close()
             print("=========================================================")
-            print("🎉 ВСЕ ШАГИ ЦИКЛА ВЫПОЛНЕНЫ УСПЕШНО НА 100%!")
+            print("🎉 ALL STEPS COMPLETED WITH 100% SUCCESS!")
             print("=========================================================")
             return True
 
         except Exception as e:
-            print(f"❌ Ошибка в процессе: {e}")
+            print(f"❌ Error during the process: {e}")
             try:
                 await page.screenshot(path=str(SCREENSHOTS_DIR / "error_state.png"))
-                print("📸 Скриншот ошибки сохранен: error_state.png")
+                print("📸 Error screenshot saved: error_state.png")
             except Exception:
                 pass
             await context.close()

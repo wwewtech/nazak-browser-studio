@@ -38,11 +38,11 @@ class ProxiesView(QWidget):
         main_layout.setContentsMargins(24, 20, 24, 20)
 
         # Header
-        lbl_title = QLabel("Прокси и пакетный импорт", self)
+        lbl_title = QLabel("Proxies & Bulk Import", self)
         lbl_title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.4px;")
 
         lbl_desc = QLabel(
-            "Массовый ввод прокси HTTP / HTTPS / SOCKS5 с автоматической генерацией аппаратных отпечатков", self
+            "Bulk HTTP / HTTPS / SOCKS5 proxy entry with automatic hardware fingerprint generation", self
         )
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
 
@@ -54,7 +54,7 @@ class ProxiesView(QWidget):
         l_bulk = QVBoxLayout(card_bulk)
         l_bulk.setContentsMargins(16, 14, 16, 14)
 
-        lbl_b1 = QLabel("Вставьте список прокси — 1 строка для каждого нового профиля", card_bulk)
+        lbl_b1 = QLabel("Paste a proxy list — one line per new profile", card_bulk)
         lbl_b1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_bulk.addWidget(lbl_b1)
 
@@ -66,10 +66,10 @@ class ProxiesView(QWidget):
         h_bulk_actions = QHBoxLayout()
         self.input_group_name = LineEdit(card_bulk)
         self.input_group_name.setText("Google Ads")
-        self.input_group_name.setPlaceholderText("Название группы...")
+        self.input_group_name.setPlaceholderText("Group name...")
         h_bulk_actions.addWidget(self.input_group_name)
 
-        btn_import = PrimaryPushButton(FluentIcon.FOLDER_ADD, "Импортировать и создать", card_bulk)
+        btn_import = PrimaryPushButton(FluentIcon.FOLDER_ADD, "Import & Create", card_bulk)
 
         btn_import.clicked.connect(self.on_bulk_import)
         h_bulk_actions.addWidget(btn_import)
@@ -83,12 +83,12 @@ class ProxiesView(QWidget):
         l_table.setContentsMargins(16, 14, 16, 14)
 
         h_tbl_head = QHBoxLayout()
-        lbl_t1 = QLabel("Таблица сетевой диагностики и доступности Google", card_table)
+        lbl_t1 = QLabel("Network Diagnostics & Google Availability", card_table)
         lbl_t1.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         h_tbl_head.addWidget(lbl_t1)
         h_tbl_head.addStretch()
 
-        btn_check_all = PushButton(FluentIcon.SEARCH, "Проверить все прокси", card_table)
+        btn_check_all = PushButton(FluentIcon.SEARCH, "Check All Proxies", card_table)
         btn_check_all.clicked.connect(self.on_check_all)
         h_tbl_head.addWidget(btn_check_all)
         l_table.addLayout(h_tbl_head)
@@ -96,7 +96,7 @@ class ProxiesView(QWidget):
         self.table = TableWidget(card_table)
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
-            ["Профиль", "Прокси сервер", "Пинг", "Внешний IP • Страна", "Google Статус", "YouTube Доступ", "Смена IP"]
+            ["Profile", "Proxy Server", "Ping", "External IP • Country", "Google Status", "YouTube Access", "IP Rotation"]
         )
 
         header = self.table.horizontalHeader()
@@ -124,34 +124,34 @@ class ProxiesView(QWidget):
         for row, p in enumerate(profiles):
             self.table.setItem(row, 0, QTableWidgetItem(p.name))
 
-            proxy_str = p.proxy.raw or f"{p.proxy.host}:{p.proxy.port}" if p.proxy.host else "Прямое"
+            proxy_str = p.proxy.raw or f"{p.proxy.host}:{p.proxy.port}" if p.proxy.host else "Direct"
             self.table.setItem(row, 1, QTableWidgetItem(proxy_str))
 
             if p.last_health_check:
                 h = p.last_health_check
-                self.table.setItem(row, 2, QTableWidgetItem(f"{h.ping_ms or 1} мс"))
+                self.table.setItem(row, 2, QTableWidgetItem(f"{h.ping_ms or 1} ms"))
 
                 country_part = f" • {h.country}" if h.country else ""
                 self.table.setItem(row, 3, QTableWidgetItem(f"{h.ip or '-'}{country_part}"))
 
-                g_status = "Google OK" if h.status == HealthStatus.HEALTHY else "НЕДОСТУПЕН"
+                g_status = "Google OK" if h.status == HealthStatus.HEALTHY else "UNAVAILABLE"
                 self.table.setItem(row, 4, QTableWidgetItem(g_status))
 
-                yt_status = "Доступен" if h.google.youtube else "Блок"
+                yt_status = "Available" if h.google.youtube else "Blocked"
                 self.table.setItem(row, 5, QTableWidgetItem(yt_status))
             else:
                 self.table.setItem(row, 2, QTableWidgetItem("-"))
                 self.table.setItem(row, 3, QTableWidgetItem("-"))
-                self.table.setItem(row, 4, QTableWidgetItem("Не проверен"))
+                self.table.setItem(row, 4, QTableWidgetItem("Not checked"))
                 self.table.setItem(row, 5, QTableWidgetItem("-"))
 
             if p.proxy.rotation_url:
-                btn_rot = PushButton(FluentIcon.SYNC, "Сменить IP", self.table)
+                btn_rot = PushButton(FluentIcon.SYNC, "Rotate IP", self.table)
                 btn_rot.setFixedHeight(26)
                 btn_rot.clicked.connect(lambda checked, pid=p.id: self.on_rotate_ip(pid))
                 self.table.setCellWidget(row, 6, btn_rot)
             else:
-                self.table.setItem(row, 6, QTableWidgetItem("Статичный"))
+                self.table.setItem(row, 6, QTableWidgetItem("Static"))
 
     def on_rotate_ip(self, profile_id: str):
         prof = self.profile_manager.get_profile(profile_id)
@@ -163,20 +163,20 @@ class ProxiesView(QWidget):
             req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
             with urllib.request.urlopen(req, timeout=8.0):
                 InfoBar.success(
-                    "IP изменен",
-                    f"Запрос на ротацию IP для '{prof.name}' успешно отправлен",
+                    "IP changed",
+                    f"IP rotation request for '{prof.name}' sent successfully",
                     parent=self,
                     position=InfoBarPosition.TOP,
                 )
         except Exception as e:
             InfoBar.warning(
-                "Ошибка ротации", f"Не удалось сменить IP: {e!s}", parent=self, position=InfoBarPosition.TOP
+                "Rotation error", f"Could not rotate IP: {e!s}", parent=self, position=InfoBarPosition.TOP
             )
 
     def on_bulk_import(self):
         text = self.input_proxies.toPlainText().strip()
         if not text:
-            InfoBar.warning("Пустой ввод", "Вставьте строки прокси в поле", parent=self, position=InfoBarPosition.TOP)
+            InfoBar.warning("Empty input", "Paste proxy lines into the field", parent=self, position=InfoBarPosition.TOP)
             return
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -197,15 +197,15 @@ class ProxiesView(QWidget):
         self.input_proxies.clear()
         self.refresh_table()
         InfoBar.success(
-            "Успешный импорт",
-            f"Создано {created} профилей с уникальными отпечатками",
+            "Import successful",
+            f"Created {created} profiles with unique fingerprints",
             parent=self,
             position=InfoBarPosition.TOP,
         )
 
     def on_check_all(self):
         profs = self.profile_manager.list_profiles()
-        InfoBar.info("Диагностика", f"Проверка {len(profs)} прокси...", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.info("Diagnostics", f"Checking {len(profs)} proxies...", parent=self, position=InfoBarPosition.TOP)
 
         self.worker = CheckAllProxiesWorker(profs, self.profile_manager.profiles_dir)
         self.worker.finished_signal.connect(self.on_checks_done)
@@ -218,4 +218,4 @@ class ProxiesView(QWidget):
                 prof.last_health_check = res
                 self.profile_manager.update_profile(prof)
         self.refresh_table()
-        InfoBar.success("Готово", "Все прокси протестированы", parent=self, position=InfoBarPosition.TOP)
+        InfoBar.success("Done", "All proxies tested", parent=self, position=InfoBarPosition.TOP)
