@@ -13,16 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from ..models.profile import ProfileStatus
+from .browser_launcher import get_free_port
 from .instagram_uploader import InstagramUploader
 from .spintax import format_video_metadata
 from .video_uniquifier import VideoUniquifier
 from .youtube_uploader import YouTubeUploader
 
 RETRYABLE_UPLOAD_ERRORS = (
-    "captcha",
-    "challenge",
-    "verify",
-    "verification",
     "timeout",
     "temporarily unavailable",
     "429",
@@ -33,6 +30,36 @@ RETRYABLE_UPLOAD_ERRORS = (
     "connection closed",
     "not logged in",
 )
+
+# Errors that require human action — never worth a blind retry.
+NON_RETRYABLE_MANUAL_ACTION_ERRORS = (
+    "captcha",
+    "challenge",
+    "verify",
+    "verification",
+)
+
+SUPPORTED_UPLOAD_PLATFORMS = ("youtube_shorts", "instagram_reels")
+
+
+def normalize_upload_platform(platform: str | None) -> str:
+    """Normalize an upload platform name to a supported value.
+
+    Case-insensitive exact match on the supported tokens; anything else
+    (unknown strings, whitespace-padded variants, None/empty) falls back
+    to ``youtube_shorts``.
+    """
+    if isinstance(platform, str) and platform in SUPPORTED_UPLOAD_PLATFORMS:
+        return platform
+    return "youtube_shorts"
+
+
+def is_manual_action_error(err: str | None) -> bool:
+    """True when the failure needs a human (captcha/challenge), not a retry."""
+    if not err:
+        return False
+    lowered = err.lower()
+    return any(token in lowered for token in NON_RETRYABLE_MANUAL_ACTION_ERRORS)
 
 
 async def notify_progress(progress_callback: Callable | None, message: str):
@@ -104,16 +131,31 @@ class UploadQueueManager:
 
     def cancel_all(self):
         self._cancel_requested = True
+        canceled_ids: list[str] = []
         for j in self.jobs.values():
             if j.status in ("pending", "uniqueizing", "launching", "uploading"):
                 j.status = "canceled"
                 j.progress_message = "Upload canceled by user"
+                canceled_ids.append(j.profile_id)
+        # Sweep: a cancel may land between launch() and upload completion —
+        # take down those browsers so no Chrome process leaks.
+        launcher = getattr(self, "browser_launcher", None)
+        stop = getattr(launcher, "stop", None)
+        if stop is not None:
+            for pid in canceled_ids:
+                try:
+                    stop(pid)
+                except Exception:
+                    pass
 
     @staticmethod
     def _is_retryable_error(err: str | None) -> bool:
         if not err:
             return False
         lowered = err.lower()
+        # Captcha/challenge needs a human — retrying never helps.
+        if any(token in lowered for token in NON_RETRYABLE_MANUAL_ACTION_ERRORS):
+            return False
         return any(token in lowered for token in RETRYABLE_UPLOAD_ERRORS)
 
     async def _retryable_upload(
@@ -173,7 +215,7 @@ class UploadQueueManager:
             self._cancel_requested = False
             self.jobs = {}
 
-        platform_name = platform if platform in {"youtube_shorts", "instagram_reels"} else "youtube_shorts"
+        platform_name = normalize_upload_platform(platform)
 
         try:
             for pid in profile_ids:
@@ -238,9 +280,12 @@ class UploadQueueManager:
                         {"profile_id": pid, "status": job.status, "message": job.progress_message},
                     )
 
-                    cdp_port = 9300 + idx
+                    cdp_port = get_free_port()
                     launch_ok, pid_num, launch_err = self.browser_launcher.launch(prof, cdp_port=cdp_port)
-                    if not launch_ok:
+                    launched_here = False
+                    if launch_ok:
+                        launched_here = True
+                    else:
                         job.status = "failed"
                         job.error = f"Browser launch failed: {launch_err}"
                         job.progress_message = "Launch error"
@@ -271,55 +316,65 @@ class UploadQueueManager:
                             "autopost_job_update", {"profile_id": p, "status": j.status, "message": msg}
                         )
 
-                    if platform_name == "instagram_reels":
-                        uploader = InstagramUploader(f"http://127.0.0.1:{cdp_port}")
+                    try:
+                        if platform_name == "instagram_reels":
+                            uploader = InstagramUploader(f"http://127.0.0.1:{cdp_port}")
 
-                        async def upload_task(
-                            video_path=out_path,
-                            current_job=job,
-                            platform_uploader=uploader,
-                            progress=on_progress,
-                        ):
-                            return await platform_uploader.upload_reel(
-                                video_path=video_path,
-                                caption=current_job.description,
-                                progress_callback=progress,
+                            async def upload_task(
+                                video_path=out_path,
+                                current_job=job,
+                                platform_uploader=uploader,
+                                progress=on_progress,
+                            ):
+                                return await platform_uploader.upload_reel(
+                                    video_path=video_path,
+                                    caption=current_job.description,
+                                    progress_callback=progress,
+                                )
+
+                            upload_ok, video_url, upload_err = await self._retryable_upload(
+                                job,
+                                task_name="Instagram upload",
+                                upload_callable=upload_task,
+                                retries=3,
+                                base_delay=2.0,
+                                progress_callback=on_progress,
                             )
+                        else:
+                            uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
 
-                        upload_ok, video_url, upload_err = await self._retryable_upload(
-                            job,
-                            task_name="Instagram upload",
-                            upload_callable=upload_task,
-                            retries=3,
-                            base_delay=2.0,
-                            progress_callback=on_progress,
-                        )
-                    else:
-                        uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
+                            async def upload_task(
+                                video_path=out_path,
+                                current_job=job,
+                                platform_uploader=uploader,
+                                progress=on_progress,
+                            ):
+                                return await platform_uploader.upload_shorts(
+                                    video_path=video_path,
+                                    title=current_job.title,
+                                    description=current_job.description,
+                                    progress_callback=progress,
+                                )
 
-                        async def upload_task(
-                            video_path=out_path,
-                            current_job=job,
-                            platform_uploader=uploader,
-                            progress=on_progress,
-                        ):
-                            return await platform_uploader.upload_shorts(
-                                video_path=video_path,
-                                title=current_job.title,
-                                description=current_job.description,
-                                progress_callback=progress,
+                            upload_ok, video_url, upload_err = await self._retryable_upload(
+                                job,
+                                task_name="YouTube upload",
+                                upload_callable=upload_task,
+                                retries=3,
+                                base_delay=2.0,
+                                progress_callback=on_progress,
                             )
-
-                        upload_ok, video_url, upload_err = await self._retryable_upload(
-                            job,
-                            task_name="YouTube upload",
-                            upload_callable=upload_task,
-                            retries=3,
-                            base_delay=2.0,
-                            progress_callback=on_progress,
-                        )
-
-                    self.browser_launcher.stop(pid)
+                    finally:
+                        # Cancel lands between launch and upload completion —
+                        # always take the browser down (no Chrome leak).
+                        if launched_here:
+                            try:
+                                self.browser_launcher.stop(pid)
+                            except Exception:
+                                pass
+                            launched_here = False
+                    if is_manual_action_error(upload_err):
+                        job.progress_message = f"{upload_err} (manual action required — no retry)"
                     prof.status = ProfileStatus.STOPPED
                     prof.pid = None
                     self.profile_manager.update_profile(prof)

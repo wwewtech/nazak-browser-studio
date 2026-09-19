@@ -36,9 +36,9 @@ def test_instagram_session_lost_error_detection(message, expected):
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
-        ("captcha required", True),
-        ("challenge required", True),
-        ("verification required", True),
+        ("captcha required", False),  # manual action — never retried
+        ("challenge required", False),  # manual action — never retried
+        ("verification required", False),  # manual action — never retried
         ("429 Too Many Requests", True),
         ("403 forbidden", True),
         ("rate limit reached", True),
@@ -78,8 +78,9 @@ def test_upload_queue_retryable_error_detection(error, expected):
     ],
 )
 def test_queue_platform_normalization(platform, expected):
-    value = platform if platform in {"youtube_shorts", "instagram_reels"} else "youtube_shorts"
-    assert value == expected
+    from nazak.core.upload_queue import normalize_upload_platform
+
+    assert normalize_upload_platform(platform) == expected
 
 
 def test_retryable_upload_retries_until_success():
@@ -92,7 +93,7 @@ def test_retryable_upload_retries_until_success():
         async def fake_upload():
             calls["count"] += 1
             if calls["count"] < 3:
-                return False, None, "captcha required"
+                return False, None, "temporarily unavailable"
             return True, "https://instagram.com/p/ok", None
 
         job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
@@ -355,7 +356,7 @@ def test_instagram_uploader_success_path_with_fake_browser(monkeypatch):
         browser = _FakeBrowser()
         _install_fake_playwright(monkeypatch, browser)
 
-        uploader = InstagramUploader("http://127.0.0.1:9222")
+        uploader = InstagramUploader("http://127.0.0.1:9222", delay_scale=0.0)
         file_path = Path("tests/data/test_reel.mp4")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"fake video")
@@ -383,7 +384,7 @@ def test_instagram_uploader_detects_login_screen(monkeypatch):
         browser.contexts = [_FakeContext()]
         browser.contexts[0].page = LoginPage()
 
-        uploader = InstagramUploader("http://127.0.0.1:9222")
+        uploader = InstagramUploader("http://127.0.0.1:9222", delay_scale=0.0)
         file_path = Path("tests/data/test_reel_login.mp4")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"fake video")
@@ -415,7 +416,7 @@ def test_instagram_uploader_handles_create_page_redirect(monkeypatch):
         browser.contexts = [_FakeContext()]
         browser.contexts[0].page = RedirectPage()
 
-        uploader = InstagramUploader("http://127.0.0.1:9222")
+        uploader = InstagramUploader("http://127.0.0.1:9222", delay_scale=0.0)
         file_path = Path("tests/data/test_reel_redirect.mp4")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"fake video")
@@ -433,7 +434,7 @@ def test_instagram_uploader_closes_context_and_browser_in_finally(monkeypatch):
         browser = _FakeBrowser()
         _install_fake_playwright(monkeypatch, browser)
 
-        uploader = InstagramUploader("http://127.0.0.1:9222")
+        uploader = InstagramUploader("http://127.0.0.1:9222", delay_scale=0.0)
         file_path = Path("tests/data/test_reel_close.mp4")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"fake video")
@@ -461,12 +462,57 @@ def test_safe_wait_raises_timeout_for_slow_action():
     asyncio.run(run())
 
 
+def test_retryable_upload_never_retries_manual_action_errors():
+    """Captcha/challenge must fail fast — retries never solve a human gate."""
+
+    async def run():
+        queue = UploadQueueManager(
+            profile_manager=SimpleNamespace(), browser_launcher=SimpleNamespace(), ws_broadcast=None
+        )
+        calls = {"count": 0}
+
+        async def fake_upload():
+            calls["count"] += 1
+            return False, None, "captcha required"
+
+        job = UploadJob(profile_id="p1", profile_name="P1", source_video="demo.mp4", platform="instagram_reels")
+        result = await queue._retryable_upload(
+            job,
+            "Instagram upload",
+            fake_upload,
+            retries=5,
+            base_delay=0.01,
+            max_delay=0.1,
+            progress_callback=lambda *_args, **_kwargs: None,
+        )
+
+        assert result == (False, None, "captcha required")
+        assert calls["count"] == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("captcha required", True),
+        ("challenge required", True),
+        ("verification required", True),
+        ("we need to verify your account", True),
+    ],
+)
+def test_manual_action_error_detection(error, expected):
+    from nazak.core.upload_queue import is_manual_action_error
+
+    assert is_manual_action_error(error) is expected
+
+
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
         (None, False),
         ("", False),
-        ("verification required", True),
+        ("verification required", False),
         ("connection closed", True),
     ],
 )
@@ -599,9 +645,9 @@ def test_upload_queue_rejects_duplicate_running_batch():
 @pytest.mark.parametrize(
     ("message", "expected"),
     [
-        ("  CHALLENGE REQUIRED  ", True),
-        ("Verification required to continue", True),
-        ("we need to verify your account", True),
+        ("  CHALLENGE REQUIRED  ", False),  # manual action — not retried
+        ("Verification required to continue", False),  # manual action — not retried
+        ("we need to verify your account", False),  # manual action — not retried
         ("Access denied by policy", False),
         ("Profile not found", False),
     ],

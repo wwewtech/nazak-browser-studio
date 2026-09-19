@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nazak-browser-studio"
-version = "1.5.0"
+version = "1.6.0"
 description = "Next-Generation Hardware-Isolated Anti-Detect Browser, Local CDP Automation REST API & YouTube Shorts Autoposter"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,6 +44,7 @@ dependencies = [
     "rich>=13.7.0",
     "websockets>=12.0",
     "playwright>=1.45.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +52,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
+    "pytest-timeout>=2.3.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
     "pre-commit>=3.7.0",
@@ -145,7 +147,7 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-p no:asyncio --strict-markers -ra"
+addopts = "-p no:asyncio --strict-markers -ra --timeout=30 --timeout-method=thread"
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",

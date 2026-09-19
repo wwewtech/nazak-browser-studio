@@ -55,7 +55,14 @@ def main():
         default="gui",
         help="Launch mode: gui (pure desktop window), web (browser UI), cli (terminal)",
     )
-    parser.add_argument("--host", default=DEFAULT_HOST, help="Server host (default: 127.0.0.1)")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help=(
+            "Server bind address (default: 127.0.0.1 loopback). "
+            "Binding to 0.0.0.0 exposes the API/Swagger to your LAN — only do so deliberately."
+        ),
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (default: 8899)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser in web mode")
 
@@ -92,6 +99,14 @@ def main():
 
 def start_web_mode(host: str, port: int, open_browser: bool = True):
     import uvicorn
+
+    if host == "0.0.0.0":
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Binding the API server to 0.0.0.0 exposes Swagger/API to the local network. "
+            "Use 127.0.0.1 unless remote access is intended."
+        )
 
     if open_browser:
         try:

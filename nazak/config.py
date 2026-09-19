@@ -35,6 +35,11 @@ for p in (DATA_DIR, PROFILES_DIR, EXTENSIONS_DIR, LOGS_DIR):
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8899
 
+# Autopost demo defaults (kept in config, not hardcoded across endpoints).
+DEFAULT_AUTOPOST_TITLE_TEMPLATE = "{Video|New video|Fresh upload} {2026} #shorts"
+DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE = "New upload via Nazak Browser Studio.\\n\\n#shorts"
+DEFAULT_AUTOPOST_TG_CHANNEL = "@your_channel"
+
 # Candidate paths for Chrome / Chromium / Edge / Brave / Arc
 CHROME_CANDIDATES: list[str] = [
     os.environ.get("CHROME_PATH", ""),

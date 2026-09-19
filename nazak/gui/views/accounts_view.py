@@ -35,6 +35,13 @@ from qfluentwidgets import (
 )
 
 from ...core.account_provisioner import AccountProvisioner, generate_totp_rfc6238, parse_account_string
+from ...core.secrets_store import (
+    SECRETS_MODES,
+    SecretsError,
+    decrypt_notes,
+    get_current_mode,
+    set_current_mode,
+)
 from ...models.profile import BrowserProfile, ProfileStatus
 
 
@@ -170,11 +177,22 @@ class AccountsView(QWidget):
         )
         self.cmb_mode.currentIndexChanged.connect(self.on_mode_changed)
 
+        # Secrets storage mode — the USER decides (plain / dpapi / passphrase).
+        lbl_secrets = CaptionLabel("Secrets storage:", config_card)
+        lbl_secrets.setStyleSheet("color: #a1a1aa; font-weight: 600;")
+        self.cmb_secrets = ComboBox(config_card)
+        self.cmb_secrets.addItems(list(SECRETS_MODES))
+        self.cmb_secrets.setCurrentText(get_current_mode())
+        self.cmb_secrets.currentTextChanged.connect(self.on_secrets_mode_changed)
+
         ctrl_layout.addWidget(lbl_grp)
         ctrl_layout.addWidget(self.edit_group)
         ctrl_layout.addSpacing(12)
         ctrl_layout.addWidget(lbl_pm)
         ctrl_layout.addWidget(self.cmb_mode)
+        ctrl_layout.addSpacing(12)
+        ctrl_layout.addWidget(lbl_secrets)
+        ctrl_layout.addWidget(self.cmb_secrets)
         ctrl_layout.addStretch()
 
         config_layout.addLayout(ctrl_layout)
@@ -207,6 +225,42 @@ class AccountsView(QWidget):
             self.lbl_val_mode.setText("Browser Stealth • YouTube Studio")
         else:
             self.lbl_val_mode.setText("Google Cloud OAuth 2.0 • Data API v3")
+
+    def on_secrets_mode_changed(self, mode: str):
+        """User picked a secrets storage mode — persist it immediately."""
+        passphrase = None
+        if mode == "passphrase":
+            try:
+                from qfluentwidgets import Dialog
+            except ImportError:
+                Dialog = None
+            if Dialog is not None:
+                # Ask for a passphrase via a small modal input (cancelled = keep old mode).
+                result = Dialog("Secrets passphrase", "Enter a passphrase to encrypt account secrets:", self).exec()
+                if result:
+                    passphrase = result
+                else:
+                    self.cmb_secrets.setCurrentText(get_current_mode())  # revert
+                    return
+        try:
+            effective = set_current_mode(mode, passphrase=passphrase)
+        except SecretsError as exc:
+            self.cmb_secrets.setCurrentText(get_current_mode())  # revert
+            InfoBar.error(
+                title="Invalid secrets mode",
+                content=str(exc),
+                parent=self,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=4000,
+            )
+            return
+        InfoBar.success(
+            title="Secrets mode updated",
+            content=f"Storage mode is now '{effective}'. Applies to new imports.",
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT,
+            duration=3000,
+        )
 
     def on_provision_clicked(self):
         raw_text = self.txt_accounts.toPlainText().strip()
@@ -269,9 +323,36 @@ class AccountsView(QWidget):
                 except Exception:
                     pass
 
+            # Masked secrets for display (API/GUI never show raw values).
+            notes = decrypt_notes(notes)
+            # The TOTP ticker needs the raw secret; reveal it separately without
+            # exposing it in any visible cell (it stays in Qt UserRole only).
+            # A masked-looking value that is NOT an envelope means decryption
+            # already succeeded with legacy plaintext — reuse it directly.
+            raw_notes = {}
+            if prof.google.notes:
+                try:
+                    raw_notes = json.loads(prof.google.notes)
+                except Exception:
+                    raw_notes = {}
+            totp_raw = ""
+            try:
+                from ...core.secrets_store import (
+                    is_encrypted_value as _is_env,
+                    reveal_notes as _reveal,
+                )
+
+                if _is_env(raw_notes.get("totp_secret")):
+                    totp_raw = _reveal(raw_notes).get("totp_secret", "")
+                else:
+                    totp_raw = raw_notes.get("totp_secret", "") or ""
+            except Exception:
+                totp_raw = ""
+            if totp_raw.startswith("<encrypted"):
+                totp_raw = ""
             email = notes.get("account_email", prof.google.target_account_email or prof.name)
             totp_sec = notes.get("totp_secret", "")
-            current_totp = generate_totp_rfc6238(totp_sec) if totp_sec else "—"
+            current_totp = generate_totp_rfc6238(totp_raw) if totp_raw else "—"
             mode = "Browser" if notes.get("posting_mode") == "browser_stealth" else "OAuth API"
 
             item_email = QTableWidgetItem(f"{email} • {prof.name}")
@@ -282,6 +363,9 @@ class AccountsView(QWidget):
 
             item_sec = QTableWidgetItem(totp_sec if totp_sec else "—")
             item_sec.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Store the raw secret in UserRole for the TOTP ticker without
+            # exposing it in the visible table cell.
+            item_sec.setData(Qt.ItemDataRole.UserRole, totp_raw)
             self.table.setItem(row, 2, item_sec)
 
             item_code = QTableWidgetItem(current_totp)
@@ -308,8 +392,10 @@ class AccountsView(QWidget):
     def refresh_totp_codes(self):
         for row in range(self.table.rowCount()):
             sec_item = self.table.item(row, 2)
-            if sec_item and sec_item.text() != "—":
-                code = generate_totp_rfc6238(sec_item.text())
+            if sec_item:
+                # Raw secret lives in UserRole; visible cell shows masked value.
+                raw = sec_item.data(Qt.ItemDataRole.UserRole) or ""
+                code = generate_totp_rfc6238(raw) if raw else "—"
                 code_item = self.table.item(row, 3)
                 if code_item:
                     code_item.setText(code)

@@ -91,3 +91,9 @@ $RECYCLE.BIN/
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Local agent tooling / audit scratch
+.agents/
+skills-lock.json
+PROBLEMS.TXT
+

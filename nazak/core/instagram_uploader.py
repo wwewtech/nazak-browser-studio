@@ -51,6 +51,7 @@ class InstagramUploader:
         page_timeout: float = 30.0,
         context_timeout: float = 120.0,
         viewport: tuple[int, int] = (1440, 2560),
+        delay_scale: float = 1.0,
     ):
         self.cdp_url = cdp_url
         self.connection_timeout = connection_timeout
@@ -58,6 +59,10 @@ class InstagramUploader:
         self.page_timeout = page_timeout
         self.context_timeout = context_timeout
         self.viewport = viewport
+        # Multiplier for all human-imitation pauses. Production default (1.0) keeps
+        # real-world timings; tests pass 0.0 so fake-browser E2E flows stay instant
+        # instead of sleeping ~16.5s per run (root cause of the "hanging" suite).
+        self.delay_scale = max(0.0, float(delay_scale))
 
     @staticmethod
     def _first(locator):
@@ -149,7 +154,7 @@ class InstagramUploader:
                     timeout=self.navigation_timeout,
                     label="Instagram home page load",
                 )
-                await asyncio.sleep(2)
+                await asyncio.sleep(2 * self.delay_scale)
 
                 login_input = self._first(page.locator("input[name='username'], input[name='userName']"))
                 if await asyncio.wait_for(login_input.is_visible(), timeout=4.0):
@@ -173,14 +178,14 @@ class InstagramUploader:
                         label="Instagram create page load",
                     )
 
-                await asyncio.sleep(2.5)
+                await asyncio.sleep(2.5 * self.delay_scale)
 
                 file_input = self._first(page.locator("input[type='file']"))
                 await self._safe_wait(file_input.wait_for(state="attached"), timeout=20.0, label="file input ready")
                 await self._safe_wait(
                     file_input.set_input_files(str(video_path.resolve())), timeout=25.0, label="video upload"
                 )
-                await asyncio.sleep(4)
+                await asyncio.sleep(4 * self.delay_scale)
 
                 await notify_progress(progress_callback, "Preparing reel metadata...")
 
@@ -190,17 +195,17 @@ class InstagramUploader:
                 if await asyncio.wait_for(caption_box.is_visible(), timeout=15.0):
                     await self._safe_wait(caption_box.click(), timeout=10.0, label="caption click")
                     await human_type(caption_box, caption)
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(1.0 * self.delay_scale)
 
                 next_btn = self._first(page.locator("button:has-text('Next')"))
                 if await asyncio.wait_for(next_btn.is_visible(), timeout=10.0):
                     await self._safe_wait(next_btn.click(), timeout=10.0, label="next button click")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2 * self.delay_scale)
 
                 share_btn = self._first(page.locator("button:has-text('Share')"))
                 if await asyncio.wait_for(share_btn.is_visible(), timeout=20.0):
                     await self._safe_wait(share_btn.click(), timeout=15.0, label="share button click")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(5 * self.delay_scale)
 
                 published_url = None
                 try:

@@ -4,6 +4,7 @@ FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
 
 import asyncio
 import json
+import logging
 import os
 import re
 import urllib.request
@@ -18,7 +19,17 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ..config import DATA_DIR, EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE, WEB_DIR, find_chrome_executable
+from ..config import (
+    DATA_DIR,
+    DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE,
+    DEFAULT_AUTOPOST_TG_CHANNEL,
+    DEFAULT_AUTOPOST_TITLE_TEMPLATE,
+    EXTENSIONS_DIR,
+    PROFILES_DIR,
+    PROFILES_FILE,
+    WEB_DIR,
+    find_chrome_executable,
+)
 from ..core.browser_launcher import BrowserLauncher
 from ..core.cookie_manager import (
     cookies_to_netscape,
@@ -30,9 +41,18 @@ from ..core.fingerprint_generator import generate_random_fingerprint
 from ..core.process_monitor import ProcessMonitor
 from ..core.profile_manager import ProfileManager
 from ..core.proxy_checker import check_proxy_health
+from ..core.secrets_store import (
+    SECRETS_MODES,
+    SecretsError,
+    decrypt_notes,
+    get_current_mode,
+    load_mode,
+    set_current_mode,
+    set_mode_file,
+)
 from ..core.spintax import format_video_metadata
 from ..core.synchronizer import SynchronizerManager
-from ..core.upload_queue import UploadQueueManager
+from ..core.upload_queue import UploadQueueManager, normalize_upload_platform
 from ..core.video_uniquifier import VideoUniquifier
 from ..core.warmup_engine import (
     BUILTIN_SCENARIOS,
@@ -45,6 +65,7 @@ from ..models.health import HealthCheckResult
 from ..models.profile import BrowserProfile, FingerprintConfig, GoogleSettings, ProfileStatus
 from ..models.proxy import ProxyConfig
 
+logger = logging.getLogger(__name__)
 
 # Active WebSocket connections
 class ConnectionManager:
@@ -64,11 +85,17 @@ class ConnectionManager:
         for connection in list(self.active_connections):
             try:
                 await connection.send_text(payload)
-            except Exception:
+            except Exception as exc:
+                logger.debug("WS send failed, dropping connection: %s", exc)
                 self.disconnect(connection)
 
 
 ws_manager = ConnectionManager()
+
+# Bootstrap user-selected secrets mode (plain by default; persisted choice
+# survives restarts, the passphrase itself is never written to disk).
+set_mode_file(DATA_DIR / "secrets_mode.json")
+load_mode()
 
 # Initialize Core Services
 profile_manager = ProfileManager(PROFILES_FILE, PROFILES_DIR)
@@ -93,13 +120,14 @@ def on_process_state_change(profile_id: str, status: ProfileStatus):
                 _server_loop,
             )
             return
-        except Exception:
+        except Exception as exc:
+            logger.debug("process-state broadcast failed: %s", exc)
             pass
     try:
         asyncio.get_running_loop()
         asyncio.create_task(ws_manager.broadcast("profile_status_change", payload))
     except RuntimeError:
-        pass
+        logger.debug("no running loop for profile_status_change %s", payload)
 
 
 process_monitor.register_callback(on_process_state_change)
@@ -118,7 +146,7 @@ async def lifespan(app: FastAPI):
 tags_metadata = [
     {
         "name": "Dolphin Automation (v1.0 Parity)",
-        "description": "100% Dolphin{anty}-compatible REST endpoints for external automation scripts (Playwright, Puppeteer, Selenium).",
+        "description": "Dolphin{anty}-style REST endpoints for external automation scripts (Playwright, Puppeteer, Selenium). Implements a compatible subset of the Dolphin {anty} v1.0 local API (start/stop/status); full feature parity is not claimed.",
     },
     {
         "name": "Profiles",
@@ -142,7 +170,7 @@ tags_metadata = [
     },
     {
         "name": "Proxies",
-        "description": "5-stage proxy health diagnostics (Latency, Geolocation, Google Suite, WebRTC) and mobile IP rotation triggers.",
+        "description": "4-stage proxy health diagnostics (Latency, Geolocation, Google Suite, storage/Data Isolation) and mobile IP rotation triggers.",
     },
     {
         "name": "YouTube Shorts Autoposter",
@@ -203,6 +231,70 @@ def validate_pid(profile_id: str) -> str:
     return profile_id
 
 
+def _mask_profile_secrets(profile: BrowserProfile) -> BrowserProfile:
+    """Mask sensitive notes fields for API responses (never leak plaintext).
+
+    Works on a deep copy: profile_manager returns live references, and
+    masked values must never leak back into persisted storage.
+    """
+    safe = profile.model_copy(deep=True)
+    if safe.google and safe.google.notes:
+        try:
+            notes = json.loads(safe.google.notes)
+        except Exception:
+            return safe
+        masked = decrypt_notes(notes)
+        safe.google.notes = json.dumps(masked)
+    return safe
+
+
+class SecretsModeRequest(BaseModel):
+    """User-selected secrets storage mode. The choice is always the user's."""
+
+    mode: str
+    passphrase: str | None = None
+
+
+@app.get(
+    "/api/security/secrets-mode",
+    tags=["System"],
+    summary="Get the active secrets storage mode (plain / dpapi / passphrase)",
+)
+async def get_secrets_mode():
+    return {
+        "mode": get_current_mode(),
+        "available_modes": list(SECRETS_MODES),
+        "platform": os.name,
+        "notes": (
+            "The user selects the mode. 'plain' stores secrets readable; "
+            "'dpapi' (Windows-only) encrypts per Windows user; 'passphrase' "
+            "encrypts with the user's own passphrase (lost passphrase = lost data). "
+            "The passphrase is never persisted."
+        ),
+    }
+
+
+@app.post(
+    "/api/security/secrets-mode",
+    tags=["System"],
+    summary="Switch the secrets storage mode (user decision)",
+)
+async def post_secrets_mode(req: SecretsModeRequest):
+    try:
+        effective = set_current_mode(req.mode, passphrase=req.passphrase)
+    except SecretsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await ws_manager.broadcast("secrets_mode_changed", {"mode": effective})
+    return {
+        "success": True,
+        "mode": effective,
+        "message": (
+            f"Secrets mode switched to '{effective}'. New imports will use it. "
+            "Existing envelopes stay decodable."
+        ),
+    }
+
+
 # Schemas for requests
 class LaunchRequest(BaseModel):
     custom_url: str | None = None
@@ -237,9 +329,9 @@ class AutopostBatchRequest(BaseModel):
     profile_ids: list[str]
     source_video_path: str | None = None
     platform: str = "youtube_shorts"
-    title_template: str = "{Best|Top|Working} {VPN|vpn} for {the RF|Russia} 2026 ⚡ #shorts"
-    description_template: str = "⚡ Download a fast VPN without limits: {tg}\n🎁 Discount promo code: {promo}\n\n#shorts #vpn #virtualprivatenetwork"
-    tg_channel: str = "@your_vpn_bot"
+    title_template: str = DEFAULT_AUTOPOST_TITLE_TEMPLATE
+    description_template: str = DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE
+    tg_channel: str = DEFAULT_AUTOPOST_TG_CHANNEL
     delay_seconds: int = 10
 
 
@@ -317,6 +409,7 @@ async def get_system_info():
 )
 async def list_profiles():
     profiles = profile_manager.list_profiles()
+    result = []
     for p in profiles:
         if browser_launcher.is_profile_running(p.id):
             p.status = ProfileStatus.RUNNING
@@ -324,7 +417,8 @@ async def list_profiles():
         else:
             p.status = ProfileStatus.STOPPED
             p.pid = None
-    return profiles
+        result.append(_mask_profile_secrets(p))
+    return result
 
 
 @app.get(
@@ -338,7 +432,7 @@ async def get_profile(profile_id: str):
     if browser_launcher.is_profile_running(profile.id):
         profile.status = ProfileStatus.RUNNING
         profile.pid = browser_launcher.profile_pids.get(profile.id)
-    return profile
+    return _mask_profile_secrets(profile)
 
 
 @app.post("/api/profiles", response_model=BrowserProfile, tags=["Profiles"], summary="Create new isolated profile")
@@ -767,6 +861,9 @@ async def bulk_import_cookies_endpoint(req: BulkCookieImportRequest):
 
 @app.post("/api/cookies/bulk-export", tags=["Cookies"], summary="Export all cookies as JSON or structured ZIP archive")
 async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
+    if req.profile_ids:
+        for pid in req.profile_ids:
+            validate_pid(pid)
     cookie_dict = profile_manager.export_all_cookies(req.profile_ids)
     if req.format.lower() == "zip":
         zip_bytes = create_cookies_zip_archive(cookie_dict, format_type="json")
@@ -871,6 +968,15 @@ async def run_scenario_endpoint(req: ScenarioRunRequest, background_tasks: Backg
     "/api/synchronizer/start", tags=["Synchronizer"], summary="Start Master-to-Workers action synchronizer session"
 )
 async def start_synchronizer_endpoint(req: SynchronizerStartRequest):
+    try:
+        validate_pid(req.master_profile_id)
+    except HTTPException as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid master_profile_id: {exc.detail}") from exc
+    for pid in req.worker_profile_ids:
+        try:
+            validate_pid(pid)
+        except HTTPException as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid worker_profile_id '{pid}': {exc.detail}") from exc
     session = synchronizer_mgr.start_session(
         master_profile_id=req.master_profile_id,
         worker_profile_ids=req.worker_profile_ids,
@@ -998,7 +1104,7 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
             status_code=400, detail="An upload batch is already running. Please wait or cancel it first."
         )
 
-    normalized_platform = req.platform if req.platform in {"youtube_shorts", "instagram_reels"} else "youtube_shorts"
+    normalized_platform = normalize_upload_platform(req.platform)
     src_path = Path(req.source_video_path) if req.source_video_path else (DATA_DIR / "videos" / "source.mp4")
     if not src_path.exists():
         # Create a dummy demo video if none exists so user can test immediately

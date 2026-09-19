@@ -455,6 +455,57 @@ class ProfileManager:
             self.save_profiles()
             return profile
 
+    def reencrypt_all_profile_secrets(self) -> int:
+        """Re-write every profile's notes in the currently active secrets mode.
+
+        Used after the user switches their storage mode (their decision, their
+        data). Profiles whose secrets cannot be decrypted (e.g. missing
+        passphrase) are skipped and left untouched.
+        """
+        import json as _json
+
+        from .secrets_store import encrypt_notes as _encrypt, reveal_notes
+
+        count = 0
+        with self._save_lock:
+            for profile in self.profiles.values():
+                notes_raw = profile.google.notes if profile.google else ""
+                if not notes_raw:
+                    continue
+                try:
+                    notes = _json.loads(notes_raw)
+                except Exception:
+                    continue
+                # Reveal full plaintext first: decrypt_notes(reveal=False) would
+                # hand us *masked* values and re-encrypting those would destroy
+                # the credentials. reveal_notes raises SecretsDecryptError when
+                # the passphrase/DPAPI material is unavailable — such profiles
+                # are skipped untouched.
+                try:
+                    plain = reveal_notes(notes)
+                except Exception:
+                    continue
+                # Skip profiles whose envelopes could not be opened (placeholder).
+                if any(
+                    isinstance(v, str) and v.startswith("<encrypted")
+                    for k, v in plain.items()
+                    if not k.startswith("_")
+                ):
+                    continue
+                # Encrypt from the revealed values; helper keys (_*) are
+                # stripped by encrypt_notes before persisting.
+                try:
+                    new_notes = _encrypt(
+                        {k: v for k, v in plain.items() if not k.startswith("_")}
+                    )
+                except Exception:
+                    continue
+                profile.google.notes = _json.dumps(new_notes)
+                count += 1
+            if count:
+                self.save_profiles()
+        return count
+
     def delete_profile(self, profile_id: str, delete_data: bool = True) -> bool:
         self._validate_id(profile_id)
         with self._save_lock:
@@ -681,6 +732,10 @@ class ProfileManager:
         target_ids = profile_ids or list(self.profiles.keys())
         out = {}
         for pid in target_ids:
+            try:
+                self._validate_id(pid)
+            except ValueError:
+                continue
             cookies = self.load_profile_cookies(pid)
             if cookies:
                 out[pid] = cookies

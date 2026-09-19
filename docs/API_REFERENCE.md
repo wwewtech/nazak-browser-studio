@@ -17,6 +17,7 @@
 7. [Proxy Diagnostics & Mobile IP Rotation (Proxies)](#-6-proxies--mobile-ip-rotation-proxies)
 8. [YouTube Shorts Stealth Autoposter & FFmpeg](#-7-youtube-shorts-autoposter--ffmpeg)
 9. [System Telemetry & WebSocket Events](#-8-system-telemetry--websocket-events)
+10. [Secrets Storage — User-Selectable Encryption Mode](#-9-secrets-storage--user-selectable-encryption-mode)
 
 ---
 
@@ -31,7 +32,7 @@ When Nazak Browser Studio is running in server mode (`python -m nazak.main --mod
 
 ## 🤖 1. Dolphin{anty} v1.0 Local Automation API
 
-Full compatibility with the standard Dolphin{anty} automation protocol. Your existing **Playwright**, **Puppeteer**, **Selenium**, or **BAS** scripts can connect to warmed-up profiles without any logic changes.
+Implements a compatible subset of the Dolphin{anty} v1.0 local automation protocol (start/stop/status + profile listing). Your existing **Playwright**, **Puppeteer**, **Selenium**, or **BAS** scripts can connect to warmed-up profiles; full protocol parity is not claimed.
 
 ### Endpoints:
 
@@ -299,7 +300,7 @@ Triggers the rotation URL of a dynamic mobile proxy (changing the external IP ad
 ```
 
 #### `POST /api/profiles/{id}/check`
-5-stage diagnostics: TCP Latency, Geolocation / ISP, Google Reachability Suite, storage check, WebRTC Isolation.
+4-stage diagnostics: TCP Latency, Geolocation / ISP, Google Reachability Suite, storage/Data Isolation check.
 
 ---
 
@@ -339,3 +340,69 @@ Other event types:
 - `cookies_bulk_imported`
 - `synchronizer_started`, `synchronizer_stopped`
 - `autopost_progress`, `autopost_complete`
+- `secrets_mode_changed`
+
+---
+
+## 🔐 9. Secrets Storage — User-Selectable Encryption Mode
+
+> **The choice is always yours.** Nazak never decides how your credentials are
+> stored — you do. The selected mode applies to newly imported accounts and is
+> persisted across restarts. **The passphrase itself is never written to disk.**
+
+### Modes
+
+| Mode | Description | Trade-off |
+| :--- | :--- | :--- |
+| `plain` *(default)* | Credentials stored as readable text | No protection; full transparency |
+| `dpapi` | Windows DPAPI encryption, bound to your Windows user account | Windows-only; data unreadable for other OS users |
+| `passphrase` | Fernet (AES128-CBC + HMAC, PBKDF2 480k iterations) with your own passphrase | Lost passphrase = lost data (by design, no backdoor) |
+
+### `GET /api/security/secrets-mode`
+
+```json
+{
+  "mode": "passphrase",
+  "available_modes": ["plain", "dpapi", "passphrase"],
+  "platform": "nt",
+  "notes": "The user selects the mode. ..."
+}
+```
+
+### `POST /api/security/secrets-mode`
+
+Switch the active mode (applies to new imports; existing envelopes stay decodable):
+
+```json
+// Request
+{ "mode": "passphrase", "passphrase": "your-own-secret" }
+
+// Response
+{ "success": true, "mode": "passphrase", "message": "Secrets mode switched to 'passphrase'. ..." }
+```
+
+- `dpapi` requested on a non-Windows host → `400 Bad Request`.
+- Unknown mode → `400 Bad Request`.
+- `passphrase` mode without a passphrase: new values are stored as plaintext
+  and a warning is logged (your workflow is never blocked).
+
+### Masking in profile responses
+
+`GET /api/profiles` and `GET /api/profiles/{id}` always return **masked** secret
+fields (`abc...xyz`), never plaintext, regardless of the active mode:
+
+```json
+{ "account_password": "pw1...6789", "totp_secret": "TOP...CRET" }
+```
+
+- Legacy plaintext notes stay fully readable/maskable — nothing breaks.
+- If decryption is impossible (e.g. no passphrase), the field shows
+  `<encrypted: unavailable passphrase>`.
+- The same choice is available in the desktop GUI:
+  **Settings → Secrets Storage (your choice)**.
+
+### WebSocket event
+
+```json
+{ "event": "secrets_mode_changed", "data": { "mode": "passphrase" } }
+```

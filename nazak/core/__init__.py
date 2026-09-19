@@ -18,6 +18,14 @@ from .process_monitor import ProcessMonitor
 from .profile_manager import ProfileManager
 from .proxy_checker import check_proxy_health
 from .synchronizer import SynchronizerManager, SynchronizerSession, tile_windows_win32
+from .upload_queue import (
+    NON_RETRYABLE_MANUAL_ACTION_ERRORS,
+    RETRYABLE_UPLOAD_ERRORS,
+    UploadJob,
+    UploadQueueManager,
+    is_manual_action_error,
+    normalize_upload_platform,
+)
 from .warmup_engine import (
     BUILTIN_SCENARIOS,
     WARMUP_NICHES,
@@ -30,6 +38,8 @@ from .warmup_engine import (
 
 __all__ = [
     "BUILTIN_SCENARIOS",
+    "NON_RETRYABLE_MANUAL_ACTION_ERRORS",
+    "RETRYABLE_UPLOAD_ERRORS",
     "WARMUP_NICHES",
     "BrowserLauncher",
     "ProcessMonitor",
@@ -38,6 +48,8 @@ __all__ = [
     "ScenarioStep",
     "SynchronizerManager",
     "SynchronizerSession",
+    "UploadJob",
+    "UploadQueueManager",
     "WarmupPlan",
     "WarmupScenario",
     "check_proxy_health",
@@ -47,6 +59,8 @@ __all__ = [
     "generate_random_fingerprint",
     "generate_warmup_urls",
     "get_free_port",
+    "is_manual_action_error",
+    "normalize_upload_platform",
     "parse_any_cookies",
     "parse_bulk_cookie_input",
     "parse_cookie_files_from_dir",
