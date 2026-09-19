@@ -71,9 +71,7 @@ def test_batch_upload_allocates_dynamic_port(mgr, platform, monkeypatch):
 
     import asyncio
 
-    asyncio.run(
-        mgr.run_batch_upload([prof.id], Path("v.mp4"), "t", "d", platform=platform or "youtube_shorts")
-    )
+    asyncio.run(mgr.run_batch_upload([prof.id], Path("v.mp4"), "t", "d", platform=platform or "youtube_shorts"))
     assert mgr.browser_launcher.launched_ports == [45678]
     assert mgr.browser_launcher.stopped == [prof.id]
 

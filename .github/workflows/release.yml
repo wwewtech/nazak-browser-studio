@@ -56,8 +56,10 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS.txt
             dist_installer/*.exe
+          fail_on_unmatched_files: false
+          overwrite: true
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

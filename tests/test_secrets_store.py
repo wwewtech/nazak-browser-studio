@@ -121,9 +121,7 @@ def test_reencrypt_never_persists_masked_or_helper_values(tmp_path):
         BrowserProfile(
             name="reenc",
             google=GoogleSettings(
-                notes=json.dumps(
-                    ss.encrypt_notes({"account_password": secret}, mode="passphrase", passphrase="k1")
-                )
+                notes=json.dumps(ss.encrypt_notes({"account_password": secret}, mode="passphrase", passphrase="k1"))
             ),
         )
     )

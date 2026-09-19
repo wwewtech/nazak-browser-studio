@@ -67,6 +67,7 @@ from ..models.proxy import ProxyConfig
 
 logger = logging.getLogger(__name__)
 
+
 # Active WebSocket connections
 class ConnectionManager:
     def __init__(self):
@@ -289,8 +290,7 @@ async def post_secrets_mode(req: SecretsModeRequest):
         "success": True,
         "mode": effective,
         "message": (
-            f"Secrets mode switched to '{effective}'. New imports will use it. "
-            "Existing envelopes stay decodable."
+            f"Secrets mode switched to '{effective}'. New imports will use it. Existing envelopes stay decodable."
         ),
     }
 

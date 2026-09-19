@@ -79,7 +79,7 @@ def mask_secret(value: str | None) -> str:
 
 def is_encrypted_value(value: str | None) -> bool:
     """True when the string is one of our versioned envelopes."""
-    return bool(value) and value.startswith(_ENVELOPE_PREFIX)
+    return value is not None and value.startswith(_ENVELOPE_PREFIX)
 
 
 def normalize_mode(mode: str | None) -> str:
@@ -88,13 +88,9 @@ def normalize_mode(mode: str | None) -> str:
         return DEFAULT_SECRETS_MODE
     mode = str(mode).strip().lower()
     if mode not in SECRETS_MODES:
-        raise SecretsError(
-            f"Unknown secrets mode {mode!r}. Available: {', '.join(SECRETS_MODES)}"
-        )
+        raise SecretsError(f"Unknown secrets mode {mode!r}. Available: {', '.join(SECRETS_MODES)}")
     if mode == "dpapi" and not IS_WINDOWS:
-        raise SecretsError(
-            "Mode 'dpapi' is Windows-only. Choose 'passphrase' or 'plain' on this platform."
-        )
+        raise SecretsError("Mode 'dpapi' is Windows-only. Choose 'passphrase' or 'plain' on this platform.")
     return mode
 
 
@@ -158,6 +154,7 @@ def load_mode() -> str:
 # Crypto backends
 # ---------------------------------------------------------------------------
 
+
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
     """PBKDF2-HMAC-SHA256 -> Fernet key (600k iterations, OWASP 2023)."""
     kdf = PBKDF2HMAC(
@@ -179,19 +176,14 @@ def _fernet_encrypt(raw: bytes, passphrase: str) -> str:
 
 def _fernet_decrypt(envelope: str, passphrase: str | None) -> bytes:
     if not passphrase:
-        raise SecretsDecryptError(
-            "Envelope requires the user passphrase (mode 'passphrase'), "
-            "but none was provided."
-        )
+        raise SecretsDecryptError("Envelope requires the user passphrase (mode 'passphrase'), but none was provided.")
     try:
         _prefix, _tag, salt_b64, token = envelope.split(":", 3)
         salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
         f = Fernet(_derive_key(passphrase, salt))
         return f.decrypt(token.encode("ascii"))
     except InvalidToken as exc:
-        raise SecretsDecryptError(
-            "Wrong passphrase or corrupted envelope (HMAC verification failed)."
-        ) from exc
+        raise SecretsDecryptError("Wrong passphrase or corrupted envelope (HMAC verification failed).") from exc
     except SecretsDecryptError:
         raise
     except Exception as exc:
@@ -199,6 +191,7 @@ def _fernet_decrypt(envelope: str, passphrase: str | None) -> bytes:
 
 
 # -- Windows DPAPI (user scope): no passphrase management needed ------------
+
 
 def _dpapi_protect(raw: bytes) -> str:
     import ctypes
@@ -214,7 +207,12 @@ def _dpapi_protect(raw: bytes) -> str:
     input_blob = _DATA_BLOB(len(raw), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
     output_blob = _DATA_BLOB()
     ok = ctypes.windll.crypt32.CryptProtectData(
-        ctypes.byref(input_blob), None, None, None, None, 0,
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        0,
         ctypes.byref(output_blob),
     )
     if not ok:
@@ -244,7 +242,12 @@ def _dpapi_unprotect(envelope: str) -> bytes:
     input_blob = _DATA_BLOB(len(raw), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
     output_blob = _DATA_BLOB()
     ok = ctypes.windll.crypt32.CryptUnprotectData(
-        ctypes.byref(input_blob), None, None, None, None, 0,
+        ctypes.byref(input_blob),
+        None,
+        None,
+        None,
+        None,
+        0,
         ctypes.byref(output_blob),
     )
     if not ok:
@@ -260,6 +263,7 @@ def _dpapi_unprotect(envelope: str) -> bytes:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def encrypt_secret(value: str, mode: str | None = None, passphrase: str | None = None) -> str:
     """Encrypt one field value into its self-describing envelope string.
@@ -278,10 +282,7 @@ def encrypt_secret(value: str, mode: str | None = None, passphrase: str | None =
     if effective_mode == "passphrase":
         eff_passphrase = passphrase if passphrase is not None else _in_memory_passphrase
         if not eff_passphrase:
-            logger.warning(
-                "Secrets: 'passphrase' mode is active but no passphrase is set; "
-                "storing value as plaintext."
-            )
+            logger.warning("Secrets: 'passphrase' mode is active but no passphrase is set; storing value as plaintext.")
             return value
         return _fernet_encrypt(value.encode("utf-8"), eff_passphrase)
     raise SecretsError(f"Unsupported mode: {effective_mode!r}")
@@ -295,7 +296,7 @@ def decrypt_secret(envelope: str, passphrase: str | None = None) -> str:
     if not envelope or not is_encrypted_value(envelope):
         return envelope
 
-    body = envelope[len(_ENVELOPE_PREFIX):]
+    body = envelope[len(_ENVELOPE_PREFIX) :]
     if body.startswith(_TAG_DPAPI + ":"):
         if not IS_WINDOWS:
             raise SecretsDecryptError("DPAPI envelope found on a non-Windows platform.")
@@ -309,6 +310,7 @@ def decrypt_secret(envelope: str, passphrase: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 # Notes-level helpers (whole notes-JSON processing)
 # ---------------------------------------------------------------------------
+
 
 def _strip_helper_keys(notes: dict) -> dict:
     """Remove transient helper keys (``_totp_raw`` etc.) before persist/encrypt."""

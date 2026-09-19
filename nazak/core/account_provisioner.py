@@ -214,7 +214,9 @@ class OAuthCallbackReceiver:
     issued for that session.
     """
 
-    def __init__(self, port: int = 3000, timeout: int = 120, expected_state: str | None = None, require_state: bool = True):
+    def __init__(
+        self, port: int = 3000, timeout: int = 120, expected_state: str | None = None, require_state: bool = True
+    ):
         self.port = port
         self.timeout = timeout
         self.expected_state = expected_state or (generate_oauth_state() if require_state else None)
@@ -248,6 +250,7 @@ class OAuthCallbackReceiver:
     def poll(self) -> bool:
         """Process at most one pending request. Returns True when the flow has finished."""
         self.start()
+        assert self._server is not None
         self._server.handle_request()
         return self.auth_code is not None or self.error is not None
 
@@ -262,6 +265,7 @@ class OAuthCallbackReceiver:
         start_time = time.time()
         try:
             while time.time() - start_time < self.timeout:
+                assert self._server is not None
                 self._server.handle_request()
                 if self.auth_code:
                     return self.auth_code

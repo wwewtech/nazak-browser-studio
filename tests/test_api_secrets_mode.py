@@ -43,9 +43,7 @@ def test_profile_notes_masked_in_api(client, tmp_path):
     from nazak.models.profile import BrowserProfile, GoogleSettings
 
     # Encrypt a note directly into the manager's in-memory store
-    notes = json.dumps(
-        ss.encrypt_notes({"account_password": "SuperSecret123"}, mode="passphrase", passphrase="k")
-    )
+    notes = json.dumps(ss.encrypt_notes({"account_password": "SuperSecret123"}, mode="passphrase", passphrase="k"))
     prof = BrowserProfile(name="sec_test", google=GoogleSettings(notes=notes))
     created = app_module_profile_manager().create_profile(prof)
     try:

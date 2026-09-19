@@ -487,17 +487,13 @@ class ProfileManager:
                     continue
                 # Skip profiles whose envelopes could not be opened (placeholder).
                 if any(
-                    isinstance(v, str) and v.startswith("<encrypted")
-                    for k, v in plain.items()
-                    if not k.startswith("_")
+                    isinstance(v, str) and v.startswith("<encrypted") for k, v in plain.items() if not k.startswith("_")
                 ):
                     continue
                 # Encrypt from the revealed values; helper keys (_*) are
                 # stripped by encrypt_notes before persisting.
                 try:
-                    new_notes = _encrypt(
-                        {k: v for k, v in plain.items() if not k.startswith("_")}
-                    )
+                    new_notes = _encrypt({k: v for k, v in plain.items() if not k.startswith("_")})
                 except Exception:
                     continue
                 profile.google.notes = _json.dumps(new_notes)
