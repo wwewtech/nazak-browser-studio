@@ -20,7 +20,7 @@
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
+  <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
 [📥 **Download Portable EXE (v1.7.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
@@ -147,13 +147,15 @@ with sync_playwright() as p:
 
 ---
 
-### 🛡️ 7. Total Hardware Shield
+### 🛡️ 7. Total Hardware Shield & Manifest V3 Stealth Architecture
+- **Chrome Manifest V3 Extension Engine**: Fully migrated to Manifest V3 (`manifest_version: 3`) with background service worker and declarative `webRequestAuthProvider` proxy authentication via `["asyncBlocking"]`.
 - **Real GPU Hardware Emulation**: *NVIDIA GeForce RTX 4090 / 4080 / 3080 / 3070*, *AMD Radeon RX 7900 XTX*, *Intel Iris Xe / UHD 770*.
 - **Sub-Perceptual Noise Injection**:
-  - `Canvas 2D Noise`: per-profile canvas hash uniqueization without visual artifacts.
-  - `AudioContext Noise`: protects against sound processing fingerprinting via `AudioBuffer`.
-  - `ClientRects Jitter`: protects against font-measurement fingerprinting.
-- **Automation Cloaking**: Complete elimination of `navigator.webdriver`, spoofing of `navigator.userAgentData` (User-Agent Client Hints), `deviceMemory` (8–64 GB), and `hardwareConcurrency` (4–32 cores) in the MAIN execution world.
+  - `Canvas 2D Noise`: Per-profile canvas hash uniqueization using a 4-channel LCG PRNG with `HTMLCanvasElement.prototype.toDataURL` synchronization to prevent visual artifacts.
+  - `AudioContext Noise`: Distributes sample jitter uniformly across the full `AudioBuffer` spectrum.
+  - `ClientRects Jitter`: Deterministic sub-pixel DOM jitter defeating font-measurement and layout geometry fingerprinting.
+- **Automation Cloaking**: W3C compliant `navigator.webdriver` prototype override (`get: () => false`) retaining standard property descriptors, spoofing of `navigator.userAgentData` (User-Agent Client Hints), `deviceMemory` (8–64 GB), and `hardwareConcurrency` (4–32 cores) in the `MAIN` execution world.
+- **DevToolsActivePort Handshake**: Zero-race CDP connection resolving ephemeral ports and GUID paths directly from Chromium runtime state, with automatic stale port lock cleanup.
 - **Port Scanning & Leak Protection**: Blocks anti-fraud port scanning targeting localhost `127.0.0.1`, enforces strict WebRTC policy `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`.
 
 ---
@@ -169,6 +171,15 @@ with sync_playwright() as p:
 - **Deep FFmpeg Video Uniqueization**: Strips metadata (`-map_metadata -1`), applies 3% micro-crop, 1080×1920 vertical conform, imperceptible frame noise, and subtle audio pitch/tempo shift.
 - **Spintax Title & Description Generator**: `{Best|Top} Shorts/Reels for {Tech|Crypto} ⚡ {tg} {promo}`.
 - **Unified Multi-Platform Pipeline**: Single workflow orchestrating autonomous uploads for both YouTube Shorts and Instagram Reels with humanized Bezier mouse trajectory motorics and character-by-character typing.
+
+---
+
+### 🔐 10. Secrets Storage — User-Selectable Encryption Mode
+- **User Choice Principle**: Credentials (passwords, TOTP seeds) storage mode is chosen exclusively by the user:
+  - `plain` — Readable plaintext (default, zero setup).
+  - `dpapi` — Windows DPAPI user-scoped hardware-bound encryption.
+  - `passphrase` — Fernet (AES-128-CBC + HMAC) with PBKDF2-HMAC-SHA256 (600,000 iterations). Passphrase is never stored on disk.
+- **Automatic Masking**: API and GUI endpoints always return masked tokens (`ab...yz`) to prevent accidental leaks.
 
 ---
 

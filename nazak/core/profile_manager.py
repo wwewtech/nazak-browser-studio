@@ -556,8 +556,19 @@ class ProfileManager:
         # Regenerate hardware seeds and UUIDs to ensure zero linkage with source profile
         if "fingerprint" in cloned_data and isinstance(cloned_data["fingerprint"], dict):
             fp = cloned_data["fingerprint"]
-            fp["canvas_noise_seed"] = random.randint(10000, 999999)
-            fp["audio_noise_seed"] = round(random.uniform(0.0000005, 0.000005), 8)
+            orig_canvas = source.fingerprint.canvas_noise_seed if source.fingerprint else None
+            orig_audio = source.fingerprint.audio_noise_seed if source.fingerprint else None
+
+            canvas_seed = random.randint(10000, 999999)
+            while orig_canvas is not None and canvas_seed == orig_canvas:
+                canvas_seed = random.randint(10000, 999999)
+            fp["canvas_noise_seed"] = canvas_seed
+
+            audio_seed = round(random.uniform(0.0000005, 0.000005), 8)
+            while orig_audio is not None and audio_seed == orig_audio:
+                audio_seed = round(random.uniform(0.0000005, 0.000005), 8)
+            fp["audio_noise_seed"] = audio_seed
+
             if "media_devices" in fp and isinstance(fp["media_devices"], list):
                 for dev in fp["media_devices"]:
                     if isinstance(dev, dict):
