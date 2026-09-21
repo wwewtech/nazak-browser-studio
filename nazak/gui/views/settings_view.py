@@ -143,7 +143,7 @@ class SettingsView(QWidget):
         lbl_t3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_about.addWidget(lbl_t3)
 
-        lbl_a1 = QLabel("Nazak Browser Studio v1.6.0", card_about)
+        lbl_a1 = QLabel("Nazak Browser Studio v1.7.0", card_about)
         lbl_a1.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
         l_about.addWidget(lbl_a1)
 

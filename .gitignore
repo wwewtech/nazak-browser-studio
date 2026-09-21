@@ -42,6 +42,8 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest_temp/
+.pytest_tmp/
 cover/
 
 # Environments
@@ -96,4 +98,5 @@ $RECYCLE.BIN/
 .agents/
 skills-lock.json
 PROBLEMS.TXT
+OMG.txt
 

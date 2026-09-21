@@ -4,7 +4,7 @@
 ; =====================================================================
 
 #define MyAppName "Nazak Browser Studio"
-#define MyAppVersion "1.6.0"
+#define MyAppVersion "1.7.0"
 #define MyAppPublisher "Nazak Technologies"
 #define MyAppURL "https://github.com/wwewtech/nazak-browser-studio"
 #define MyAppExeName "NazakBrowserStudio.exe"

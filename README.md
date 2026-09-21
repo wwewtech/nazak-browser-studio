@@ -16,14 +16,14 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-535%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-542%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.6.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.7.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -197,16 +197,17 @@ python -m nazak.main --mode web
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **535 automated tests**:
+The project is backed by a comprehensive regression and unit test suite comprising **542 automated tests**:
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 535 passed =============================
+============================ 542 passed =============================
 ```
 
+- `test_v170_fixes_verification.py` — Manifest V3 extension syntax, asyncBlocking proxy authentication, W3C WebDriver property descriptor retention, sub-pixel DOM jitter, LCG canvas noise with `toDataURL` patch, DevToolsActivePort connection handshake, safe symlink deletion.
 - `test_deep_security_and_traversal.py` — 25 security tests: `validate_pid` path traversal defense, Zip-Slip vulnerability protection, CORS localhost regex restrictions, CLI credential masking.
 - `test_secrets_store.py` — secrets-storage tests: all three user-selectable modes (plain / dpapi / passphrase), Fernet envelope roundtrip, wrong-passphrase rejection, PBKDF2 key derivation, DPAPI roundtrip, notes-level masking, legacy plaintext readability, mode persistence (passphrase never on disk).
 - `test_api_secrets_mode.py` — API tests: `GET/POST /api/security/secrets-mode`, mode switching validation, masked `account_password`/`totp_secret` in profile responses.
