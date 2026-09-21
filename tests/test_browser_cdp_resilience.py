@@ -163,14 +163,14 @@ def test_chrome_args_builder_empty_language_fallback(test_profile):
 
 
 def test_extension_generator_valid_manifest_json(test_profile):
-    """Extension manifest is valid JSON with Manifest V2 schema."""
+    """Extension manifest is valid JSON with Manifest V3 schema."""
     with tempfile.TemporaryDirectory() as td:
         ext_dir = Path(td)
         ext_path = generate_profile_extension(test_profile, ext_dir)
         manifest_file = Path(ext_path) / "manifest.json"
         assert manifest_file.exists()
         data = json.loads(manifest_file.read_text(encoding="utf-8"))
-        assert data["manifest_version"] == 2
+        assert data["manifest_version"] == 3
         assert "permissions" in data
         assert "content_scripts" in data
 
