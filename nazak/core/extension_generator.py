@@ -24,11 +24,12 @@ def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Pat
     proxy = profile.proxy
 
     manifest = {
-        "manifest_version": 2,
+        "manifest_version": 3,
         "name": f"Nazak Deep Shield - {profile.name}",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "description": "Total Hardware Isolation & Proxy Authentication Shield for Google Automation",
-        "permissions": ["webRequest", "webRequestBlocking", "<all_urls>", "tabs"],
+        "permissions": ["webRequest", "webRequestAuthProvider", "tabs"],
+        "host_permissions": ["<all_urls>"],
         "content_scripts": [
             {
                 "matches": ["<all_urls>"],
@@ -41,21 +42,21 @@ def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Pat
     }
 
     if proxy.has_auth():
-        manifest["background"] = {"scripts": ["background.js"], "persistent": True}
+        manifest["background"] = {"service_worker": "background.js"}
         u_json = json.dumps(proxy.username or "")
         p_json = json.dumps(proxy.password or "")
         bg_code = f"""
 chrome.webRequest.onAuthRequired.addListener(
-    function(details) {{
-        return {{
+    function(details, callback) {{
+        callback({{
             authCredentials: {{
                 username: {u_json},
                 password: {p_json}
             }}
-        }};
+        }});
     }},
     {{ urls: ["<all_urls>"] }},
-    ["blocking"]
+    ["asyncBlocking"]
 );
 """
         with open(ext_dir / "background.js", "w", encoding="utf-8") as f:
@@ -86,14 +87,13 @@ chrome.webRequest.onAuthRequired.addListener(
 (function() {{
     'use strict';
 
-    // 1. Remove Automation Artifacts & navigator.webdriver
+    // 1. Remove Automation Artifacts & navigator.webdriver (W3C WebDriver spec compliant)
     try {{
         Object.defineProperty(Navigator.prototype, 'webdriver', {{
-            get: () => undefined,
+            get: () => false,
             configurable: true,
             enumerable: true
         }});
-        delete Navigator.prototype.webdriver;
     }} catch(e) {{}}
 
     // 2. Hardware Resources Isolation (CPU & RAM)
@@ -284,13 +284,34 @@ chrome.webRequest.onAuthRequired.addListener(
     if ({str(fp.canvas_noise).lower()}) {{
         try {{
             const seed = {fp.canvas_noise_seed};
+            const mutateCanvasData = function(imageData) {{
+                if (!imageData || !imageData.data) return imageData;
+                let s = seed;
+                const len = imageData.data.length;
+                // Prime step 17 cycles through R, G, B, A channels uniformly
+                for (let i = (s % 7); i < len; i += 17) {{
+                    s = (s * 1664525 + 1013904223) >>> 0;
+                    const delta = ((s % 3) - 1);
+                    imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + delta));
+                }}
+                return imageData;
+            }};
             const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
             CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {{
                 const imageData = origGetImageData.apply(this, arguments);
-                for (let i = 0; i < imageData.data.length; i += 64) {{
-                    imageData.data[i] = (imageData.data[i] + (seed % 3) + 1) % 256;
-                }}
-                return imageData;
+                return mutateCanvasData(imageData);
+            }};
+            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function() {{
+                try {{
+                    const ctx = this.getContext('2d');
+                    if (ctx && this.width > 0 && this.height > 0) {{
+                        const img = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
+                        mutateCanvasData(img);
+                        ctx.putImageData(img, 0, 0);
+                    }}
+                }} catch(err) {{}}
+                return origToDataURL.apply(this, arguments);
             }};
         }} catch(e) {{}}
     }}
@@ -303,7 +324,11 @@ chrome.webRequest.onAuthRequired.addListener(
                 AudioBuffer.prototype.getChannelData = function(channel) {{
                     const data = origGetChannelData.apply(this, arguments);
                     if (data && data.length > 0) {{
-                        data[0] = data[0] + {fp.audio_noise_seed};
+                        const factor = {fp.audio_noise_seed} || 0.00001;
+                        const step = Math.max(1, Math.floor(data.length / 100));
+                        for (let i = 0; i < data.length; i += step) {{
+                            data[i] = data[i] + factor * (((i % 3) - 1) * 0.5);
+                        }}
                     }}
                     return data;
                 }};
@@ -314,10 +339,13 @@ chrome.webRequest.onAuthRequired.addListener(
     // 13. ClientRects & Font Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
         try {{
+            const seed = {fp.canvas_noise_seed};
+            const jitter = ((seed % 7) - 3) * 0.00005;
             const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
             Element.prototype.getBoundingClientRect = function() {{
                 const rect = origGetBoundingClientRect.apply(this, arguments);
-                return new DOMRect(rect.x, rect.y, rect.width, rect.height);
+                if (!rect || rect.width === 0 || rect.height === 0) return rect;
+                return new DOMRect(rect.x + jitter, rect.y + jitter, rect.width, rect.height);
             }};
         }} catch(e) {{}}
     }}

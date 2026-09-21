@@ -20,10 +20,10 @@ def test_extension_manifest_version_and_permissions(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     manifest = json.loads((ext_dir / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["manifest_version"] == 2
+    assert manifest["manifest_version"] == 3
     assert "webRequest" in manifest["permissions"]
-    assert "webRequestBlocking" in manifest["permissions"]
-    assert "<all_urls>" in manifest["permissions"]
+    assert "webRequestAuthProvider" in manifest["permissions"]
+    assert "<all_urls>" in manifest["host_permissions"]
     assert "tabs" in manifest["permissions"]
 
 
@@ -55,7 +55,7 @@ def test_extension_proxy_background_script_generated_when_auth(tmp_path):
 
     manifest = json.loads((ext_dir / "manifest.json").read_text(encoding="utf-8"))
     assert "background" in manifest
-    assert "background.js" in manifest["background"]["scripts"]
+    assert manifest["background"]["service_worker"] == "background.js"
 
     bg_js = (ext_dir / "background.js").read_text(encoding="utf-8")
     assert "chrome.webRequest.onAuthRequired" in bg_js
@@ -152,8 +152,9 @@ def test_stealth_js_overrides_navigator_webdriver_false(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
-    assert "Navigator.prototype.webdriver" in stealth
-    assert "delete Navigator.prototype.webdriver" in stealth
+    assert "Navigator.prototype, 'webdriver'" in stealth
+    assert "() => false" in stealth
+    assert "delete Navigator.prototype.webdriver" not in stealth
 
 
 def test_stealth_js_overrides_hardware_concurrency(tmp_path):

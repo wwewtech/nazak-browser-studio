@@ -3,6 +3,7 @@ Profile Manager: Persistence, Deep 10-Profile Auto-Provisioning, Total Disk Isol
 """
 
 import json
+import logging
 import os
 import random
 import re
@@ -25,6 +26,8 @@ from ..models.profile import (
     ProfileStatus,
 )
 from ..models.proxy import ProxyConfig, ProxyType
+
+logger = logging.getLogger(__name__)
 
 
 class ProfileManager:
@@ -511,13 +514,27 @@ class ProfileManager:
             self.save_profiles()
 
             if delete_data:
-                data_path = (self.profiles_dir / profile_id).resolve()
+                raw_path = self.profiles_dir / profile_id
+                if raw_path.is_symlink():
+                    try:
+                        raw_path.unlink()
+                    except Exception as exc:
+                        logger.warning("Failed to unlink symlink profile dir %s: %s", raw_path, exc)
+                    return True
+
+                data_path = raw_path.resolve()
                 if (
                     data_path.is_relative_to(self.profiles_dir.resolve())
                     and data_path != self.profiles_dir.resolve()
                     and data_path.exists()
                 ):
-                    shutil.rmtree(data_path, ignore_errors=True)
+                    try:
+                        shutil.rmtree(data_path)
+                    except Exception as exc:
+                        logger.warning(
+                            "Error deleting profile directory %s: %s; retrying with ignore_errors", data_path, exc
+                        )
+                        shutil.rmtree(data_path, ignore_errors=True)
             return True
 
     def clone_profile(self, source_id: str, new_name: str | None = None) -> BrowserProfile | None:
