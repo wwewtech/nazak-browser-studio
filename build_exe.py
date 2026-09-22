@@ -33,7 +33,17 @@ SPEC_FILE = ROOT_DIR / "NazakBrowserStudio.spec"
 APP_DIR = DIST_DIR / "NazakBrowserStudio"
 EXE_PATH = APP_DIR / "NazakBrowserStudio.exe"
 ISS_FILE = ROOT_DIR / "installer.iss"
-VERSION = "1.7.0"
+
+# Dynamically extract version from package
+try:
+    import re
+
+    _init_content = (ROOT_DIR / "nazak" / "__init__.py").read_text(encoding="utf-8")
+    _v_match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', _init_content)
+    VERSION = _v_match.group(1) if _v_match else "1.8.0"
+except Exception:
+    VERSION = "1.8.0"
+
 ZIP_NAME = f"NazakBrowserStudio-v{VERSION}-Windows-x64.zip"
 ZIP_PATH = DIST_DIR / ZIP_NAME
 
@@ -223,7 +233,7 @@ def build_inno_installer():
         return
 
     INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = [iscc_path, str(ISS_FILE)]
+    cmd = [iscc_path, f"/DMyAppVersion={VERSION}", str(ISS_FILE)]
     result = subprocess.run(cmd, cwd=str(ROOT_DIR))
 
     if result.returncode == 0:
