@@ -82,10 +82,61 @@ chrome.webRequest.onAuthRequired.addListener(
     webgl_vendor_json = json.dumps(fp.webgl_vendor)
     webgl_renderer_json = json.dumps(fp.webgl_renderer)
 
+    # Derive WebGPU vendor and architecture matching WebGL GPU Vendor & Model
+    gpu_vendor_lower = (fp.webgl_vendor + " " + fp.webgl_renderer).lower()
+    if "nvidia" in gpu_vendor_lower:
+        gpu_vendor_str = "nvidia"
+        gpu_arch_str = (
+            "ada lovelace" if "40" in fp.webgl_renderer else ("ampere" if "30" in fp.webgl_renderer else "turing")
+        )
+    elif "amd" in gpu_vendor_lower or "radeon" in gpu_vendor_lower:
+        gpu_vendor_str = "amd"
+        gpu_arch_str = "rdna 3" if "7900" in fp.webgl_renderer else "rdna 2"
+    elif "apple" in gpu_vendor_lower:
+        gpu_vendor_str = "apple"
+        gpu_arch_str = "apple"
+    else:
+        gpu_vendor_str = "intel"
+        gpu_arch_str = "alchemist" if "arc" in fp.webgl_renderer.lower() else "gen12"
+
+    webgpu_vendor_json = json.dumps(gpu_vendor_str)
+    webgpu_arch_json = json.dumps(gpu_arch_str)
+
     stealth_js = f"""
-// Nazak Total Hardware Shield v2.0
+// Nazak Total Hardware Shield v2.5 Enterprise Stealth
 (function() {{
     'use strict';
+
+    // 0. Native Function Cloaking Engine (Bypasses CreepJS & DataDome toString tampering detection)
+    const nativeToString = Function.prototype.toString;
+    const overriddenFns = new WeakSet();
+    const fnNames = new WeakMap();
+
+    function makeNative(fn, name) {{
+        if (typeof fn !== 'function') return fn;
+        overriddenFns.add(fn);
+        if (name) {{
+            fnNames.set(fn, name);
+            try {{
+                Object.defineProperty(fn, 'name', {{ value: name, configurable: true }});
+            }} catch(e) {{}}
+        }}
+        return fn;
+    }}
+
+    try {{
+        const toStringProxy = new Proxy(nativeToString, {{
+            apply(target, thisArg, argArray) {{
+                if (typeof thisArg === 'function' && overriddenFns.has(thisArg)) {{
+                    const name = fnNames.get(thisArg) || thisArg.name || '';
+                    return `function ${{name}}() {{ [native code] }}`;
+                }}
+                return Reflect.apply(target, thisArg, argArray);
+            }}
+        }});
+        Function.prototype.toString = toStringProxy;
+        makeNative(Function.prototype.toString, 'toString');
+    }} catch(e) {{}}
 
     // 1. Remove Automation Artifacts & navigator.webdriver (W3C WebDriver spec compliant)
     try {{
@@ -94,32 +145,34 @@ chrome.webRequest.onAuthRequired.addListener(
             configurable: true,
             enumerable: true
         }});
+        const wdDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
+        if (wdDesc && wdDesc.get) makeNative(wdDesc.get, 'get webdriver');
     }} catch(e) {{}}
 
     // 2. Hardware Resources Isolation (CPU & RAM)
     try {{
         Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', {{
-            get: () => {fp.hardware_concurrency},
+            get: makeNative(() => {fp.hardware_concurrency}, 'get hardwareConcurrency'),
             configurable: true,
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'deviceMemory', {{
-            get: () => {fp.device_memory},
+            get: makeNative(() => {fp.device_memory}, 'get deviceMemory'),
             configurable: true,
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'platform', {{
-            get: () => {platform_json},
+            get: makeNative(() => {platform_json}, 'get platform'),
             configurable: true,
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'maxTouchPoints', {{
-            get: () => {fp.max_touch_points},
+            get: makeNative(() => {fp.max_touch_points}, 'get maxTouchPoints'),
             configurable: true,
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'vendor', {{
-            get: () => {vendor_json},
+            get: makeNative(() => {vendor_json}, 'get vendor'),
             configurable: true,
             enumerable: true
         }});
@@ -132,7 +185,7 @@ chrome.webRequest.onAuthRequired.addListener(
             brands: brandsData,
             mobile: {str(fp.mobile).lower()},
             platform: {platform_json},
-            getHighEntropyValues: function(hints) {{
+            getHighEntropyValues: makeNative(function(hints) {{
                 return Promise.resolve({{
                     brands: brandsData,
                     mobile: {str(fp.mobile).lower()},
@@ -143,13 +196,13 @@ chrome.webRequest.onAuthRequired.addListener(
                     platformVersion: {platform_version_json},
                     uaFullVersion: {ua_full_version_json}
                 }});
-            }},
-            toJSON: function() {{
+            }}, 'getHighEntropyValues'),
+            toJSON: makeNative(function() {{
                 return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {platform_json} }};
-            }}
+            }}, 'toJSON')
         }};
         Object.defineProperty(Navigator.prototype, 'userAgentData', {{
-            get: () => uaData,
+            get: makeNative(() => uaData, 'get userAgentData'),
             configurable: true,
             enumerable: true
         }});
@@ -159,12 +212,12 @@ chrome.webRequest.onAuthRequired.addListener(
     try {{
         const langs = {languages_json};
         Object.defineProperty(Navigator.prototype, 'languages', {{
-            get: () => langs,
+            get: makeNative(() => langs, 'get languages'),
             configurable: true,
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'language', {{
-            get: () => langs[0] || "en-US",
+            get: makeNative(() => langs[0] || "en-US", 'get language'),
             configurable: true,
             enumerable: true
         }});
@@ -172,13 +225,13 @@ chrome.webRequest.onAuthRequired.addListener(
 
     // 5. Monitor & Screen Metrics Shield
     try {{
-        Object.defineProperty(Screen.prototype, 'width', {{ get: () => {fp.screen_width} }});
-        Object.defineProperty(Screen.prototype, 'height', {{ get: () => {fp.screen_height} }});
-        Object.defineProperty(Screen.prototype, 'availWidth', {{ get: () => {fp.screen_avail_width} }});
-        Object.defineProperty(Screen.prototype, 'availHeight', {{ get: () => {fp.screen_avail_height} }});
-        Object.defineProperty(Screen.prototype, 'colorDepth', {{ get: () => {fp.color_depth} }});
-        Object.defineProperty(Screen.prototype, 'pixelDepth', {{ get: () => {fp.pixel_depth} }});
-        Object.defineProperty(Window.prototype, 'devicePixelRatio', {{ get: () => {fp.device_pixel_ratio} }});
+        Object.defineProperty(Screen.prototype, 'width', {{ get: makeNative(() => {fp.screen_width}, 'get width'), configurable: true, enumerable: true }});
+        Object.defineProperty(Screen.prototype, 'height', {{ get: makeNative(() => {fp.screen_height}, 'get height'), configurable: true, enumerable: true }});
+        Object.defineProperty(Screen.prototype, 'availWidth', {{ get: makeNative(() => {fp.screen_avail_width}, 'get availWidth'), configurable: true, enumerable: true }});
+        Object.defineProperty(Screen.prototype, 'availHeight', {{ get: makeNative(() => {fp.screen_avail_height}, 'get availHeight'), configurable: true, enumerable: true }});
+        Object.defineProperty(Screen.prototype, 'colorDepth', {{ get: makeNative(() => {fp.color_depth}, 'get colorDepth'), configurable: true, enumerable: true }});
+        Object.defineProperty(Screen.prototype, 'pixelDepth', {{ get: makeNative(() => {fp.pixel_depth}, 'get pixelDepth'), configurable: true, enumerable: true }});
+        Object.defineProperty(Window.prototype, 'devicePixelRatio', {{ get: makeNative(() => {fp.device_pixel_ratio}, 'get devicePixelRatio'), configurable: true, enumerable: true }});
     }} catch(e) {{}}
 
     // 6. Timezone & Locale Formatting
@@ -187,15 +240,15 @@ chrome.webRequest.onAuthRequired.addListener(
         const targetOffset = {fp.timezone_offset};
 
         const origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
-        Intl.DateTimeFormat.prototype.resolvedOptions = function() {{
+        Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {{
             const res = origResolvedOptions.apply(this, arguments);
             res.timeZone = targetTimezone;
             return res;
-        }};
+        }}, 'resolvedOptions');
 
-        Date.prototype.getTimezoneOffset = function() {{
+        Date.prototype.getTimezoneOffset = makeNative(function() {{
             return targetOffset;
-        }};
+        }}, 'getTimezoneOffset');
     }} catch(e) {{}}
 
     // 7. WebGL & GPU Hardware Spoofing (Shields actual host graphics card)
@@ -210,22 +263,53 @@ chrome.webRequest.onAuthRequired.addListener(
         const hookWebGL = function(proto) {{
             if (!proto) return;
             const origGetParam = proto.getParameter;
-            proto.getParameter = function(param) {{
+            proto.getParameter = makeNative(function(param) {{
                 if (param in webglParams) return webglParams[param];
                 if (param === 3386) return new Int32Array({json.dumps(fp.max_viewport_dims)});
                 return origGetParam.apply(this, arguments);
-            }};
+            }}, 'getParameter');
         }};
 
         if (window.WebGLRenderingContext) hookWebGL(WebGLRenderingContext.prototype);
         if (window.WebGL2RenderingContext) hookWebGL(WebGL2RenderingContext.prototype);
     }} catch(e) {{}}
 
-    // 8. Media Devices Shield (Mocks Webcams, Microphones, Audio Outputs)
+    // 8. WebGPU Hardware Emulation (Aligns with WebGL GPU Vendor & Model)
+    try {{
+        if (navigator.gpu && navigator.gpu.requestAdapter) {{
+            const origRequestAdapter = navigator.gpu.requestAdapter;
+            const spoofedGpuInfo = {{
+                vendor: {webgpu_vendor_json},
+                architecture: {webgpu_arch_json},
+                device: {webgl_renderer_json},
+                description: {webgl_renderer_json}
+            }};
+            navigator.gpu.requestAdapter = makeNative(function() {{
+                return origRequestAdapter.apply(this, arguments).then(adapter => {{
+                    if (!adapter) return adapter;
+                    if (adapter.requestAdapterInfo) {{
+                        adapter.requestAdapterInfo = makeNative(function() {{
+                            return Promise.resolve(spoofedGpuInfo);
+                        }}, 'requestAdapterInfo');
+                    }}
+                    try {{
+                        Object.defineProperty(adapter, 'info', {{
+                            get: makeNative(() => spoofedGpuInfo, 'get info'),
+                            configurable: true,
+                            enumerable: true
+                        }});
+                    }} catch(e) {{}}
+                    return adapter;
+                }});
+            }}, 'requestAdapter');
+        }}
+    }} catch(e) {{}}
+
+    // 9. Media Devices Shield (Mocks Webcams, Microphones, Audio Outputs)
     try {{
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {{
             const spoofedDevices = {media_devs_json};
-            navigator.mediaDevices.enumerateDevices = function() {{
+            navigator.mediaDevices.enumerateDevices = makeNative(function() {{
                 return Promise.resolve(spoofedDevices.map((d, i) => ({{
                     deviceId: d.device_id || ("dev_" + i),
                     kind: d.kind,
@@ -233,28 +317,28 @@ chrome.webRequest.onAuthRequired.addListener(
                     groupId: d.group_id || ("grp_" + i),
                     toJSON: function() {{ return this; }}
                 }})));
-            }};
+            }}, 'enumerateDevices');
         }}
     }} catch(e) {{}}
 
-    // 9. Battery API Shield
+    // 10. Battery API Shield
     try {{
         if (navigator.getBattery) {{
             const batData = {battery_json};
-            navigator.getBattery = function() {{
+            navigator.getBattery = makeNative(function() {{
                 return Promise.resolve({{
                     charging: batData.charging,
                     chargingTime: batData.charging_time,
                     dischargingTime: batData.discharging_time,
                     level: batData.level,
-                    addEventListener: function() {{}},
-                    removeEventListener: function() {{}}
+                    addEventListener: makeNative(function() {{}}, 'addEventListener'),
+                    removeEventListener: makeNative(function() {{}}, 'removeEventListener')
                 }});
-            }};
+            }}, 'getBattery');
         }}
     }} catch(e) {{}}
 
-    // 10. Geolocation API Shield
+    // 11. Geolocation API Shield
     try {{
         const geoConf = {geo_json};
         if (navigator.geolocation && geoConf.latitude && geoConf.longitude) {{
@@ -270,17 +354,87 @@ chrome.webRequest.onAuthRequired.addListener(
                 }},
                 timestamp: Date.now()
             }};
-            navigator.geolocation.getCurrentPosition = function(success, error, options) {{
+            navigator.geolocation.getCurrentPosition = makeNative(function(success, error, options) {{
                 if (typeof success === 'function') success(spoofedPos);
-            }};
-            navigator.geolocation.watchPosition = function(success, error, options) {{
+            }}, 'getCurrentPosition');
+            navigator.geolocation.watchPosition = makeNative(function(success, error, options) {{
                 if (typeof success === 'function') success(spoofedPos);
                 return 1;
-            }};
+            }}, 'watchPosition');
         }}
     }} catch(e) {{}}
 
-    // 11. Subtle Canvas 2D Noise (Deterministic per-profile seed)
+    // 10.1 Local Font Spoofing & queryLocalFonts
+    try {{
+        const osPlatform = {platform_json}.toLowerCase();
+        let fontList = [];
+        if (osPlatform.includes('win')) {{
+            fontList = [
+                {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
+                {{ family: "Calibri", fullName: "Calibri", postscriptName: "Calibri", style: "Regular" }},
+                {{ family: "Cambria", fullName: "Cambria", postscriptName: "Cambria", style: "Regular" }},
+                {{ family: "Consolas", fullName: "Consolas", postscriptName: "Consolas", style: "Regular" }},
+                {{ family: "Segoe UI", fullName: "Segoe UI", postscriptName: "SegoeUI", style: "Regular" }},
+                {{ family: "Segoe UI Variable", fullName: "Segoe UI Variable", postscriptName: "SegoeUIVariable", style: "Regular" }},
+                {{ family: "Tahoma", fullName: "Tahoma", postscriptName: "Tahoma", style: "Regular" }},
+                {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }},
+                {{ family: "Verdana", fullName: "Verdana", postscriptName: "Verdana", style: "Regular" }}
+            ];
+        }} else if (osPlatform.includes('mac')) {{
+            fontList = [
+                {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
+                {{ family: "Helvetica", fullName: "Helvetica", postscriptName: "Helvetica", style: "Regular" }},
+                {{ family: "Helvetica Neue", fullName: "Helvetica Neue", postscriptName: "HelveticaNeue", style: "Regular" }},
+                {{ family: "San Francisco", fullName: "System Font", postscriptName: "SFProText-Regular", style: "Regular" }},
+                {{ family: "Monaco", fullName: "Monaco", postscriptName: "Monaco", style: "Regular" }},
+                {{ family: "Menlo", fullName: "Menlo", postscriptName: "Menlo-Regular", style: "Regular" }},
+                {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }}
+            ];
+        }} else {{
+            fontList = [
+                {{ family: "DejaVu Sans", fullName: "DejaVu Sans", postscriptName: "DejaVuSans", style: "Regular" }},
+                {{ family: "Ubuntu", fullName: "Ubuntu", postscriptName: "Ubuntu", style: "Regular" }},
+                {{ family: "Liberation Sans", fullName: "Liberation Sans", postscriptName: "LiberationSans", style: "Regular" }}
+            ];
+        }}
+
+        if ('queryLocalFonts' in window) {{
+            window.queryLocalFonts = makeNative(function() {{
+                return Promise.resolve(fontList);
+            }}, 'queryLocalFonts');
+        }}
+    }} catch(e) {{}}
+
+    // 10.2 SpeechSynthesis Voices Matching Platform
+    try {{
+        if (window.speechSynthesis && window.speechSynthesis.getVoices) {{
+            const osPlatform = {platform_json}.toLowerCase();
+            let voicesData = [];
+            if (osPlatform.includes('win')) {{
+                voicesData = [
+                    {{ name: "Microsoft David - English (United States)", lang: "en-US", default: true, localService: true, voiceURI: "Microsoft David - English (United States)" }},
+                    {{ name: "Microsoft Zira - English (United States)", lang: "en-US", default: false, localService: true, voiceURI: "Microsoft Zira - English (United States)" }},
+                    {{ name: "Microsoft Mark - English (United States)", lang: "en-US", default: false, localService: true, voiceURI: "Microsoft Mark - English (United States)" }}
+                ];
+            }} else if (osPlatform.includes('mac')) {{
+                voicesData = [
+                    {{ name: "Samantha", lang: "en-US", default: true, localService: true, voiceURI: "Samantha" }},
+                    {{ name: "Alex", lang: "en-US", default: false, localService: true, voiceURI: "Alex" }},
+                    {{ name: "Victoria", lang: "en-US", default: false, localService: true, voiceURI: "Victoria" }}
+                ];
+            }} else {{
+                voicesData = [
+                    {{ name: "English (America)+default", lang: "en-US", default: true, localService: true, voiceURI: "default" }}
+                ];
+            }}
+            const voiceObjects = voicesData.map(v => Object.assign(Object.create(window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype), v));
+            window.speechSynthesis.getVoices = makeNative(function() {{
+                return voiceObjects;
+            }}, 'getVoices');
+        }}
+    }} catch(e) {{}}
+
+    // 11. Subtle Canvas 2D Noise & OffscreenCanvas Noise (Noise Seed: {fp.canvas_noise_seed})
     if ({str(fp.canvas_noise).lower()}) {{
         try {{
             const seed = {fp.canvas_noise_seed};
@@ -288,7 +442,6 @@ chrome.webRequest.onAuthRequired.addListener(
                 if (!imageData || !imageData.data) return imageData;
                 let s = seed;
                 const len = imageData.data.length;
-                // Prime step 17 cycles through R, G, B, A channels uniformly
                 for (let i = (s % 7); i < len; i += 17) {{
                     s = (s * 1664525 + 1013904223) >>> 0;
                     const delta = ((s % 3) - 1);
@@ -296,13 +449,23 @@ chrome.webRequest.onAuthRequired.addListener(
                 }}
                 return imageData;
             }};
+
             const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-            CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {{
+            CanvasRenderingContext2D.prototype.getImageData = makeNative(function(sx, sy, sw, sh) {{
                 const imageData = origGetImageData.apply(this, arguments);
                 return mutateCanvasData(imageData);
-            }};
+            }}, 'getImageData');
+
+            if (window.OffscreenCanvasRenderingContext2D) {{
+                const origOffscreenGetImageData = OffscreenCanvasRenderingContext2D.prototype.getImageData;
+                OffscreenCanvasRenderingContext2D.prototype.getImageData = makeNative(function() {{
+                    const img = origOffscreenGetImageData.apply(this, arguments);
+                    return mutateCanvasData(img);
+                }}, 'getImageData');
+            }}
+
             const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function() {{
+            HTMLCanvasElement.prototype.toDataURL = makeNative(function() {{
                 try {{
                     const ctx = this.getContext('2d');
                     if (ctx && this.width > 0 && this.height > 0) {{
@@ -312,64 +475,138 @@ chrome.webRequest.onAuthRequired.addListener(
                     }}
                 }} catch(err) {{}}
                 return origToDataURL.apply(this, arguments);
-            }};
+            }}, 'toDataURL');
+
+            if (HTMLCanvasElement.prototype.toBlob) {{
+                const origToBlob = HTMLCanvasElement.prototype.toBlob;
+                HTMLCanvasElement.prototype.toBlob = makeNative(function(callback, type, quality) {{
+                    try {{
+                        const ctx = this.getContext('2d');
+                        if (ctx && this.width > 0 && this.height > 0) {{
+                            const img = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
+                            mutateCanvasData(img);
+                            ctx.putImageData(img, 0, 0);
+                        }}
+                    }} catch(err) {{}}
+                    return origToBlob.apply(this, arguments);
+                }}, 'toBlob');
+            }}
         }} catch(e) {{}}
     }}
 
-    // 12. AudioContext Fingerprint Noise
+    // 12. AudioContext Fingerprint Noise & OfflineAudioContext
     if ({str(fp.audio_noise).lower()}) {{
         try {{
+            const factor = {fp.audio_noise_seed} || 0.00001;
+            const applyAudioNoise = function(buffer) {{
+                if (!buffer || !buffer.getChannelData) return buffer;
+                for (let c = 0; c < buffer.numberOfChannels; c++) {{
+                    const data = buffer.getChannelData(c);
+                    if (data && data.length > 0) {{
+                        const step = Math.max(1, Math.floor(data.length / 100));
+                        for (let i = 0; i < data.length; i += step) {{
+                            data[i] = data[i] + factor * (((i % 3) - 1) * 0.5);
+                        }}
+                    }}
+                }}
+                return buffer;
+            }};
+
             if (window.AudioBuffer) {{
                 const origGetChannelData = AudioBuffer.prototype.getChannelData;
-                AudioBuffer.prototype.getChannelData = function(channel) {{
+                AudioBuffer.prototype.getChannelData = makeNative(function(channel) {{
                     const data = origGetChannelData.apply(this, arguments);
                     if (data && data.length > 0) {{
-                        const factor = {fp.audio_noise_seed} || 0.00001;
                         const step = Math.max(1, Math.floor(data.length / 100));
                         for (let i = 0; i < data.length; i += step) {{
                             data[i] = data[i] + factor * (((i % 3) - 1) * 0.5);
                         }}
                     }}
                     return data;
-                }};
+                }}, 'getChannelData');
+            }}
+
+            if (window.OfflineAudioContext) {{
+                const origStartRendering = OfflineAudioContext.prototype.startRendering;
+                OfflineAudioContext.prototype.startRendering = makeNative(function() {{
+                    return origStartRendering.apply(this, arguments).then(renderedBuffer => {{
+                        return applyAudioNoise(renderedBuffer);
+                    }});
+                }}, 'startRendering');
             }}
         }} catch(e) {{}}
     }}
 
-    // 13. ClientRects & Font Jitter (Sub-pixel noise)
+    // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
         try {{
             const seed = {fp.canvas_noise_seed};
             const jitter = ((seed % 7) - 3) * 0.00005;
             const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-            Element.prototype.getBoundingClientRect = function() {{
+            Element.prototype.getBoundingClientRect = makeNative(function() {{
                 const rect = origGetBoundingClientRect.apply(this, arguments);
                 if (!rect || rect.width === 0 || rect.height === 0) return rect;
                 return new DOMRect(rect.x + jitter, rect.y + jitter, rect.width, rect.height);
-            }};
+            }}, 'getBoundingClientRect');
+
+            const fontJitter = ((seed % 5) - 2) * 0.0001;
+            const origMeasureText = CanvasRenderingContext2D.prototype.measureText;
+            CanvasRenderingContext2D.prototype.measureText = makeNative(function(text) {{
+                const metrics = origMeasureText.apply(this, arguments);
+                if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {{
+                    try {{
+                        Object.defineProperty(metrics, 'width', {{
+                            value: metrics.width + fontJitter,
+                            configurable: true,
+                            enumerable: true
+                        }});
+                    }} catch(err) {{}}
+                }}
+                return metrics;
+            }}, 'measureText');
         }} catch(e) {{}}
     }}
 
-    // 14. Port Scan & Localhost Protection
+    // 17. Port Scan & Localhost Protection
     if ({str(fp.block_port_scanning).lower()}) {{
         try {{
             const origFetch = window.fetch;
-            window.fetch = function(url, options) {{
+            window.fetch = makeNative(function(url, options) {{
                 if (typeof url === 'string' && (url.includes('127.0.0.1') || url.includes('localhost')) && !url.includes(':8899')) {{
                     return Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'));
                 }}
                 return origFetch.apply(this, arguments);
-            }};
+            }}, 'fetch');
         }} catch(e) {{}}
     }}
 
-    // 15. WebRTC Local IP Shield
+    // 18. WebRTC Local IP Leak & Candidate Sanitizer
     try {{
         if (window.RTCPeerConnection) {{
-            const origCreateOffer = RTCPeerConnection.prototype.createOffer;
-            RTCPeerConnection.prototype.createOffer = function(options) {{
-                return origCreateOffer.apply(this, arguments);
+            const sanitizeSdp = function(sdp) {{
+                if (!sdp || typeof sdp !== 'string') return sdp;
+                return sdp
+                    .replace(/a=candidate:.*?\\s+(10\\.\\d+|192\\.168\\.\\d+|172\\.(1[6-9]|2\\d|3[01])\\.\\d+)\\.\\d+\\s+.*?\\r\\n/g, '')
+                    .replace(/a=candidate:.*?\\s+([a-f0-9]{{1,4}}:){{7}}[a-f0-9]{{1,4}}\\s+.*?\\r\\n/gi, '');
             }};
+
+            const origCreateOffer = RTCPeerConnection.prototype.createOffer;
+            RTCPeerConnection.prototype.createOffer = makeNative(function(options) {{
+                return origCreateOffer.apply(this, arguments).then(offer => {{
+                    if (offer && offer.sdp) {{
+                        offer.sdp = sanitizeSdp(offer.sdp);
+                    }}
+                    return offer;
+                }});
+            }}, 'createOffer');
+
+            const origSetLocalDescription = RTCPeerConnection.prototype.setLocalDescription;
+            RTCPeerConnection.prototype.setLocalDescription = makeNative(function(desc) {{
+                if (desc && desc.sdp) {{
+                    desc.sdp = sanitizeSdp(desc.sdp);
+                }}
+                return origSetLocalDescription.apply(this, arguments);
+            }}, 'setLocalDescription');
         }}
     }} catch(e) {{}}
 

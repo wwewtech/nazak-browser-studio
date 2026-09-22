@@ -580,6 +580,18 @@ class ProfileManager:
         self.save_profiles()
         return cloned_profile
 
+    def seed_profile_history(self, profile_id: str, entries_count: int = 25) -> int:
+        """Seeds authentic browsing history into the profile's Chromium user data directory."""
+        self._validate_id(profile_id)
+        prof = self.get_profile(profile_id)
+        if not prof:
+            return 0
+        user_data_path = self.profiles_dir / profile_id
+        user_data_path.mkdir(parents=True, exist_ok=True)
+        from .history_seeder import seed_chrome_history
+
+        return seed_chrome_history(user_data_path, entries_count=entries_count)
+
     def get_profile_disk_size_bytes(self, profile_id: str) -> int:
         try:
             self._validate_id(profile_id)

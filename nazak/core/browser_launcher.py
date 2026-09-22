@@ -3,6 +3,7 @@ Chrome Browser Process Launcher with Total Host Isolation & Flag Engineering.
 """
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -127,6 +128,8 @@ class BrowserLauncher:
 
         primary_lang = fp.language.split(",")[0].strip() if fp.language else "en-US"
         args.append(f"--lang={primary_lang}")
+        if fp.timezone:
+            args.append(f"--time-zone-for-testing={fp.timezone}")
         if cdp_port:
             args.append(f"--remote-debugging-port={cdp_port}")
 
@@ -173,6 +176,11 @@ class BrowserLauncher:
                 "stdin": subprocess.DEVNULL,
                 "close_fds": (sys.platform != "win32"),
             }
+            env = os.environ.copy()
+            if profile.fingerprint and profile.fingerprint.timezone:
+                env["TZ"] = profile.fingerprint.timezone
+            popen_kwargs["env"] = env
+
             if sys.platform == "win32":
                 popen_kwargs["creationflags"] = 0x08000000 | subprocess.CREATE_NEW_PROCESS_GROUP
 

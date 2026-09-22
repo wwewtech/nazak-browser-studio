@@ -226,6 +226,7 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 | `POST` | `/api/profiles/mass-generate` | 1-Click mass profile generator (1–100+ farm) with Round-Robin proxies |
 | `GET` | `/api/profiles/{id}/bundle/export` | Export complete profile as portable `.nazak` zip archive |
 | `POST` | `/api/profiles/{id}/clear-cache` | Purge browser cache and temporary shader data |
+| `POST` | `/api/profiles/{id}/seed-history` | Seed organic Chromium browsing history (SQLite) across the past 14 days (`?entries_count=25`) |
 
 ---
 

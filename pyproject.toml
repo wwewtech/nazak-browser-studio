@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nazak-browser-studio"
-version = "1.7.0"
+version = "1.8.0"
 description = "Next-Generation Hardware-Isolated Anti-Detect Browser, Local CDP Automation REST API & YouTube Shorts Autoposter"
 readme = "README.md"
 requires-python = ">=3.10"

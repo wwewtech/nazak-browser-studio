@@ -186,7 +186,7 @@ tags_metadata = [
 app = FastAPI(
     title="Nazak Browser Studio API",
     description="Professional Multi-Profile Anti-Detect Browser Launcher with Strict Proxy & Google Automation Isolation",
-    version="1.7.0",
+    version="1.8.0",
     openapi_tags=tags_metadata,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -758,6 +758,20 @@ async def clear_cache(profile_id: str):
         )
     ok = profile_manager.clear_profile_cache(profile_id)
     return {"success": ok, "message": "Cache cleared successfully"}
+
+
+@app.post(
+    "/api/profiles/{profile_id}/seed-history",
+    tags=["Profiles"],
+    summary="Seed authentic Chromium browsing history records into profile",
+)
+async def seed_profile_history_endpoint(profile_id: str, entries_count: int = Query(25, ge=5, le=100)):
+    validate_pid(profile_id)
+    prof = profile_manager.get_profile(profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    inserted = profile_manager.seed_profile_history(profile_id, entries_count=entries_count)
+    return {"success": True, "profile_id": profile_id, "seeded_entries": inserted}
 
 
 @app.post(

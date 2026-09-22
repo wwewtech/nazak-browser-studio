@@ -22,9 +22,11 @@ from qfluentwidgets import (
     setTheme,
 )
 
+from ... import __version__
 from ...config import DATA_DIR, PROFILES_DIR, PROFILES_FILE
 from ...core import secrets_store
 from ...core.browser_launcher import find_chrome_executable
+from ...core.profile_manager import ProfileManager
 
 
 class SettingsView(QWidget):
@@ -146,7 +148,7 @@ class SettingsView(QWidget):
         lbl_t3.setStyleSheet("color: #ffffff; font-weight: 700; font-size: 13px;")
         l_about.addWidget(lbl_t3)
 
-        lbl_a1 = QLabel("Nazak Browser Studio v1.7.0", card_about)
+        lbl_a1 = QLabel(f"Nazak Browser Studio v{__version__}", card_about)
         lbl_a1.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
         l_about.addWidget(lbl_a1)
 
@@ -200,7 +202,5 @@ class SettingsView(QWidget):
 
     def _reencrypt_profile_secrets(self) -> int:
         """Re-write existing profile notes in the newly selected mode."""
-        from ...core.profile_manager import ProfileManager
-
         pm = ProfileManager(PROFILES_FILE, PROFILES_DIR)
         return pm.reencrypt_all_profile_secrets()
