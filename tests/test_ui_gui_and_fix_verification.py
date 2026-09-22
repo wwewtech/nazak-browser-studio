@@ -125,3 +125,17 @@ def test_clear_profile_cache_handles_both_default_and_root(temp_profile_manager)
     ok = pm.clear_profile_cache(p.id)
     assert ok is True
     assert not cache_dir.exists()
+
+
+def test_settings_view_reencrypt_profile_secrets_import_and_execution(temp_profile_manager, monkeypatch):
+    """SettingsView._reencrypt_profile_secrets successfully imports ProfileManager and executes without ModuleNotFoundError."""
+    import nazak.gui.views.settings_view as sv_mod
+    from nazak.gui.views.settings_view import SettingsView
+
+    pm, p_dir = temp_profile_manager
+    monkeypatch.setattr(sv_mod, "PROFILES_FILE", pm.profiles_file)
+    monkeypatch.setattr(sv_mod, "PROFILES_DIR", p_dir)
+
+    view = SettingsView.__new__(SettingsView)
+    reencrypted = view._reencrypt_profile_secrets()
+    assert isinstance(reencrypted, int)

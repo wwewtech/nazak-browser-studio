@@ -3,7 +3,10 @@ Fluent Application Settings View.
 Fluent Iconography & Zero-Emoji Architecture.
 """
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
@@ -178,6 +181,7 @@ class SettingsView(QWidget):
         try:
             reencrypted = self._reencrypt_profile_secrets()
         except Exception:
+            logger.exception("Failed to re-encrypt profile secrets on mode switch")
             reencrypted = 0
         if effective == "plain":
             InfoBar.warning(
@@ -196,7 +200,7 @@ class SettingsView(QWidget):
 
     def _reencrypt_profile_secrets(self) -> int:
         """Re-write existing profile notes in the newly selected mode."""
-        from ..core.profile_manager import ProfileManager
+        from ...core.profile_manager import ProfileManager
 
         pm = ProfileManager(PROFILES_FILE, PROFILES_DIR)
         return pm.reencrypt_all_profile_secrets()

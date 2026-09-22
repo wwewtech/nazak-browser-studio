@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-542%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-543%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -208,14 +208,14 @@ python -m nazak.main --mode web
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **542 automated tests**:
+The project is backed by a comprehensive regression and unit test suite comprising **543 automated tests**:
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 542 passed =============================
+============================ 543 passed =============================
 ```
 
 - `test_v170_fixes_verification.py` — Manifest V3 extension syntax, asyncBlocking proxy authentication, W3C WebDriver property descriptor retention, sub-pixel DOM jitter, LCG canvas noise with `toDataURL` patch, DevToolsActivePort connection handshake, safe symlink deletion.
