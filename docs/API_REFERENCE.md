@@ -228,6 +228,24 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 | `POST` | `/api/profiles/{id}/clear-cache` | Purge browser cache and temporary shader data |
 | `POST` | `/api/profiles/{id}/seed-history` | Seed organic Chromium browsing history (SQLite) across the past 14 days (`?entries_count=25`) |
 
+### Key Endpoints:
+
+#### `POST /api/profiles/{id}/seed-history`
+Seeds authentic Chromium browsing history records into the profile's SQLite database (`<user_data_dir>/Default/History`). Injects realistic visit timestamps across the past 14 days using WebKit epoch microseconds (`(unix_epoch + 11644473600) * 1,000,000`) and natural dwell times across high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon) to defeat empty-profile bot detection (Google Antifraud, Cloudflare Turnstile, DataDome).
+
+- **Path Parameters**:
+  - `id` (string, required): Profile identifier.
+- **Query Parameters**:
+  - `entries_count` (integer, default: `25`, min: `5`, max: `100`): Number of history entries to seed.
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "profile_id": "prof_01",
+  "seeded_entries": 25
+}
+```
+
 ---
 
 ## 🍪 3. Cookie Management (Cookies)
@@ -432,9 +450,17 @@ In all API endpoints (`GET /api/profiles`, `GET /api/profiles/{id}`), sensitive 
 - **Declarative Proxy Authentication**: Uses `webRequestAuthProvider` permission with `chrome.webRequest.onAuthRequired.addListener(..., ["asyncBlocking"])`.
 - **`MAIN` World Execution**: Stealth scripts inject at `document_start` inside the DOM's main execution context.
 
-### Fingerprint Spoofing Fidelity:
-- **`navigator.webdriver`**: Defined via prototype getter `get: () => false` with standard descriptor semantics, eliminating prototype deletion flags.
-- **DOM Sub-pixel Jitter**: `Element.prototype.getBoundingClientRect` introduces deterministic sub-pixel offsets to defeat font and layout fingerprinting.
-- **Canvas 2D Noise**: Linear Congruential Generator (LCG) perturbs all 4 RGBA channels with prime step 17, and synchronizes `HTMLCanvasElement.prototype.toDataURL`.
-- **AudioContext Noise**: Uniformly distributes sample jitter across the full `AudioBuffer` spectrum.
-- **CDP DevToolsActivePort Handshake**: Dynamically resolves bound port and ephemeral GUID, eliminating race conditions and stale socket fallbacks.
+### Fingerprint Spoofing Fidelity (Total Hardware Shield v2.5):
+- **Native Function Cloaking (`makeNative` / `toString` Proxy)**: All hooked functions, getters, and APIs (`Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver').get`, `queryLocalFonts`, `requestAdapter`, `getImageData`, `startRendering`) are wrapped via an isolated `Proxy` of `Function.prototype.toString`. Anti-fraud engines (CreepJS, DataDome, Cloudflare Turnstile) inspect `toString()` and receive authentic `function () { [native code] }` without prototype tampering flags.
+- **WebGPU Hardware Emulation (`navigator.gpu`)**: Intercepts `navigator.gpu.requestAdapter()` and synchronizes `adapter.requestAdapterInfo()` and `adapter.info` with the profile's WebGL vendor and architecture (NVIDIA Ada Lovelace RTX 4090/4080, Ampere RTX 3080/3070, Apple M-Series, AMD RDNA 3, Intel Alchemist).
+- **Local Font Spoofing (`queryLocalFonts`)**: Emulates the W3C Font Access API, returning authentic platform-specific font family records matching the spoofed OS (Windows: Segoe UI, Calibri, Consolas; macOS: San Francisco, Helvetica Neue; Linux: DejaVu Sans, Liberation Sans).
+- **SpeechSynthesis Platform Voices**: Overrides `speechSynthesis.getVoices()` to align system speech voices with the spoofed operating system and primary language locale.
+- **Sub-pixel Font Measurement Jitter (`measureText`)**: Injects deterministic micro-jitter into `CanvasRenderingContext2D.prototype.measureText` metrics, defeating font fingerprinting based on glyph geometry analysis.
+- **OffscreenCanvas & `toBlob` Multi-Channel Noise**: Linear Congruential Generator (LCG) perturbs all 4 RGBA channels with prime step 17 across standard 2D canvas, `OffscreenCanvasRenderingContext2D`, `HTMLCanvasElement.prototype.toDataURL`, and `HTMLCanvasElement.prototype.toBlob`.
+- **AudioContext & OfflineAudioContext Noise**: Distributes deterministic sample jitter across both live `AudioBuffer` and `OfflineAudioContext.prototype.startRendering` pipelines for 100% unique WebAudio hashes.
+- **WebRTC Candidate Sanitizer & Leak Protection**: Intercepts `createOffer` and `setLocalDescription` on `RTCPeerConnection` to strip private IPv4 candidates (RFC 1918: `10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
+- **Chromium V8 & C++ Timezone Synchronization**: Injects `--time-zone-for-testing={timezone}` flag and `TZ` process environment variable directly into the spawned Chromium subprocess, eliminating discrepancies between JavaScript `Intl` and Chromium C++ native time routines.
+- **Organic Profile History Seeder (SQLite)**: Populates authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic multi-visit frequencies across high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
+- **`navigator.webdriver`**: Defined via prototype getter `get: () => false` with standard descriptor semantics and native cloaking, eliminating prototype deletion flags.
+- **DOM Sub-pixel Jitter**: `Element.prototype.getBoundingClientRect` introduces deterministic sub-pixel offsets to defeat layout geometry fingerprinting.
+- **CDP DevToolsActivePort Handshake**: Dynamically resolves bound port and ephemeral GUID directly from Chromium runtime state, eliminating race conditions and stale socket fallbacks.

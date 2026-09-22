@@ -149,16 +149,26 @@ with sync_playwright() as p:
 
 ---
 
-### 🛡️ 7. Total Hardware Shield & Manifest V3 Stealth Architecture
-- **Chrome Manifest V3 Extension Engine**: Fully migrated to Manifest V3 (`manifest_version: 3`) with background service worker and declarative `webRequestAuthProvider` proxy authentication via `["asyncBlocking"]`.
-- **Real GPU Hardware Emulation**: *NVIDIA GeForce RTX 4090 / 4080 / 3080 / 3070*, *AMD Radeon RX 7900 XTX*, *Intel Iris Xe / UHD 770*.
-- **Sub-Perceptual Noise Injection**:
-  - `Canvas 2D Noise`: Per-profile canvas hash uniqueization using a 4-channel LCG PRNG with `HTMLCanvasElement.prototype.toDataURL` synchronization to prevent visual artifacts.
-  - `AudioContext Noise`: Distributes sample jitter uniformly across the full `AudioBuffer` spectrum.
-  - `ClientRects Jitter`: Deterministic sub-pixel DOM jitter defeating font-measurement and layout geometry fingerprinting.
-- **Automation Cloaking**: W3C compliant `navigator.webdriver` prototype override (`get: () => false`) retaining standard property descriptors, spoofing of `navigator.userAgentData` (User-Agent Client Hints), `deviceMemory` (8–64 GB), and `hardwareConcurrency` (4–32 cores) in the `MAIN` execution world.
+### 🛡️ 7. Total Hardware Shield v2.5 & Enterprise Stealth Architecture
+- **Native Function Cloaking (`makeNative` / `toString` Proxy)**: All hooked functions, getters, and prototype descriptors (including `navigator.webdriver` getter) are shielded through a proxy of `Function.prototype.toString`. Anti-fraud verification scripts (CreepJS, DataDome, Cloudflare Turnstile) receive pristine `function () { [native code] }` reflection strings without tampering signals.
+- **Hardware Emulation (WebGL & WebGPU)**:
+  - *WebGL*: UNMASKED_VENDOR and UNMASKED_RENDERER spoofing (*NVIDIA GeForce RTX 4090 / 4080 / 3080*, *AMD Radeon RX 7900 XTX*, *Apple M3 Max*, *Intel Arc A770*).
+  - *WebGPU*: Intercepts `navigator.gpu.requestAdapter()` to synchronize `requestAdapterInfo()` and `adapter.info` with the spoofed GPU vendor and architecture.
+- **Platform-Aligned Font & Speech Spoofing**:
+  - `queryLocalFonts`: Emulates the Font Access API with authentic OS font family lists (Windows: Segoe UI, Calibri; macOS: San Francisco, Helvetica; Linux: DejaVu Sans, Liberation).
+  - `speechSynthesis.getVoices`: Aligns synthesized system voices with spoofed platform and locale.
+- **Sub-Perceptual Deterministic Noise Injection**:
+  - `Canvas 2D & OffscreenCanvas Noise`: LCG pseudo-random perturbation across all 4 RGBA channels, fully synchronized across 2D contexts, `OffscreenCanvasRenderingContext2D`, `HTMLCanvasElement.prototype.toDataURL`, and `toBlob`.
+  - `WebAudio & OfflineAudioContext Noise`: Distributes deterministic jitter across live `AudioBuffer` and `OfflineAudioContext.prototype.startRendering` rendering pipelines.
+  - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter added to `CanvasRenderingContext2D.prototype.measureText` metrics and `Element.prototype.getBoundingClientRect`.
+- **Network & Runtime Leak Protection**:
+  - `WebRTC Candidate Sanitizer`: Automatically strips RFC 1918 private IPv4 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
+  - `Timezone Synchronization`: Propagates `--time-zone-for-testing={timezone}` and `TZ` environment variables directly into Chromium subprocesses, locking JavaScript `Intl` and C++ native routines into exact alignment.
+  - `Anti-Port Scanning Shield`: Blocks anti-fraud port scanning targeting localhost `127.0.0.1` while preserving local automation access.
+- **Organic Profile History Seeder (SQLite)**:
+  - Eliminates "empty bot profile" heuristics by injecting authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic visit frequencies on high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
+  - 1-click execution via REST API (`POST /api/profiles/{id}/seed-history?entries_count=25`).
 - **DevToolsActivePort Handshake**: Zero-race CDP connection resolving ephemeral ports and GUID paths directly from Chromium runtime state, with automatic stale port lock cleanup.
-- **Port Scanning & Leak Protection**: Blocks anti-fraud port scanning targeting localhost `127.0.0.1`, enforces strict WebRTC policy `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`.
 
 ---
 
