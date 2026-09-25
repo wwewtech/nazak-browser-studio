@@ -40,9 +40,9 @@ try:
 
     _init_content = (ROOT_DIR / "nazak" / "__init__.py").read_text(encoding="utf-8")
     _v_match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', _init_content)
-    VERSION = _v_match.group(1) if _v_match else "1.8.0"
+    VERSION = _v_match.group(1) if _v_match else "1.9.0"
 except Exception:
-    VERSION = "1.8.0"
+    VERSION = "1.9.0"
 
 ZIP_NAME = f"NazakBrowserStudio-v{VERSION}-Windows-x64.zip"
 ZIP_PATH = DIST_DIR / ZIP_NAME
