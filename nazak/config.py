@@ -24,6 +24,11 @@ else:
     WEB_DIR = BASE_DIR / "nazak" / "web"
 
 DATA_DIR = BASE_DIR / "data"
+# Overridable data root: test runs / portable installs set NAZAK_DATA_DIR before
+# importing this module so nothing ever mutates the production data folder.
+_env_data_dir = os.environ.get("NAZAK_DATA_DIR")
+if _env_data_dir:
+    DATA_DIR = Path(_env_data_dir).expanduser()
 PROFILES_DIR = DATA_DIR / "profiles"
 PROFILES_FILE = DATA_DIR / "profiles.json"
 EXTENSIONS_DIR = DATA_DIR / "extensions"

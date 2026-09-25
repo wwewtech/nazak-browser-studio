@@ -59,6 +59,53 @@ class TestHistorySeeder:
 
         conn.close()
 
+    def test_seed_chrome_history_unique_timestamps_and_valid_transitions(self, tmp_path):
+        """Audit fix P1-7 (A4): multiple visits to the same URL must NOT share
+        an identical visit_time, and transitions must match real Chromium enum values."""
+        from nazak.core.history_seeder import (
+            PAGE_TRANSITION_CHAIN_LINK,
+            PAGE_TRANSITION_CHAIN_TYPED,
+            PAGE_TRANSITION_LINK,
+            PAGE_TRANSITION_RELOAD,
+            PAGE_TRANSITION_TYPED,
+        )
+
+        VALID_TRANSITIONS = {
+            PAGE_TRANSITION_LINK,
+            PAGE_TRANSITION_TYPED,
+            PAGE_TRANSITION_RELOAD,
+            PAGE_TRANSITION_CHAIN_TYPED,
+            PAGE_TRANSITION_CHAIN_LINK,
+        }
+
+        user_data_dir = tmp_path / "user_data_quality"
+        seed_chrome_history(user_data_dir, entries_count=25)
+        db_path = user_data_dir / "Default" / "History"
+
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # 1. Transitions must all belong to the valid Chromium set
+        cursor.execute("SELECT DISTINCT transition FROM visits")
+        transitions_found = {row[0] for row in cursor.fetchall()}
+        assert transitions_found.issubset(VALID_TRANSITIONS), f"Unexpected transitions: {transitions_found}"
+
+        # 2. For URLs with visit_count > 1, their visits must have distinct timestamps
+        cursor.execute("""
+            SELECT url, COUNT(DISTINCT visit_time), COUNT(id)
+            FROM visits
+            GROUP BY url
+            HAVING COUNT(id) > 1
+        """)
+        multi_visit_rows = cursor.fetchall()
+        assert len(multi_visit_rows) > 0, "Seeder should generate some multi-visit URLs"
+        for url_id, distinct_times, total_visits in multi_visit_rows:
+            assert distinct_times == total_visits, (
+                f"URL {url_id} has {total_visits} visits but only {distinct_times} distinct timestamps"
+            )
+
+        conn.close()
+
     def test_seed_profile_history_manager(self, tmp_path):
         mgr = ProfileManager(profiles_file=tmp_path / "profiles.json", profiles_dir=tmp_path / "profiles")
         profile = BrowserProfile(id="p_hist_test", name="History Test")

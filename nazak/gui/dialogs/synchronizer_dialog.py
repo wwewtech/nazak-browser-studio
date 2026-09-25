@@ -50,6 +50,15 @@ class SynchronizerDialog(QDialog):
         lbl_desc.setStyleSheet("color: #a1a1aa; font-size: 12px;")
         main_layout.addWidget(lbl_desc)
 
+        lbl_note = QLabel(
+            "Gestures are captured in master pages over CDP and mirrored onto workers "
+            "with coordinate jitter and 20-80ms humanization. Requires running profiles (CDP sessions).",
+            self,
+        )
+        lbl_note.setStyleSheet("color: #a1a1aa; font-size: 12px;")
+        lbl_note.setWordWrap(True)
+        main_layout.addWidget(lbl_note)
+
         # 1. Master Profile Selection Card
         card_master = SimpleCardWidget(self)
         l_m = QVBoxLayout(card_master)
@@ -202,7 +211,8 @@ class SynchronizerDialog(QDialog):
             )
             InfoBar.info(
                 "Synchronization Created",
-                f"Session created for {len(workers)} worker profiles with Master ({master_id}). Background CDP input replication is under development.",
+                f"Session created for {len(workers)} worker profiles with Master ({master_id}). "
+                "Clicks, scrolls and typing in master pages are mirrored with humanization.",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )

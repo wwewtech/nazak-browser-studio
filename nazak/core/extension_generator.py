@@ -11,9 +11,29 @@ from pathlib import Path
 from ..models.profile import BrowserProfile
 
 
-def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Path) -> str | None:
+def _fingerprint_with_runtime_chrome_version(fp, chrome_version: str):
+    """Return a fingerprint copy whose UA/brands/app-version match the real Chrome build."""
+    from .cdp_injector import build_runtime_user_agent, build_user_agent_metadata
+
+    channels = build_user_agent_metadata(fp, chrome_version)
+    return fp.model_copy(
+        update={
+            "user_agent": build_runtime_user_agent(fp.user_agent, chrome_version),
+            "app_version": build_runtime_user_agent(fp.app_version, chrome_version),
+            "brands": channels["brands"],
+        }
+    )
+
+
+def generate_profile_extension(
+    profile: BrowserProfile, extensions_base_dir: Path, chrome_version: str | None = None
+) -> str | None:
     """
     Creates an unpacked Chrome extension for the profile with total hardware isolation and proxy auth.
+
+    When ``chrome_version`` is provided (the *real* installed Chrome build), the
+    generated stealth source is rebuilt with a matching UA / Client-Hints version
+    so the extension shields cannot contradict the runtime UA (audit fix P0-1).
     """
     ext_dir = extensions_base_dir / profile.id
     if ext_dir.exists():
@@ -21,6 +41,8 @@ def generate_profile_extension(profile: BrowserProfile, extensions_base_dir: Pat
     ext_dir.mkdir(parents=True, exist_ok=True)
 
     fp = profile.fingerprint
+    if chrome_version:
+        fp = _fingerprint_with_runtime_chrome_version(fp, chrome_version)
     proxy = profile.proxy
 
     manifest = {
@@ -104,6 +126,10 @@ chrome.webRequest.onAuthRequired.addListener(
 
     stealth_js = f"""
 // Nazak Total Hardware Shield v2.5 Enterprise Stealth
+if (window.__nazakShieldApplied) {{
+    // Already applied on this document (extension content script + CDP injector may both run).
+}} else {{
+window.__nazakShieldApplied = true;
 (function() {{
     'use strict';
 
@@ -611,6 +637,7 @@ chrome.webRequest.onAuthRequired.addListener(
     }} catch(e) {{}}
 
 }})();
+}}
 """
     with open(ext_dir / "stealth.js", "w", encoding="utf-8") as f:
         f.write(stealth_js.strip() + "\n")

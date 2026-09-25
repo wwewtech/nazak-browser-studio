@@ -28,7 +28,6 @@ RETRYABLE_UPLOAD_ERRORS = (
     "network",
     "session disconnected",
     "connection closed",
-    "not logged in",
 )
 
 # Errors that require human action — never worth a blind retry.
@@ -37,6 +36,9 @@ NON_RETRYABLE_MANUAL_ACTION_ERRORS = (
     "challenge",
     "verify",
     "verification",
+    # Audit fix P0-4: a signed-out session can only be fixed by a human login;
+    # retrying the same upload burned the retry budget and spammed the log.
+    "not logged in",
 )
 
 SUPPORTED_UPLOAD_PLATFORMS = ("youtube_shorts", "instagram_reels")

@@ -46,7 +46,8 @@ def test_instagram_session_lost_error_detection(message, expected):
         ("network timeout", True),
         ("session disconnected", True),
         ("connection closed", True),
-        ("not logged in", True),
+        # Audit fix P0-4: signed-out sessions need a human login, not a retry.
+        ("not logged in", False),
         ("profile not found", False),
         ("video file not found", False),
         ("launch failed", False),

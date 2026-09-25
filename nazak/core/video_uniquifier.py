@@ -78,12 +78,13 @@ class VideoUniquifier:
         out_path = self.output_dir / out_name
 
         if not self.ffmpeg_path:
-            # Fallback copy if ffmpeg is missing
-            try:
-                shutil.copy2(source_path, out_path)
-                return True, out_path, "FFmpeg not found; created direct file copy"
-            except Exception as e:
-                return False, None, f"Failed to copy file: {e}"
+            # Audit fix P0-4: a silent plain copy used to be reported as
+            # success=True, so the upload queue published non-uniquified videos.
+            return (
+                False,
+                None,
+                "FFmpeg not found on this system: install ffmpeg (winget install ffmpeg / apt install ffmpeg / brew install ffmpeg) to uniquify videos",
+            )
 
         # Generate unique parameters per profile
         crop_factor = round(random.uniform(0.96, 0.98), 3)  # 2-4% crop
@@ -138,19 +139,27 @@ class VideoUniquifier:
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 1000:
                 return True, out_path, None
-            else:
-                # Fallback to copy if encoding failed
-                shutil.copy2(source_path, out_path)
-                return True, out_path, f"FFmpeg warning: {res.stderr[:200]}"
+            # Audit fix P0-4: a failed encode previously fell back to a plain
+            # copy and still reported success — the queue then uploaded the
+            # original bytes. Fail loudly instead; drop any partial output.
+            out_path.unlink(missing_ok=True)
+            tail = (res.stderr or "")[-400:]
+            return False, None, f"FFmpeg failed (rc={res.returncode}): {tail}"
         except Exception as e:
-            shutil.copy2(source_path, out_path)
-            return True, out_path, f"FFmpeg execution error: {e}"
+            try:
+                out_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False, None, f"FFmpeg execution error: {e}"
 
     def batch_uniquify(
         self, source_path: Path, profile_ids: list[str]
     ) -> dict[str, tuple[bool, Path | None, str | None]]:
         """
-        Processes source video for multiple profiles concurrently.
+        Processes the source video for multiple profiles sequentially.
+
+        FFmpeg encoding is CPU-bound; runs are intentionally serialized to keep
+        measurable, predictable machine load (docstring used to claim otherwise).
         """
         results = {}
         for idx, pid in enumerate(profile_ids, start=1):

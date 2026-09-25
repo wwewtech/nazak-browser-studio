@@ -38,6 +38,7 @@ from ...core.warmup_engine import (
     generate_warmup_urls,
 )
 from ...models.profile import ProfileStatus
+from ..workers import WarmupScenarioWorker
 
 
 class WarmupView(QWidget):
@@ -45,6 +46,7 @@ class WarmupView(QWidget):
         super().__init__(parent)
         self.profile_manager = profile_manager
         self.browser_launcher = browser_launcher
+        self.worker = None
         self.setObjectName("warmup_view")
         self.init_ui()
 
@@ -169,23 +171,23 @@ class WarmupView(QWidget):
         l_tel.addWidget(lbl_w3)
 
         h_chips = QHBoxLayout()
-        lbl_c1 = QLabel("Action delay: 4.5s – 12.0s", card_telemetry)
-        lbl_c1.setStyleSheet(
+        self.lbl_chip_actions = QLabel("", card_telemetry)
+        self.lbl_chip_actions.setStyleSheet(
             "background: #22222a; color: #a1a1aa; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
-        h_chips.addWidget(lbl_c1)
+        h_chips.addWidget(self.lbl_chip_actions)
 
-        lbl_c2 = QLabel("Cookie persistence: Enabled", card_telemetry)
-        lbl_c2.setStyleSheet(
+        self.lbl_chip_nav = QLabel("", card_telemetry)
+        self.lbl_chip_nav.setStyleSheet(
             "background: #22222a; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
-        h_chips.addWidget(lbl_c2)
+        h_chips.addWidget(self.lbl_chip_nav)
 
-        lbl_c3 = QLabel("Trust Score increase: +18 points", card_telemetry)
-        lbl_c3.setStyleSheet(
+        self.lbl_chip_dwell = QLabel("", card_telemetry)
+        self.lbl_chip_dwell.setStyleSheet(
             "background: #22222a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px;"
         )
-        h_chips.addWidget(lbl_c3)
+        h_chips.addWidget(self.lbl_chip_dwell)
         h_chips.addStretch()
         l_tel.addLayout(h_chips)
         layout.addWidget(card_telemetry)
@@ -233,7 +235,21 @@ class WarmupView(QWidget):
             desc = step.description or str(step.params)
             self.table_steps.setItem(row, 2, QTableWidgetItem(desc))
 
+        self.lbl_chip_actions.setText(f"Steps: {len(selected_scenario.steps)} actions")
+        nav_count = sum(
+            1 for s in selected_scenario.steps if s.action in ("open_url", "google_search", "watch_youtube")
+        )
+        self.lbl_chip_nav.setText(f"Real navigations: {nav_count}")
+        min_sleep = sum(
+            float(s.params.get("duration_sec", 0)) for s in selected_scenario.steps if s.action == "human_scroll"
+        ) + sum(float(s.params.get("max_sec", 0)) for s in selected_scenario.steps if s.action == "dwell")
+        self.lbl_chip_dwell.setText(f"Min dwell/scroll: ~{int(min_sleep)}s")
+
     def on_launch_warmup(self):
+        if self.worker and self.worker.isRunning():
+            InfoBar.warning("Warning", "A warmup run is already in progress", parent=self, position=InfoBarPosition.TOP)
+            return
+
         pid = self.combo_profile.currentData()
         if not pid:
             InfoBar.warning("Warning", "Select a profile", parent=self, position=InfoBarPosition.TOP)
@@ -253,33 +269,75 @@ class WarmupView(QWidget):
         if not selected_scenario:
             selected_scenario = BUILTIN_SCENARIOS[0]
 
-        # Determine start URL from first step
-        start_url = "https://www.google.com"
-        for st in selected_scenario.steps:
-            if st.action == "open_url" and "url" in st.params:
-                start_url = st.params["url"]
-                break
-            elif st.action == "google_search" and "query" in st.params:
-                start_url = f"https://www.google.com/search?q={st.params['query'].replace(' ', '+')}&hl=en"
-                break
+        # Mark every step as queued, then let the worker run the full scenario
+        # with real CDP page actions (audit fix P0-3/C1).
+        self.update_scenario_preview()
+        for row in range(self.table_steps.rowCount()):
+            item = self.table_steps.item(row, 2)
+            if item:
+                item.setText(f"QUEUED — {item.text()[:80]}")
 
-        ok, proc_id, err = self.browser_launcher.launch(prof, custom_url=start_url)
-        if ok:
-            prof.status = ProfileStatus.RUNNING
-            prof.pid = proc_id
-            self.profile_manager.update_profile(prof)
+        self.btn_launch.setEnabled(False)
+        self.worker = WarmupScenarioWorker(self.profile_manager, self.browser_launcher, selected_scenario, pid)
+        self.worker.progress_signal.connect(self.on_warmup_progress)
+        self.worker.finished_signal.connect(self.on_warmup_finished)
+        self.worker.error_signal.connect(self.on_warmup_error)
+        self.worker.start()
+        InfoBar.success(
+            "Warmup started",
+            f"Running {len(selected_scenario.steps)} real browser steps on '{prof.name}'",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
+
+    def on_warmup_progress(self, profile_id: str, idx: int, total: int, desc: str):
+        if 1 <= idx <= self.table_steps.rowCount():
+            self.table_steps.setItem(idx - 1, 2, QTableWidgetItem(f"[{idx}/{total}] RUNNING — {desc}"))
+
+    def on_warmup_finished(self, result):
+        self.btn_launch.setEnabled(True)
+        self.worker = None
+        if result.get("canceled"):
+            InfoBar.info("Aborted", "Warmup session was aborted by the user", parent=self, position=InfoBarPosition.TOP)
+        elif result.get("success"):
             InfoBar.success(
-                "Scenario started",
-                f"Profile '{prof.name}' is running scenario '{selected_scenario.name}'",
+                "Scenario completed",
+                f"{result.get('completed_steps', 0)}/{result.get('total_steps', 0)} steps succeeded "
+                f"on '{result.get('profile_name', '')}'",
                 parent=self,
                 position=InfoBarPosition.TOP,
             )
         else:
+            failed = [r for r in result.get("results", []) if not r.get("success")]
             InfoBar.error(
-                "Launch error", err or "Could not launch the browser", parent=self, position=InfoBarPosition.TOP
+                "Scenario finished with failures",
+                f"{len(failed)} step(s) failed — check logs for details",
+                parent=self,
+                position=InfoBarPosition.TOP,
             )
+        self._mark_done_rows(result)
+
+    def _mark_done_rows(self, result):
+        rows = {r.get("step"): r.get("success") for r in result.get("results", []) if r.get("step")}
+        for row in range(self.table_steps.rowCount()):
+            ok = rows.get(row + 1)
+            if ok is True:
+                self.table_steps.setItem(row, 2, QTableWidgetItem("DONE"))
+            elif ok is False:
+                self.table_steps.setItem(row, 2, QTableWidgetItem("FAILED"))
+
+    def on_warmup_error(self, message: str):
+        self.btn_launch.setEnabled(True)
+        self.worker = None
+        InfoBar.error("Warmup error", message, parent=self, position=InfoBarPosition.TOP)
 
     def on_stop_warmup(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            InfoBar.info(
+                "Aborting", "Cancel requested — stopping the browser", parent=self, position=InfoBarPosition.TOP
+            )
+            return
         pid = self.combo_profile.currentData()
         if pid:
             self.browser_launcher.stop(pid)

@@ -23,6 +23,18 @@ def test_generate_mac_fingerprint():
     assert "Apple" in fp.webgl_vendor
 
 
+def test_generate_linux_fingerprint_never_uses_direct3d():
+    """Audit fix P1-6 (A1): Linux profiles must never produce Direct3D renderer strings."""
+    for _ in range(20):
+        fp = generate_random_fingerprint(os_type="linux")
+        assert fp.platform == "Linux x86_64"
+        assert "Linux" in fp.user_agent
+        assert "Direct3D" not in fp.webgl_renderer
+        assert "D3D11" not in fp.webgl_renderer
+        assert any(sig in fp.webgl_renderer for sig in ("OpenGL", "Mesa"))
+        assert fp.platform_version != "10.0.0"  # 10.0.0 is Windows-only
+
+
 def test_gpu_presets_integrity():
     assert len(GPU_PRESETS) >= 8
     for g in GPU_PRESETS:

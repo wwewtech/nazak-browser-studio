@@ -17,6 +17,31 @@ logger = logging.getLogger(__name__)
 
 WEBKIT_EPOCH_DELTA_SEC = 11644473600
 
+
+# Chromium PageTransition enum constants (ui/base/page_transition_types.h)
+# Base types (lower 8 bits):
+#   LINK   = 0 (followed a link)
+#   TYPED  = 1 (typed into omnibox)
+#   RELOAD = 8 (reloaded the page)
+# Qualifiers (upper bits) can be combined:
+#   CHAIN_START = 0x10000000 (268435456)
+#   CHAIN_END   = 0x20000000 (536870912)
+# Real typed visits typically have CHAIN_START | CHAIN_END | TYPED = 0x30000001 (805306369)
+# Real link visits: 0 (LINK) or CHAIN_START | CHAIN_END | LINK = 0x30000000 (805306368)
+PAGE_TRANSITION_LINK = 0
+PAGE_TRANSITION_TYPED = 1
+PAGE_TRANSITION_RELOAD = 8
+PAGE_TRANSITION_CHAIN_TYPED = 805306369  # 0x30000001: CHAIN_START | CHAIN_END | TYPED
+PAGE_TRANSITION_CHAIN_LINK = 805306368  # 0x30000000: CHAIN_START | CHAIN_END | LINK
+
+TRANSITION_POOL = [
+    PAGE_TRANSITION_CHAIN_LINK,
+    PAGE_TRANSITION_LINK,
+    PAGE_TRANSITION_CHAIN_TYPED,
+    PAGE_TRANSITION_TYPED,
+    PAGE_TRANSITION_RELOAD,
+]
+
 HIGH_TRUST_SITES = [
     ("https://www.google.com/", "Google", "search"),
     (
@@ -153,17 +178,44 @@ def seed_chrome_history(
                 )
                 url_id = cursor.lastrowid
 
-            # Insert visit events
-            for _ in range(visit_count):
-                visit_duration_microsec = random.randint(15, 240) * 1_000_000
-                transition = random.choice([805306368, 0, 1])  # TYPED, LINK, RELOAD
+            # Insert visit events with UNIQUE timestamps and realistic from_visit chaining
+            # Audit fix P1-7 (A4):
+            # (a) Previous code gave ALL visits to the same URL an IDENTICAL visit_time
+            # (b) transition used random.choice([805306368, 0, 1]) with comments claiming
+            #     "TYPED, LINK, RELOAD" — but RELOAD is 8 and 805306368 is CHAIN_LINK
+            # (c) from_visit was always hardcoded to 0 instead of chaining page visits
+            last_visit_id = 0
+            current_visit_sec = visit_sec
+            for visit_idx in range(visit_count):
+                visit_duration_sec = random.randint(15, 240)
+                visit_duration_microsec = visit_duration_sec * 1_000_000
+
+                # Spread multiple visits apart in time (between 2 hours and 3 days)
+                if visit_idx > 0:
+                    current_visit_sec += random.uniform(7200, 259200)
+                    dt_v = datetime.fromtimestamp(current_visit_sec, tz=timezone.utc)
+                    v_webkit_time = datetime_to_webkit_microsec(dt_v)
+                    from_visit_id = last_visit_id if random.random() < 0.6 else 0
+                    transition = random.choice(
+                        [PAGE_TRANSITION_LINK, PAGE_TRANSITION_CHAIN_LINK, PAGE_TRANSITION_RELOAD]
+                    )
+                else:
+                    v_webkit_time = webkit_time
+                    from_visit_id = 0
+                    transition = (
+                        PAGE_TRANSITION_CHAIN_TYPED
+                        if typed_count
+                        else random.choice([PAGE_TRANSITION_LINK, PAGE_TRANSITION_CHAIN_LINK])
+                    )
+
                 cursor.execute(
                     """
                     INSERT INTO visits (url, visit_time, from_visit, transition, visit_duration)
-                    VALUES (?, ?, 0, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (url_id, webkit_time, transition, visit_duration_microsec),
+                    (url_id, v_webkit_time, from_visit_id, transition, visit_duration_microsec),
                 )
+                last_visit_id = cursor.lastrowid
             inserted += 1
 
         conn.commit()

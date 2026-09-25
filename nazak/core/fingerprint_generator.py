@@ -110,6 +110,36 @@ GPU_PRESETS = [
         "ram": [16, 32],
         "os": ["mac"],
     },
+    # Audit fix P1-6 (A1): Linux GPU presets must use real Mesa / OpenGL strings.
+    # The previous code picked Windows Direct3D11 presets for Linux profiles,
+    # producing ANGLE (... Direct3D11 ...) — an impossible combination on Linux.
+    {
+        "vendor": "Google Inc. (NVIDIA Corporation)",
+        "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3080/PCIe/SSE2, OpenGL 4.5.0)",
+        "unmasked_vendor": "NVIDIA Corporation",
+        "unmasked_renderer": "NVIDIA GeForce RTX 3080/PCIe/SSE2",
+        "cores": [8, 12, 16],
+        "ram": [16, 32],
+        "os": ["linux"],
+    },
+    {
+        "vendor": "Google Inc. (AMD)",
+        "renderer": "ANGLE (AMD, AMD Radeon RX 6700 XT (radeonsi, navi22, LLVM 15.0.7, DRM 3.49), OpenGL 4.6)",
+        "unmasked_vendor": "AMD",
+        "unmasked_renderer": "AMD Radeon RX 6700 XT (radeonsi, navi22, LLVM 15.0.7, DRM 3.49)",
+        "cores": [8, 12, 16],
+        "ram": [16, 32],
+        "os": ["linux"],
+    },
+    {
+        "vendor": "Google Inc. (Intel)",
+        "renderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics 770 (ADL-S GT1), OpenGL 4.6)",
+        "unmasked_vendor": "Intel",
+        "unmasked_renderer": "Mesa Intel(R) UHD Graphics 770 (ADL-S GT1)",
+        "cores": [6, 8, 12],
+        "ram": [16, 32],
+        "os": ["linux"],
+    },
 ]
 
 # Realistic Screen Resolutions with standard aspect ratios
@@ -186,7 +216,7 @@ def generate_random_fingerprint(
     elif os_type == "linux":
         ua = random.choice(USER_AGENTS_LINUX)
         platform = "Linux x86_64"
-        avail_gpus = [g for g in GPU_PRESETS if "windows" in g["os"]]
+        avail_gpus = [g for g in GPU_PRESETS if "linux" in g["os"]]
     else:
         ua = random.choice(USER_AGENTS_WINDOWS)
         platform = "Win32"
@@ -244,7 +274,8 @@ def generate_random_fingerprint(
         platform=platform,
         app_version=f"5.0 ({platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{c_ver}.0.0.0 Safari/537.36",
         brands=brands,
-        platform_version="15.0.0" if os_type == "mac" else "10.0.0",
+        # Linux kernels report their version string via Client Hints, not "10.0.0"
+        platform_version="15.0.0" if os_type in ("mac", "macos") else ("6.8.0" if os_type == "linux" else "10.0.0"),
         screen_width=screen["width"],
         screen_height=screen["height"],
         screen_avail_width=screen["avail_w"],

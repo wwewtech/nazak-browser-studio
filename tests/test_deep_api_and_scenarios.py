@@ -5,6 +5,7 @@ Contains 25 comprehensive tests verifying H3, H8, H9, H10, and advanced edge cas
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from starlette.testclient import TestClient
 
 from nazak.api.server import SCENARIO_ALIASES, app as fastapi_app
@@ -234,6 +235,37 @@ def test_api_dolphin_stop_profile_endpoint():
         assert resp.json()["success"] is True
 
 
+def test_api_dolphin_list_masks_proxy_password():
+    """Audit fix P0-5: /v1.0/browser_profiles leaked the proxy password in plaintext."""
+    from nazak.models.profile import BrowserProfile
+    from nazak.models.proxy import ProxyConfig, ProxyType
+
+    client = TestClient(fastapi_app)
+    prof = BrowserProfile(
+        id="prof_mask",
+        name="Mask Test",
+        proxy=ProxyConfig(
+            type=ProxyType.HTTP,
+            host="198.51.100.24",
+            port=8080,
+            username="ads_user",
+            password="secret_password",
+        ),
+    )
+    with (
+        patch("nazak.api.server.profile_manager.list_profiles", return_value=[prof]),
+        patch("nazak.api.server.browser_launcher.is_profile_running", return_value=False),
+    ):
+        resp = client.get("/v1.0/browser_profiles")
+        assert resp.status_code == 200
+        proxy = resp.json()["data"][0]["proxy"]
+        assert proxy["password"] == "***"
+        assert "secret_password" not in resp.text
+        # host/port stay visible for automation consumers
+        assert proxy["host"] == "198.51.100.24"
+        assert proxy["port"] == 8080
+
+
 # ---------------------------------------------------------------------------
 # 21-25: Autopost uniquify, synchronizer, and spintax formatting
 # ---------------------------------------------------------------------------
@@ -257,14 +289,52 @@ def test_api_autopost_uniquify_dispatches_to_thread():
     assert "asyncio.to_thread" in source
 
 
-def test_synchronizer_mirror_navigation_httpx_timeout():
+def test_autopost_launch_without_source_requires_demo_flag():
+    """Audit fix P0-4: launch used to silently write a fake DEMO_MP4 blob."""
+    client = TestClient(fastapi_app)
+    with patch("nazak.api.server.upload_queue_mgr.is_running", False):
+        resp = client.post("/api/autopost/launch", json={"profile_ids": ["prof_01"]})
+    assert resp.status_code == 400
+    assert "source video" in resp.json()["detail"].lower()
+
+
+def test_autopost_launch_demo_generates_real_clip():
+    """demo=true must produce a REAL playable clip (ftyp box), not garbage bytes."""
+    from nazak.config import DATA_DIR
+    from nazak.core.video_uniquifier import find_ffmpeg
+
+    if not find_ffmpeg():
+        pytest.skip("ffmpeg not installed on this machine")
+    demo_path = DATA_DIR / "videos" / "source.mp4"
+    demo_path.unlink(missing_ok=True)
+
+    client = TestClient(fastapi_app)
+    with (
+        patch("nazak.api.server.upload_queue_mgr.is_running", False),
+        patch("nazak.api.server.upload_queue_mgr.run_batch_upload"),
+    ):
+        resp = client.post("/api/autopost/launch", json={"profile_ids": ["prof_01"], "demo": True})
+    assert resp.status_code == 200, resp.text
+    assert demo_path.exists()
+    assert demo_path.stat().st_size > 1000
+    # MP4 container signature — the old code wrote b"DEMO_MP4_HEADER" + zeros
+    assert demo_path.read_bytes()[4:8] == b"ftyp"
+
+
+def test_synchronizer_mirror_navigation_uses_real_cdp_navigation():
     import inspect
 
     from nazak.core.synchronizer import SynchronizerManager
 
     source = inspect.getsource(SynchronizerManager.mirror_navigation)
     assert "urllib.request.urlopen" not in source
-    assert "httpx.AsyncClient" in source
+    # Audit fix C2: navigation must really navigate worker pages (was: GET /json probe).
+    # The command is handed to the mirror-pump thread (single-threaded Playwright
+    # affinity), which executes _run_command -> _navigate_worker_sync -> page.goto.
+    assert "commands.put" in source
+    run_cmd = inspect.getsource(SynchronizerManager._run_command)
+    assert "_navigate_worker_sync" in run_cmd
+    assert ".goto(" in inspect.getsource(SynchronizerManager._navigate_worker_sync)
 
 
 def test_synchronizer_tile_active_windows_grid_math():

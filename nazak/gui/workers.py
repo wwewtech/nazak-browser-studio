@@ -13,9 +13,14 @@ from PyQt6.QtCore import QThread, pyqtSignal as Signal
 from ..core.proxy_checker import check_proxy_health
 from ..core.spintax import format_video_metadata
 from ..core.video_uniquifier import VideoUniquifier
+from ..core.warmup_engine import ScenarioExecutor, WarmupScenario
 from ..core.youtube_uploader import YouTubeUploader
 from ..models.health import HealthCheckResult
 from ..models.profile import BrowserProfile, ProfileStatus
+
+
+class _WarmupCanceled(Exception):
+    """Raised from the progress callback to abort a running warmup scenario."""
 
 
 class ProxyCheckWorker(QThread):
@@ -170,3 +175,52 @@ class AutopostBatchWorker(QThread):
         results = loop.run_until_complete(_run_autopost())
         loop.close()
         self.batch_finished_signal.emit(results)
+
+
+class WarmupScenarioWorker(QThread):
+    """Runs a warmup scenario with real CDP page actions (audit fix P0-3/C1)."""
+
+    progress_signal = Signal(str, int, int, str)  # profile_id, idx, total, description
+    finished_signal = Signal(object)  # scenario result dict
+    error_signal = Signal(str)  # error message
+
+    def __init__(self, profile_manager, browser_launcher, scenario: WarmupScenario, profile_id: str):
+        super().__init__()
+        self.profile_manager = profile_manager
+        self.browser_launcher = browser_launcher
+        self.scenario = scenario
+        self.profile_id = profile_id
+        self._is_canceled = False
+
+    def cancel(self):
+        # Cooperative cancel: stop the browser so in-flight CDP steps fail fast.
+        self._is_canceled = True
+        try:
+            self.browser_launcher.stop(self.profile_id)
+        except Exception:
+            pass
+
+    def run(self):
+        executor = ScenarioExecutor(self.browser_launcher, self.profile_manager)
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            def _on_progress(pid: str, idx: int, total: int, desc: str):
+                self.progress_signal.emit(pid, idx, total, desc)
+                if self._is_canceled:
+                    raise _WarmupCanceled()
+
+            result = loop.run_until_complete(
+                executor.run_scenario_on_profile(self.scenario, self.profile_id, progress_callback=_on_progress)
+            )
+            loop.close()
+            if self._is_canceled:
+                result["canceled"] = True
+            self.finished_signal.emit(result)
+        except _WarmupCanceled:
+            self.finished_signal.emit(
+                {"profile_id": self.profile_id, "success": False, "canceled": True, "error": "Canceled by user"}
+            )
+        except Exception as e:
+            self.error_signal.emit(str(e))

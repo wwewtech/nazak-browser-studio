@@ -255,8 +255,11 @@ def test_stealth_js_contains_valid_iife_syntax(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
+    # Double-apply guard (extension content script + CDP injector may both run):
+    # `if (window.__nazakShieldApplied) {} else { window.__nazakShieldApplied = true; (function(){...})(); }`
+    assert "window.__nazakShieldApplied" in stealth
     assert "(function() {" in stealth
-    assert stealth.strip().endswith("})();")
+    assert stealth.strip().endswith("})();\n}")
 
 
 # ---------------------------------------------------------------------------

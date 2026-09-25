@@ -217,21 +217,31 @@ class YouTubeUploader:
                 await done_btn.click()
                 await asyncio.sleep(5)
 
-                # 10. Extract published URL if visible
+                # 10. Extract the published URL: poll briefly — the info link
+                # can appear with a delay after the publish dialog closes.
                 video_url = None
-                try:
-                    url_elem = page.locator("a.ytcp-video-info, a.ytcp-video-metadata-info").first
-                    if await url_elem.is_visible():
-                        video_url = await url_elem.get_attribute("href")
-                except Exception:
-                    pass
+                for _ in range(10):  # up to ~20s
+                    try:
+                        url_elem = page.locator("a.ytcp-video-info, a.ytcp-video-metadata-info").first
+                        if await url_elem.is_visible():
+                            video_url = await url_elem.get_attribute("href")
+                            if video_url:
+                                break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2)
 
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
                 await browser.close()
 
-                await notify_progress(progress_callback, f"Successfully published! URL: {video_url or 'Published'}")
-
-                return True, video_url or "https://youtube.com/shorts", None
+                # Audit fix P0-4: no fabricated "https://youtube.com/shorts"
+                # fallback — the publish click succeeded, but reporting a made-up
+                # URL as the result misled every consumer of this method.
+                if video_url:
+                    await notify_progress(progress_callback, f"Successfully published! URL: {video_url}")
+                else:
+                    await notify_progress(progress_callback, "Published (URL not captured yet; check YouTube Studio)")
+                return True, video_url, None
 
             except Exception as e:
                 return False, None, f"YouTube upload error: {e!s}"

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -105,6 +106,8 @@ upload_queue_mgr = UploadQueueManager(profile_manager, browser_launcher, ws_mana
 video_uniquifier = VideoUniquifier()
 process_monitor = ProcessMonitor(profile_manager, browser_launcher, poll_interval=1.0)
 synchronizer_mgr = SynchronizerManager(browser_launcher)
+# Audit fix P0-2: route injector binding events (master gestures) into the mirror pump.
+browser_launcher.set_event_sink(synchronizer_mgr.submit_event)
 scenario_executor = ScenarioExecutor(browser_launcher, profile_manager)
 
 
@@ -232,6 +235,19 @@ def validate_pid(profile_id: str) -> str:
     return profile_id
 
 
+def _mask_proxy_for_api(proxy: ProxyConfig) -> dict:
+    """Proxy dict for external (Dolphin-parity) responses with the password masked.
+
+    Audit fix P0-5: the endpoint used to return ``proxy.model_dump()`` with the
+    plaintext password — documented in the README example, so every API consumer
+    saw the credentials. ``"***"`` communicates "set but hidden"; empty stays empty.
+    """
+    data = proxy.model_dump()
+    if data.get("password"):
+        data["password"] = "***"
+    return data
+
+
 def _mask_profile_secrets(profile: BrowserProfile) -> BrowserProfile:
     """Mask sensitive notes fields for API responses (never leak plaintext).
 
@@ -333,6 +349,9 @@ class AutopostBatchRequest(BaseModel):
     description_template: str = DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE
     tg_channel: str = DEFAULT_AUTOPOST_TG_CHANNEL
     delay_seconds: int = 10
+    # Audit fix P0-4: demo clips are generated ONLY on explicit request — the
+    # old code silently wrote a fake "DEMO_MP4_HEADER" blob and uploaded it.
+    demo: bool = False
 
 
 class UniquifyRequest(BaseModel):
@@ -553,7 +572,7 @@ async def dolphin_list_profiles():
                 "id": p.id,
                 "name": p.name,
                 "status": "running" if is_run else "stopped",
-                "proxy": p.proxy.model_dump(),
+                "proxy": _mask_proxy_for_api(p.proxy),
                 "automation": cdp_info,
                 "tags": p.google.tags,
             }
@@ -822,7 +841,12 @@ async def mass_generate_profiles_endpoint(req: MassGenerateRequest):
         notes=req.notes,
     )
     await ws_manager.broadcast("profiles_bulk_created", {"count": len(created)})
-    return {"success": True, "created_count": len(created), "profiles": [p.model_dump() for p in created]}
+    masked = []
+    for p in created:
+        item = _mask_profile_secrets(p).model_dump()
+        item["proxy"] = _mask_proxy_for_api(p.proxy)
+        masked.append(item)
+    return {"success": True, "created_count": len(created), "profiles": masked}
 
 
 @app.get(
@@ -1105,6 +1129,51 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
     return {"results": formatted, "count": len(results)}
 
 
+def _generate_demo_video(path: Path) -> tuple[bool, str | None]:
+    """Create a REAL, playable demo clip via ffmpeg (audit fix P0-4).
+
+    The old flow wrote ``b"DEMO_MP4_HEADER" + b"0" * 1024`` — garbage bytes that
+    no player (and no uniqueizer) can process — yet the autopost would happily
+    try to upload it. A generated clip keeps the one-click demo experience
+    honest: invalid media now fails loudly in the uniquifier.
+    """
+    from ..core.video_uniquifier import find_ffmpeg
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg is not installed: install ffmpeg or provide a real source_video_path"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    res = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=1080x1920:rate=30:duration=5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=5",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0 or not path.exists() or path.stat().st_size < 1000:
+        path.unlink(missing_ok=True)
+        return False, f"demo clip generation failed: {(res.stderr or '')[-200:]}"
+    return True, None
+
+
 @app.post(
     "/api/autopost/launch",
     tags=["YouTube Shorts Autoposter"],
@@ -1119,11 +1188,24 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
         )
 
     normalized_platform = normalize_upload_platform(req.platform)
-    src_path = Path(req.source_video_path) if req.source_video_path else (DATA_DIR / "videos" / "source.mp4")
-    if not src_path.exists():
-        # Create a dummy demo video if none exists so user can test immediately
-        src_path.parent.mkdir(parents=True, exist_ok=True)
-        src_path.write_bytes(b"DEMO_MP4_HEADER" + b"0" * 1024)
+    if req.source_video_path:
+        src_path = Path(req.source_video_path)
+        if not src_path.exists():
+            raise HTTPException(status_code=400, detail=f"Source video not found: {src_path}")
+    else:
+        src_path = DATA_DIR / "videos" / "source.mp4"
+        if not src_path.exists():
+            if not req.demo:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "No source video: provide source_video_path with a real video file, "
+                        "or pass demo=true to generate a short ffmpeg test clip."
+                    ),
+                )
+            ok, demo_err = _generate_demo_video(src_path)
+            if not ok:
+                raise HTTPException(status_code=400, detail=demo_err)
 
     background_tasks.add_task(
         upload_queue_mgr.run_batch_upload,

@@ -118,21 +118,58 @@ def test_video_uniquifier_batch_empty_list(tmp_path):
     assert results == {}
 
 
+def _make_dummy_mp4(path: Path) -> Path:
+    """Helper: writes a minimal file for non-transcoding tests, or a real lavfi clip if ffmpeg exists."""
+    import subprocess
+
+    ffmpeg = find_ffmpeg()
+    if ffmpeg:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=160x120:rate=10:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(path),
+            ],
+            capture_output=True,
+            check=False,
+        )
+    if not path.exists():
+        path.write_bytes(b"DUMMY_MP4_BYTES" * 10)
+    return path
+
+
 def test_video_uniquifier_batch_multiple_profiles(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path / "out")
-    src = tmp_path / "source.mp4"
-    src.write_bytes(b"MP4_DATA" * 100)
+    if not uniq.is_ffmpeg_available():
+        pytest.skip("ffmpeg not installed on this machine")
+    src = _make_dummy_mp4(tmp_path / "source.mp4")
     res = uniq.batch_uniquify(src, ["p1", "p2", "p3"])
     assert len(res) == 3
-    assert all(v[0] is True for v in res.values())
+    assert all(v[0] is True for v in res.values()), res
 
 
 def test_video_uniquifier_output_filenames(tmp_path):
     uniq = VideoUniquifier(output_dir=tmp_path)
-    src = tmp_path / "my_clip.mp4"
-    src.write_bytes(b"VIDEO_CLIP" * 20)
+    if not uniq.is_ffmpeg_available():
+        pytest.skip("ffmpeg not installed on this machine")
+    src = _make_dummy_mp4(tmp_path / "my_clip.mp4")
     ok, out_path, err = uniq.uniquify_video(src, "prof_07")
-    assert ok is True
+    assert ok is True, err
     assert "prof_07_unique_my_clip.mp4" in str(out_path)
 
 
