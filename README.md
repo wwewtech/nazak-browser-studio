@@ -23,7 +23,7 @@
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.8.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.9.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -163,7 +163,7 @@ with sync_playwright() as p:
   - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter added to `CanvasRenderingContext2D.prototype.measureText` metrics and `Element.prototype.getBoundingClientRect`.
 - **Network & Runtime Leak Protection**:
   - `WebRTC Candidate Sanitizer`: Automatically strips RFC 1918 private IPv4 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
-  - `Timezone Synchronization`: Propagates `--time-zone-for-testing={timezone}` and `TZ` environment variables directly into Chromium subprocesses, locking JavaScript `Intl` and C++ native routines into exact alignment.
+  - `Timezone Synchronization`: The CDP stealth injector applies `Emulation.setTimezoneOverride` to every page session (live-verified — JavaScript `Intl` stays locked to the profile timezone), backed by the `--time-zone-for-testing={timezone}` flag and the `TZ` process environment for C++-side alignment.
   - `Anti-Port Scanning Shield`: Blocks anti-fraud port scanning targeting localhost `127.0.0.1` while preserving local automation access.
 - **Organic Profile History Seeder (SQLite)**:
   - Eliminates "empty bot profile" heuristics by injecting authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic visit frequencies on high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
@@ -227,10 +227,12 @@ python -m pytest tests -q
 ```
 
 ```
-============================ 555 passed =============================
+============================ 596 passed, 2 deselected =============================
 ```
 
-- `test_advanced_stealth_and_seeder.py` — WebGPU hardware emulation, native function `makeNative`/`toString` Proxy cloaking, local font spoofing (`queryLocalFonts`), platform-aligned `speechSynthesis.getVoices`, `OffscreenCanvas` & `toBlob` canvas noise, `OfflineAudioContext` audio noise injection, sub-pixel `measureText` font measurement jitter, WebRTC private IP/candidate filtering, `--time-zone-for-testing` and `TZ` env injection, organic SQLite history seeder.
+- `test_cdp_injector.py` — CDP stealth injector: UA/Client-Hints rebuilt from the real running Chrome version, per-session timezone override, `Fetch.authRequired` proxy credential answering (regression: `handleAuthRequests` must be enabled or 407 challenges never fire), injector handle lifecycle.
+- `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`) and synchronizer master→worker replication; deselected by default in regular runs.
+- `test_advanced_stealth_and_seeder.py` — WebGPU hardware emulation, native function `makeNative`/`toString` Proxy cloaking, local font spoofing (`queryLocalFonts`), platform-aligned `speechSynthesis.getVoices`, `OffscreenCanvas` & `toBlob` canvas noise, `OfflineAudioContext` audio noise injection, sub-pixel `measureText` font measurement jitter, WebRTC private IP/candidate filtering, CDP timezone/UA overrides (`Emulation.setTimezoneOverride`, `setUserAgentOverride`), organic SQLite history seeder with unique visit timestamps and valid Chromium transition constants.
 - `test_v170_fixes_verification.py` — Manifest V3 extension syntax, asyncBlocking proxy authentication, W3C WebDriver property descriptor retention, sub-pixel DOM jitter, LCG canvas noise with `toDataURL` patch, DevToolsActivePort connection handshake, safe symlink deletion.
 - `test_deep_security_and_traversal.py` — 25 security tests: `validate_pid` path traversal defense, Zip-Slip vulnerability protection, CORS localhost regex restrictions, CLI credential masking.
 - `test_secrets_store.py` — secrets-storage tests: all three user-selectable modes (plain / dpapi / passphrase), Fernet envelope roundtrip, wrong-passphrase rejection, PBKDF2 key derivation, DPAPI roundtrip, notes-level masking, legacy plaintext readability, mode persistence (passphrase never on disk).

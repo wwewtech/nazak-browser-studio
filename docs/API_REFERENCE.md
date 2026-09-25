@@ -39,7 +39,7 @@ Provides a compatible subset of the Dolphin{anty} v1.0 local automation protocol
 ### Endpoints:
 
 #### `GET /v1.0/browser_profiles`
-Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags.
+Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags. Proxy passwords are always masked (`"***"`) in responses — credentials never leave the machine in plaintext.
 - **Response `200 OK`**:
 ```json
 {
@@ -54,7 +54,7 @@ Retrieves the list of all profiles with their live execution statuses, attached 
         "host": "198.51.100.24",
         "port": 8080,
         "username": "ads_user",
-        "password": "secret_password"
+        "password": "***"
       },
       "automation": {
         "port": 9222,
@@ -388,7 +388,7 @@ Launches the profile directly into the initial organic query step of the warmup 
 | :--- | :--- | :--- |
 | `GET` | `/api/autopost/status` | Queue progress and FFmpeg binary availability |
 | `POST` | `/api/autopost/uniquify` | Deep video uniquification with FFmpeg |
-| `POST` | `/api/autopost/launch` | Start upload queue using Bezier motorics |
+| `POST` | `/api/autopost/launch` | Start upload queue using Bezier motorics. Requires a real `source_video_path` (400 if missing); pass `"demo": true` to generate a short ffmpeg test clip instead of a silent fake file |
 | `POST` | `/api/autopost/cancel` | Cancel queue and terminate active upload instances |
 | `POST` | `/api/autopost/preview-spintax` | Preview generated titles/descriptions from spintax template |
 
@@ -401,12 +401,15 @@ Host diagnostics: OS platform, CPU concurrency, memory stats, Chrome binary path
 
 ### `WebSocket /ws/events`
 Real-time streaming channel for UI synchronization and telemetry:
-- `profile_status_change` (`{ profile_id, status, pid }`)
+- `profile_status_change` (`{ profile_id, status, pid, error }`)
+- `profile_created`, `profile_updated`, `profile_deleted`
 - `profile_health_update` (`{ profile_id, health }`)
 - `profiles_bulk_created` (`{ count }`)
-- `cookies_bulk_imported`
-- `synchronizer_started`, `synchronizer_stopped`
-- `autopost_progress`, `autopost_complete`
+- `cookies_bulk_imported` (`{ count, profiles_updated }`)
+- `synchronizer_started` (`{ session }`), `synchronizer_stopped`
+- `autopost_batch_started` (`{ total }`)
+- `autopost_job_started`, `autopost_job_progress`, `autopost_job_finished`
+- `autopost_batch_finished` (`{ results }`)
 - `secrets_mode_changed` (`{ mode }`)
 
 ---
@@ -459,7 +462,7 @@ In all API endpoints (`GET /api/profiles`, `GET /api/profiles/{id}`), sensitive 
 - **OffscreenCanvas & `toBlob` Multi-Channel Noise**: Linear Congruential Generator (LCG) perturbs all 4 RGBA channels with prime step 17 across standard 2D canvas, `OffscreenCanvasRenderingContext2D`, `HTMLCanvasElement.prototype.toDataURL`, and `HTMLCanvasElement.prototype.toBlob`.
 - **AudioContext & OfflineAudioContext Noise**: Distributes deterministic sample jitter across both live `AudioBuffer` and `OfflineAudioContext.prototype.startRendering` pipelines for 100% unique WebAudio hashes.
 - **WebRTC Candidate Sanitizer & Leak Protection**: Intercepts `createOffer` and `setLocalDescription` on `RTCPeerConnection` to strip private IPv4 candidates (RFC 1918: `10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
-- **Chromium V8 & C++ Timezone Synchronization**: Injects `--time-zone-for-testing={timezone}` flag and `TZ` process environment variable directly into the spawned Chromium subprocess, eliminating discrepancies between JavaScript `Intl` and Chromium C++ native time routines.
+- **Chromium V8 & C++ Timezone Synchronization**: The CDP stealth injector issues `Emulation.setTimezoneOverride` per page session (verified live: JavaScript `Intl` reports the profile timezone), backed by the `--time-zone-for-testing={timezone}` launch flag and the `TZ` process environment for native routines.
 - **Organic Profile History Seeder (SQLite)**: Populates authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic multi-visit frequencies across high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
 - **`navigator.webdriver`**: Defined via prototype getter `get: () => false` with standard descriptor semantics and native cloaking, eliminating prototype deletion flags.
 - **DOM Sub-pixel Jitter**: `Element.prototype.getBoundingClientRect` introduces deterministic sub-pixel offsets to defeat layout geometry fingerprinting.
