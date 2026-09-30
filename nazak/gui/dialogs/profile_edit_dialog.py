@@ -267,6 +267,16 @@ class ProfileEditDialog(QDialog):
         group = self.input_group.text().strip() or "General"
         proxy_raw = self.input_proxy_raw.text().strip()
         proxy_conf = ProxyConfig.parse(proxy_raw)
+        # The raw field never carries the rotation endpoint, so re-attach it
+        # from the profile being edited (audit: saving dropped rotation_url).
+        if (
+            proxy_raw
+            and self.profile is not None
+            and self.profile.proxy
+            and proxy_conf.rotation_url is None
+            and self.profile.proxy.rotation_url
+        ):
+            proxy_conf.rotation_url = self.profile.proxy.rotation_url
 
         fp = self.profile.fingerprint if self.profile else generate_random_fingerprint("windows")
         fp.webgl_unmasked_renderer = self.combo_gpu.currentText()

@@ -46,9 +46,14 @@ def test_passphrase_roundtrip_and_wrong_key():
         ss.decrypt_secret(enc)  # no passphrase at all
 
 
-def test_passphrase_mode_without_passphrase_stores_plaintext():
-    out = ss.encrypt_secret("visible", mode="passphrase", passphrase=None)
-    assert out == "visible"
+def test_passphrase_mode_without_passphrase_is_rejected():
+    """Audit D2-P2-2: selecting 'passphrase' without one can no longer silently store plaintext."""
+    with pytest.raises(ss.SecretsError):
+        ss.encrypt_secret("visible", mode="passphrase", passphrase=None)
+
+    # ...but the write path still never blocks: encrypt_notes degrades loudly.
+    out = ss.encrypt_notes({"account_password": "visible"}, mode="passphrase", passphrase=None)
+    assert out["account_password"] == "visible"
 
 
 def test_dpapi_roundtrip_windows_only():

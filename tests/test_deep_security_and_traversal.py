@@ -44,11 +44,17 @@ def test_cors_rejects_null_origin():
     assert acao != "null"
 
 
-def test_cors_allows_localhost_with_arbitrary_ports():
+def test_cors_allows_only_configured_local_ports():
+    """Exact local ports only — a permissive port regex let any local dev app drive the API."""
     client = TestClient(fastapi_app)
-    for local in ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:5173", "http://localhost"]:
-        resp = client.get("/api/system/info", headers={"Origin": local})
-        assert resp.headers.get("access-control-allow-origin") == local
+    for allowed in ["http://localhost:3000", "http://localhost:8899", "http://127.0.0.1:8899"]:
+        resp = client.get("/api/system/info", headers={"Origin": allowed})
+        assert resp.headers.get("access-control-allow-origin") == allowed
+
+    for denied in ["http://localhost:8080", "http://127.0.0.1:5173", "http://localhost", "http://localhost:9999"]:
+        resp = client.get("/api/system/info", headers={"Origin": denied})
+        assert resp.headers.get("access-control-allow-origin") != denied, f"CORS allowed {denied}"
+        assert resp.status_code == 403, f"unexpected status {resp.status_code} for {denied}"
 
 
 # ---------------------------------------------------------------------------

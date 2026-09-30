@@ -4,6 +4,8 @@
 > **Interactive Swagger UI**: [`http://127.0.0.1:8899/docs`](http://127.0.0.1:8899/docs) (or [`http://127.0.0.1:8899/swagger`](http://127.0.0.1:8899/swagger))  
 > **ReDoc Alternative UI**: [`http://127.0.0.1:8899/redoc`](http://127.0.0.1:8899/redoc)  
 > **OpenAPI Specification JSON**: [`http://127.0.0.1:8899/openapi.json`](http://127.0.0.1:8899/openapi.json)  
+>
+> **Access policy (local-only API)**: every non-static request must carry a `Host` of `localhost` / `127.0.0.1` and, when present, an `Origin` on one of the configured local ports (`8899`, `3000`, plus the port passed with `--port`); anything else is answered with `403`. CORS reflects exactly those ports with credentials allowed - never an arbitrary port. `/ws/events` applies the same check to the WebSocket `Origin` header. Set the optional environment variable `NAZAK_API_TOKEN` to additionally require `X-API-Key: <token>` on `/api/*` and `/v1.0/*` calls (off by default; the local web UI does not send it).
 
 ---
 
@@ -39,7 +41,7 @@ Provides a compatible subset of the Dolphin{anty} v1.0 local automation protocol
 ### Endpoints:
 
 #### `GET /v1.0/browser_profiles`
-Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags. Proxy passwords are always masked (`"***"`) in responses — credentials never leave the machine in plaintext.
+Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags. Proxy credentials are always masked in responses: `password`, `raw` and `rotation_url` become `"***"` (the `user:pass@` part of `raw` is redacted too) — credentials never leave the machine in plaintext. Echoing a masked body back to `PUT /api/profiles/{id}` keeps the stored value instead of overwriting it.
 - **Response `200 OK`**:
 ```json
 {
@@ -224,9 +226,16 @@ curl -X GET "http://127.0.0.1:8899/v1.0/browser_profiles/prof_01/stop"
 | `POST` | `/api/profiles/randomize-fingerprint` | Generate an isolated randomized hardware fingerprint (`?os_type=windows`) |
 | `POST` | `/api/profiles/bulk-import` | Bulk import profiles from raw proxy strings |
 | `POST` | `/api/profiles/mass-generate` | 1-Click mass profile generator (1–100+ farm) with Round-Robin proxies |
-| `GET` | `/api/profiles/{id}/bundle/export` | Export complete profile as portable `.nazak` zip archive |
+| `GET` | `/api/profiles/{id}/bundle/export` | Export complete profile as portable `.nazak` zip archive (built in a temp file, deleted right after the response) |
 | `POST` | `/api/profiles/{id}/clear-cache` | Purge browser cache and temporary shader data |
 | `POST` | `/api/profiles/{id}/seed-history` | Seed organic Chromium browsing history (SQLite) across the past 14 days (`?entries_count=25`) |
+
+### Write & launch semantics:
+
+- **`PUT /api/profiles/{id}` merges instead of replacing.** Only the fields present in the request body are written; `proxy`, `fingerprint` and `google` are merged per-field against the stored profile, so a partial body never resets proxy credentials, timezone, GPU strings or noise seeds. Masked values (`"***"`, `<encrypted: ...>`, `ab...yz`) received back from a `GET` keep the stored secret untouched.
+- **Launch URL policy**: `custom_url` (and `google.custom_url`) may only be `http(s)` or `about:` targets. Values starting with `-` (Chrome flag injection) or using `file:` / `data:` / `javascript:` / `blob:` / `vbscript:` are refused with `400`; a bare hostname is promoted to `https://`.
+- **`POST /api/profiles/{id}/clone` regenerates the device.** The clone gets a fresh user agent, GPU, screen, core/RAM counts, media device ids and noise seeds, while the operator's timezone, language and shield toggles are kept.
+- **New profiles get a random GPU** when the request omits `fingerprint.webgl_*` instead of all landing on one stock renderer.
 
 ### Key Endpoints:
 
@@ -277,7 +286,7 @@ Imports cookies across multiple profiles simultaneously. Auto-detects delimiters
 ```
 
 #### `POST /api/cookies/bulk-export`
-Exports all session cookies into a structured JSON map or a downloadable `.zip` archive containing per-profile cookie files.
+Exports session cookies for the listed profiles into a structured JSON map or a downloadable `.zip` archive containing per-profile cookie files. `profile_ids` is required and must be non-empty — an omitted or empty list returns `400` instead of silently exporting every profile.
 - **Request Body**:
 ```json
 {
@@ -368,7 +377,7 @@ Launches the profile directly into the initial organic query step of the warmup 
 
 | Method | Path | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/profiles/{id}/rotate-proxy` | Trigger provider rotation URL for dynamic mobile proxy |
+| `POST` | `/api/profiles/{id}/rotate-proxy` | Trigger provider rotation URL for dynamic mobile proxy (`http(s)` to a public host only — `file:`, loopback, private and link-local targets, and redirects, are refused with `400`) |
 | `POST` | `/api/profiles/{id}/check` | Perform 5-stage health check and auto-align geolocation/timezone |
 | `POST` | `/api/profiles/check-all` | Batch run health checks across all configured profiles |
 | `POST` | `/api/profiles/test-proxy` | Test standalone raw proxy string without profile binding |
@@ -441,7 +450,7 @@ Switches active mode and re-encrypts all existing profile credentials atomically
 ```
 
 ### Masking Guarantee:
-In all API endpoints (`GET /api/profiles`, `GET /api/profiles/{id}`), sensitive values (`account_password`, `totp_secret`) are masked (`ab...yz`) before transmission.
+In all API endpoints (`GET /api/profiles`, `GET /api/profiles/{id}`), sensitive values (`account_password`, `totp_secret`) are masked (`ab...yz`) before transmission, and proxy credentials (`password`, `raw`, `rotation_url`) are masked (`"***"`). The write path recognises those masks and placeholders, so saving a profile that was loaded from the API never destroys a stored secret; a genuinely new plaintext value is encrypted in the active mode before it reaches disk.
 
 ---
 

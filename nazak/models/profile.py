@@ -2,6 +2,7 @@
 Browser profile definitions, comprehensive hardware fingerprints, and isolation settings.
 """
 
+import random
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -131,7 +132,7 @@ class FingerprintConfig(BaseModel):
     canvas_noise: bool = True
     canvas_noise_seed: int = Field(default_factory=lambda: int(uuid.uuid4().int % 1000000))
     audio_noise: bool = True
-    audio_noise_seed: float = Field(default_factory=lambda: 0.000001)
+    audio_noise_seed: float = Field(default_factory=lambda: random.uniform(0.0000005, 0.000005))
     client_rects_noise: bool = True
 
     # 9. Hardware APIs Shielding

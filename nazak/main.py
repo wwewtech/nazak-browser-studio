@@ -18,7 +18,7 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from nazak.api.server import app as fastapi_app
+from nazak.api.server import app as fastapi_app, configure_local_access
 from nazak.cli import run_cli
 from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
 
@@ -71,6 +71,9 @@ def main():
         return
 
     args, _unknown = parser.parse_known_args()
+
+    # Trust whatever port we are about to bind (local-only origin policy).
+    configure_local_access(args.port)
 
     if args.mode == "gui":
         try:

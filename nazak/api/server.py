@@ -3,11 +3,16 @@ FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
 """
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import subprocess
+import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -16,22 +21,25 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
+from .. import __version__
 from ..config import (
     DATA_DIR,
     DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE,
     DEFAULT_AUTOPOST_TG_CHANNEL,
     DEFAULT_AUTOPOST_TITLE_TEMPLATE,
+    DEFAULT_PORT,
     EXTENSIONS_DIR,
     PROFILES_DIR,
     PROFILES_FILE,
     WEB_DIR,
     find_chrome_executable,
 )
-from ..core.browser_launcher import BrowserLauncher
+from ..core.browser_launcher import BrowserLauncher, sanitize_launch_url
 from ..core.cookie_manager import (
     cookies_to_netscape,
     create_cookies_zip_archive,
@@ -44,6 +52,7 @@ from ..core.profile_manager import ProfileManager
 from ..core.proxy_checker import check_proxy_health
 from ..core.secrets_store import (
     SECRETS_MODES,
+    UNAVAILABLE_PLACEHOLDER,
     SecretsError,
     decrypt_notes,
     get_current_mode,
@@ -189,7 +198,7 @@ tags_metadata = [
 app = FastAPI(
     title="Nazak Browser Studio API",
     description="Professional Multi-Profile Anti-Detect Browser Launcher with Strict Proxy & Google Automation Isolation",
-    version="1.8.0",
+    version=__version__,
     openapi_tags=tags_metadata,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -210,11 +219,94 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3000",
     ],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    # Exact localhost ports only (audit D2-P1-1): a regex that accepted *any*
+    # port let every local dev server / Electron app drive the API with cookies.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1):(8899|3000)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Local-only request guard (audit D2-P1-1)
+# ---------------------------------------------------------------------------
+# The API is deliberately unauthenticated for local scripts (documented in
+# docs/API_REFERENCE.md), so the trust boundary is "requests that originate
+# from this machine's own pages". Cross-site pages are rejected by Origin, and
+# DNS-rebinding style access is rejected by the Host check.
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
+_ALLOWED_PORTS: set[int] = {DEFAULT_PORT, 3000}
+_LOCAL_SCHEMES = ("http", "https")
+# Opt-in shared secret for setups that expose the port beyond loopback:
+# set NAZAK_API_TOKEN and send it as `X-API-Key` on /api and /v1.0 calls.
+_API_TOKEN_ENV = "NAZAK_API_TOKEN"
+
+
+def configure_local_access(port: int) -> None:
+    """Trust the port the server actually binds to (call from startup)."""
+    if port:
+        _ALLOWED_PORTS.add(int(port))
+
+
+def _host_name(host: str) -> str:
+    host = (host or "").strip().lower()
+    if host.startswith("["):
+        return host[1 : host.find("]")] if "]" in host else host
+    name, sep, tail = host.rpartition(":")
+    return name if sep and tail.isdigit() else host
+
+
+def _is_local_host(host: str | None) -> bool:
+    return _host_name(host or "") in _LOCAL_HOSTS
+
+
+def _is_local_origin(origin: str | None) -> bool:
+    if not origin:
+        return True
+    match = re.match(r"^(https?)://([^/]+)$", origin.rstrip("/"))
+    if not match or match.group(1) not in _LOCAL_SCHEMES:
+        return False
+    name = _host_name(match.group(2))
+    if name not in _LOCAL_HOSTS:
+        return False
+    raw = match.group(2)
+    port_part = raw.rpartition(":")[2]
+    if port_part.isdigit():
+        port = int(port_part)
+    else:
+        port = 443 if match.group(1) == "https" else 80
+    return port in _ALLOWED_PORTS
+
+
+def _is_api_token_valid(request_headers) -> bool:
+    expected = os.environ.get(_API_TOKEN_ENV)
+    if not expected:
+        return True
+    return request_headers.get("x-api-key") == expected
+
+
+@app.middleware("http")
+async def local_only_guard(request, call_next):
+    path = request.url.path
+    if path.startswith(("/static", "/docs", "/redoc", "/openapi.json", "/swagger")):
+        return await call_next(request)
+
+    if not _is_local_host(request.headers.get("host")):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Local access only: Host header must be localhost or 127.0.0.1"},
+        )
+    origin = request.headers.get("origin")
+    if origin and not _is_local_origin(origin):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Local access only: cross-origin requests are refused"},
+        )
+    if path.startswith(("/api", "/v1.0")) and not _is_api_token_valid(request.headers):
+        return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key"})
+    return await call_next(request)
 
 
 def validate_pid(profile_id: str) -> str:
@@ -236,25 +328,38 @@ def validate_pid(profile_id: str) -> str:
 
 
 def _mask_proxy_for_api(proxy: ProxyConfig) -> dict:
-    """Proxy dict for external (Dolphin-parity) responses with the password masked.
+    """Proxy dict for API responses with every credential-bearing key masked.
 
-    Audit fix P0-5: the endpoint used to return ``proxy.model_dump()`` with the
-    plaintext password — documented in the README example, so every API consumer
-    saw the credentials. ``"***"`` communicates "set but hidden"; empty stays empty.
+    Audit D2-P0-3: masking only ``password`` still leaked the same credential
+    through ``raw`` (``user:pass@host``) and ``rotation_url`` (``?key=...``).
+    ``"***"`` communicates "set but hidden"; the write path recognises it and
+    keeps the stored value instead of persisting the mask.
     """
     data = proxy.model_dump()
     if data.get("password"):
         data["password"] = "***"
+    raw = data.get("raw")
+    password = proxy.password
+    if isinstance(raw, str) and raw:
+        if password and password in raw:
+            data["raw"] = raw.replace(password, "***", 1)
+        elif "@" in raw:
+            data["raw"] = re.sub(r":[^:@/]*@", ":***@", raw, count=1)
+    if data.get("rotation_url"):
+        data["rotation_url"] = "***"
     return data
 
 
 def _mask_profile_secrets(profile: BrowserProfile) -> BrowserProfile:
-    """Mask sensitive notes fields for API responses (never leak plaintext).
+    """Mask sensitive notes *and* proxy credentials for API responses.
 
     Works on a deep copy: profile_manager returns live references, and
-    masked values must never leak back into persisted storage.
+    masked values must never leak back into persisted storage (the write path
+    additionally refuses to persist a mask — audit D2-P0-2).
     """
     safe = profile.model_copy(deep=True)
+    if safe.proxy:
+        safe.proxy = ProxyConfig(**_mask_proxy_for_api(safe.proxy))
     if safe.google and safe.google.notes:
         try:
             notes = json.loads(safe.google.notes)
@@ -460,9 +565,17 @@ async def create_profile(profile_data: BrowserProfile):
         validate_pid(profile_data.id)
         if profile_manager.get_profile(profile_data.id):
             raise HTTPException(status_code=409, detail=f"Profile with id '{profile_data.id}' already exists")
+    # Audit D2-P2-1: clients that omit the WebGL fields (the old web modal
+    # hard-coded one GPU for every profile) would all land on the same
+    # stock GPU string. Fill whatever was not sent from a fresh generator.
+    fp = profile_data.fingerprint
+    if fp is not None and "webgl_renderer" not in fp.model_fields_set:
+        ref = generate_random_fingerprint().model_copy()
+        for field in ("webgl_vendor", "webgl_renderer", "webgl_unmasked_vendor", "webgl_unmasked_renderer"):
+            setattr(fp, field, getattr(ref, field))
     created = profile_manager.create_profile(profile_data)
-    await ws_manager.broadcast("profile_created", created.model_dump())
-    return created
+    await ws_manager.broadcast("profile_created", _mask_profile_secrets(created).model_dump())
+    return _mask_profile_secrets(created)
 
 
 @app.put(
@@ -474,8 +587,8 @@ async def update_profile(profile_id: str, profile_data: BrowserProfile):
     updated = profile_manager.update_profile(profile_data)
     if not updated:
         raise HTTPException(status_code=404, detail="Profile not found")
-    await ws_manager.broadcast("profile_updated", updated.model_dump())
-    return updated
+    await ws_manager.broadcast("profile_updated", _mask_profile_secrets(updated).model_dump())
+    return _mask_profile_secrets(updated)
 
 
 @app.delete("/api/profiles/{profile_id}", tags=["Profiles"], summary="Delete profile and local storage data")
@@ -501,8 +614,8 @@ async def clone_profile(profile_id: str, new_name: str | None = Query(None)):
     cloned = profile_manager.clone_profile(profile_id, new_name)
     if not cloned:
         raise HTTPException(status_code=404, detail="Source profile not found")
-    await ws_manager.broadcast("profile_created", cloned.model_dump())
-    return cloned
+    await ws_manager.broadcast("profile_created", _mask_profile_secrets(cloned).model_dump())
+    return _mask_profile_secrets(cloned)
 
 
 @app.post("/api/profiles/{profile_id}/launch", tags=["Profiles"], summary="Launch browser profile")
@@ -514,6 +627,7 @@ async def launch_profile(profile_id: str, req: LaunchRequest | None = None):
 
     custom_url = req.custom_url if req else None
     cdp_port = req.cdp_port if req else None
+    custom_url = _require_launch_url(custom_url)
 
     if cdp_port:
         success, pid, port, ws_url, err = browser_launcher.launch_with_cdp(
@@ -592,6 +706,7 @@ async def dolphin_list_profiles():
 )
 async def dolphin_start_profile(profile_id: str, custom_url: str | None = Query(None), port: int | None = Query(None)):
     validate_pid(profile_id)
+    custom_url = _require_launch_url(custom_url)
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -859,10 +974,112 @@ async def export_profile_bundle_endpoint(profile_id: str):
     prof = profile_manager.get_profile(profile_id)
     if not prof:
         raise HTTPException(status_code=404, detail="Profile not found")
-    bundle_path = profile_manager.export_profile_bundle(profile_id)
+    # Audit D2-P1-5: bundles used to accumulate in profiles/ forever (cookies,
+    # session files and proxy data copied in the clear). Build it in a temp
+    # file and remove it once the response has been sent.
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{profile_id}_", suffix=".nazak")
+    os.close(fd)
+    bundle_path = profile_manager.export_profile_bundle(profile_id, output_path=Path(tmp_name))
     if not bundle_path or not bundle_path.exists():
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
         raise HTTPException(status_code=500, detail="Failed to create profile bundle")
-    return FileResponse(path=str(bundle_path), filename=f"{profile_id}_bundle.nazak", media_type="application/zip")
+    return FileResponse(
+        path=str(bundle_path),
+        filename=f"{profile_id}_bundle.nazak",
+        media_type="application/zip",
+        background=BackgroundTask(_remove_quietly, bundle_path),
+    )
+
+
+def _remove_quietly(path) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _is_display_mask_value(value) -> bool:
+    """True when a rotation URL field only echoes a mask, not a real target."""
+    if not isinstance(value, str):
+        return True
+    stripped = value.strip()
+    return stripped in ("", "***", UNAVAILABLE_PLACEHOLDER) or stripped.startswith("<encrypted")
+
+
+def _require_launch_url(url: str | None) -> str | None:
+    """HTTP-facing wrapper for :func:`sanitize_launch_url` (audit D2-P1-3)."""
+    if not url:
+        return None
+    try:
+        return sanitize_launch_url(url)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid launch URL: only http(s) and about: targets are allowed",
+        ) from None
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects outright: a rotation URL must not bounce us anywhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirects are not followed", headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+
+
+def _resolve_host_ips(hostname: str, port: int) -> list[str]:
+    """DNS lookup seam (patched in tests) — returns every address for the host.
+
+    IP literals skip DNS entirely, so a numeric loopback/private address can
+    never be argued away by a wildcard DNS record.
+    """
+    try:
+        ipaddress.ip_address(hostname)
+        return [hostname]
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError, OSError):
+        return []
+    return [info[4][0] for info in infos]
+
+
+def _reject_rotation_url(url: str) -> str | None:
+    """Return a reason string when the rotation URL must not be fetched.
+
+    Audit D2-P1-2: the endpoint used to fetch whatever was stored, so a
+    ``file:///C:/Windows/win.ini`` or ``http://169.254.169.254/...`` URL turned
+    the server into a local/SSRF reader. Policy: public http(s) hosts only,
+    no redirects, no detail leaking back to the caller.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return "malformed URL"
+    if parts.scheme not in ("http", "https"):
+        return "only http(s) URLs are allowed"
+    if not parts.hostname:
+        return "URL has no host"
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80
+    addresses = _resolve_host_ips(parts.hostname, port)
+    if not addresses:
+        return "host cannot be resolved"
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return "host cannot be resolved"
+        if not ip.is_global:
+            return "host must be a public address"
+    return None
 
 
 @app.post("/api/profiles/{profile_id}/rotate-proxy", tags=["Proxies"], summary="Trigger mobile proxy IP rotation URL")
@@ -873,13 +1090,26 @@ async def rotate_profile_proxy_endpoint(profile_id: str):
         raise HTTPException(status_code=404, detail="Profile not found")
     if not prof.proxy.rotation_url:
         raise HTTPException(status_code=400, detail="Profile does not have a proxy rotation URL configured")
+    url = prof.proxy.rotation_url
+    if _is_display_mask_value(url):
+        raise HTTPException(status_code=400, detail="Proxy rotation URL is masked; send the real URL to update it")
+    reason = _reject_rotation_url(url)
+    if reason:
+        raise HTTPException(status_code=400, detail=f"Proxy rotation URL refused: {reason}")
     try:
-        req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
-        with urllib.request.urlopen(req, timeout=10.0) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
+        with _NO_REDIRECT_OPENER.open(req, timeout=10.0) as resp:
             resp_body = resp.read().decode("utf-8", errors="ignore")
             return {"success": True, "status_code": resp.status, "response": resp_body[:200]}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to trigger proxy rotation: {e!s}") from e
+    except urllib.error.HTTPError as exc:
+        # Redirects and HTTP status problems are policy, not infrastructure.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proxy rotation URL refused: unexpected HTTP status {exc.code}",
+        ) from exc
+    except Exception:
+        # Never echo resolution/connect details (host scanning oracle, D2-P1-2).
+        raise HTTPException(status_code=502, detail="Proxy rotation request failed") from None
 
 
 # Cookie Management Endpoints
@@ -897,11 +1127,17 @@ async def bulk_import_cookies_endpoint(req: BulkCookieImportRequest):
     return {"success": True, "results": res}
 
 
-@app.post("/api/cookies/bulk-export", tags=["Cookies"], summary="Export all cookies as JSON or structured ZIP archive")
+@app.post("/api/cookies/bulk-export", tags=["Cookies"], summary="Export cookies for the listed profiles")
 async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
-    if req.profile_ids:
-        for pid in req.profile_ids:
-            validate_pid(pid)
+    # Audit D2-P1-5: an empty / omitted profile_ids silently exported every
+    # profile in the park. Require an explicit list.
+    if not req.profile_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="profile_ids must be a non-empty list of profile ids",
+        )
+    for pid in req.profile_ids:
+        validate_pid(pid)
     cookie_dict = profile_manager.export_all_cookies(req.profile_ids)
     if req.format.lower() == "zip":
         zip_bytes = create_cookies_zip_archive(cookie_dict, format_type="json")
@@ -1074,7 +1310,7 @@ async def launch_warmup(profile_id: str, req: WarmupRequest):
     validate_pid(profile_id)
     plan = WarmupPlan(profile_id=profile_id, niche=req.niche, steps_count=req.steps_count)
     urls = generate_warmup_urls(plan.queries)
-    start_url = urls[0] if urls else "https://www.google.com"
+    start_url = _require_launch_url(urls[0] if urls else "https://www.google.com")
 
     profile = profile_manager.get_profile(profile_id)
     if not profile:
@@ -1258,6 +1494,13 @@ async def preview_spintax_endpoint(req: AutopostBatchRequest):
 # WebSocket Real-time Feed
 @app.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
+    # Audit D2-P1-1: the event stream had no Origin check, so any local page
+    # (or remote page via a rebinding host) could subscribe. Same policy as HTTP.
+    if not _is_local_host(websocket.headers.get("host")) or (
+        websocket.headers.get("origin") and not _is_local_origin(websocket.headers.get("origin"))
+    ):
+        await websocket.close(code=1008)
+        return
     await ws_manager.connect(websocket)
     try:
         while True:

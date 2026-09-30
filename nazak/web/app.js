@@ -506,8 +506,10 @@ async function saveProfileModal() {
       platform: ua.includes("Macintosh") ? "MacIntel" : "Win32",
       language: lang,
       timezone: existing ? existing.fingerprint.timezone : "America/New_York",
-      webgl_vendor: "Google Inc. (NVIDIA)",
-      webgl_renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      webgl_vendor: existing && existing.fingerprint.webgl_vendor ? existing.fingerprint.webgl_vendor : undefined,
+      webgl_renderer: existing && existing.fingerprint.webgl_renderer ? existing.fingerprint.webgl_renderer : undefined,
+      webgl_unmasked_vendor: existing && existing.fingerprint.webgl_unmasked_vendor ? existing.fingerprint.webgl_unmasked_vendor : undefined,
+      webgl_unmasked_renderer: existing && existing.fingerprint.webgl_unmasked_renderer ? existing.fingerprint.webgl_unmasked_renderer : undefined,
       canvas_noise: true,
       audio_noise: true,
       webrtc_policy: "disable_non_proxied_udp"

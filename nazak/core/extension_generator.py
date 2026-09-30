@@ -5,10 +5,82 @@ can be queried or fingerprinted by websites or anti-fraud systems.
 """
 
 import json
+import re
 import shutil
 from pathlib import Path
 
 from ..models.profile import BrowserProfile
+
+
+def _chrome_full_version(*candidates: str | None) -> str:
+    """Pick the Chrome full version that actually matches the fingerprint.
+
+    Priority: the runtime UA (source of truth for ``userAgentData``), then
+    ``app_version``. A hardcoded fallback only when neither carries one —
+    shipping "133.0.0.0" next to a modern UA is an instant mismatch.
+    """
+    for candidate in candidates:
+        if not candidate:
+            continue
+        match = re.search(r"Chrome/(\d+(?:\.\d+){3})", candidate)
+        if match:
+            return match.group(1)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        match = re.search(r"(\d+(?:\.\d+){2,3})", candidate)
+        if match:
+            return match.group(1)
+    return "133.0.0.0"
+
+
+def _nvidia_arch(renderer: str) -> str:
+    """Map a GeForce model number to its microarchitecture."""
+    match = re.search(r"GeForce\s+(?:RTX|GTX)?\s*(\d{3,4})", renderer or "", re.IGNORECASE)
+    if not match:
+        return "turing"
+    num = int(match.group(1))
+    if num < 1000:
+        # Legacy 3-digit model numbers: GTX 980/750 = Maxwell, 660 = Kepler.
+        leading = num // 100
+        if leading >= 7:
+            return "maxwell"
+        if leading >= 5:
+            return "kepler"
+        return "fermi"
+    series = num // 100
+    if series >= 50:
+        return "blackwell"
+    if series >= 40:
+        return "ada lovelace"
+    if series >= 30:
+        return "ampere"
+    if series >= 16:
+        return "turing"
+    if series >= 10:
+        return "pascal"
+    return "fermi"
+
+
+def _amd_arch(renderer: str) -> str:
+    match = re.search(r"Radeon(?:\s+RX)?\s+(?:Series\s+)?(\d{3,4})", renderer or "", re.IGNORECASE)
+    if not match:
+        return "rdna 2"
+    model = int(match.group(1))
+    if model >= 7000:
+        return "rdna 3"
+    if model >= 5000:
+        return "rdna 2"
+    return "rdna 1"
+
+
+def _quantized_device_memory(gb) -> int:
+    """navigator.deviceMemory only ever exposes 0.25/0.5/1/2/4/8 (audit D2-P2-1)."""
+    value = int(gb or 0)
+    for allowed in (8, 4, 2, 1):
+        if value >= allowed:
+            return allowed
+    return 1
 
 
 def _fingerprint_with_runtime_chrome_version(fp, chrome_version: str):
@@ -98,22 +170,21 @@ chrome.webRequest.onAuthRequired.addListener(
     bitness_json = json.dumps(fp.bitness)
     model_json = json.dumps(fp.model)
     platform_version_json = json.dumps(fp.platform_version)
-    ua_full_version = fp.app_version.split("Chrome/")[1].split(" ")[0] if "Chrome/" in fp.app_version else "133.0.0.0"
+    ua_full_version = _chrome_full_version(fp.user_agent, fp.app_version)
     ua_full_version_json = json.dumps(ua_full_version)
     timezone_json = json.dumps(fp.timezone)
     webgl_vendor_json = json.dumps(fp.webgl_vendor)
     webgl_renderer_json = json.dumps(fp.webgl_renderer)
+    device_memory_json = json.dumps(_quantized_device_memory(fp.device_memory))
 
     # Derive WebGPU vendor and architecture matching WebGL GPU Vendor & Model
     gpu_vendor_lower = (fp.webgl_vendor + " " + fp.webgl_renderer).lower()
     if "nvidia" in gpu_vendor_lower:
         gpu_vendor_str = "nvidia"
-        gpu_arch_str = (
-            "ada lovelace" if "40" in fp.webgl_renderer else ("ampere" if "30" in fp.webgl_renderer else "turing")
-        )
+        gpu_arch_str = _nvidia_arch(fp.webgl_renderer)
     elif "amd" in gpu_vendor_lower or "radeon" in gpu_vendor_lower:
         gpu_vendor_str = "amd"
-        gpu_arch_str = "rdna 3" if "7900" in fp.webgl_renderer else "rdna 2"
+        gpu_arch_str = _amd_arch(fp.webgl_renderer)
     elif "apple" in gpu_vendor_lower:
         gpu_vendor_str = "apple"
         gpu_arch_str = "apple"
@@ -183,7 +254,7 @@ window.__nazakShieldApplied = true;
             enumerable: true
         }});
         Object.defineProperty(Navigator.prototype, 'deviceMemory', {{
-            get: makeNative(() => {fp.device_memory}, 'get deviceMemory'),
+            get: makeNative(() => {device_memory_json}, 'get deviceMemory'),
             configurable: true,
             enumerable: true
         }});

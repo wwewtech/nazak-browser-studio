@@ -28,6 +28,33 @@ logger = logging.getLogger(__name__)
 
 _CHROME_VERSION_CACHE: dict[str, str | None] = {}
 
+_ALLOWED_URL_SCHEMES = ("http://", "https://", "about:")
+
+
+def sanitize_launch_url(url: str | None) -> str | None:
+    """Validate a launch target before it becomes Chrome's last argv entry.
+
+    Audit D2-P1-3: ``custom_url`` was appended verbatim, so a value starting
+    with ``-`` (or ``file:///...``) injected arbitrary Chrome switches / read
+    local files. Only http(s) and ``about:`` targets survive; a bare host is
+    promoted to https.
+    """
+    if not url:
+        return None
+    cleaned = str(url).strip()
+    if not cleaned:
+        return None
+    if cleaned.startswith("-"):
+        raise ValueError("URL must not start with '-'")
+    lowered = cleaned.lower()
+    if lowered.startswith(("file:", "javascript:", "data:", "blob:", "vbscript:")):
+        raise ValueError("URL scheme is not allowed")
+    if cleaned.startswith(_ALLOWED_URL_SCHEMES):
+        return cleaned
+    if "//" not in cleaned.split(":")[0]:
+        return "https://" + cleaned.lstrip("/")
+    raise ValueError("URL scheme is not allowed")
+
 
 def _windows_file_version(path: str) -> str | None:
     """Read VS_FIXEDFILEINFO (e.g. '153.0.8010.53') from a PE binary."""
@@ -232,11 +259,11 @@ class BrowserLauncher:
 
         target_url = "about:blank"
         if custom_url:
-            target_url = custom_url
+            target_url = sanitize_launch_url(custom_url) or target_url
         elif profile.google.auto_open_page in GOOGLE_TARGET_URLS:
             target_url = GOOGLE_TARGET_URLS[profile.google.auto_open_page]
         elif profile.google.custom_url:
-            target_url = profile.google.custom_url
+            target_url = sanitize_launch_url(profile.google.custom_url) or target_url
 
         args.append(target_url)
         return args, ext_path

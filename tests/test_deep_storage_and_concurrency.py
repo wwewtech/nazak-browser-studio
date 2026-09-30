@@ -184,22 +184,32 @@ def test_clone_profile_generates_unique_id(tmp_path):
     assert cloned.id in pm.profiles
 
 
-def test_clone_profile_copies_fingerprint_and_proxy(tmp_path):
+def test_clone_profile_gets_fresh_device_keeps_locale_and_proxy(tmp_path):
     pfile = tmp_path / "profiles.json"
     pdir = tmp_path / "profiles"
     pm = ProfileManager(pfile, pdir)
 
-    fp = FingerprintConfig(platform="MacIntel", hardware_concurrency=8, device_memory=16)
+    fp = FingerprintConfig(platform="MacIntel", hardware_concurrency=8, device_memory=16, timezone="Europe/Berlin")
     proxy = ProxyConfig(host="1.2.3.4", port=8080, username="user", password="pwd")
     source = BrowserProfile(id="src_rich", name="Rich Source", fingerprint=fp, proxy=proxy)
     pm.create_profile(source)
 
     cloned = pm.clone_profile("src_rich")
+    # Device identity must change: a clone is a different machine, not the
+    # same hardware with new noise seeds (audit D2-P2-1).
+    assert cloned.fingerprint.user_agent != source.fingerprint.user_agent
+    assert cloned.fingerprint.canvas_noise_seed != source.fingerprint.canvas_noise_seed
+    assert (
+        cloned.fingerprint.hardware_concurrency != source.fingerprint.hardware_concurrency
+        or cloned.fingerprint.device_memory != source.fingerprint.device_memory
+        or cloned.fingerprint.screen_width != source.fingerprint.screen_width
+    )
+    # Operator-chosen locale / OS stay put.
     assert cloned.fingerprint.platform == "MacIntel"
-    assert cloned.fingerprint.hardware_concurrency == 8
-    assert cloned.fingerprint.device_memory == 16
+    assert cloned.fingerprint.timezone == "Europe/Berlin"
     assert cloned.proxy.host == "1.2.3.4"
     assert cloned.proxy.username == "user"
+    assert cloned.proxy.password == "pwd"
 
 
 def test_clone_profile_preserves_custom_name(tmp_path):

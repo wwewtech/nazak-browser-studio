@@ -26,8 +26,129 @@ from ..models.profile import (
     ProfileStatus,
 )
 from ..models.proxy import ProxyConfig, ProxyType
+from .secrets_store import (
+    encrypt_notes,
+    protect_proxy_fields,
+    sanitize_notes_for_write,
+    unprotect_proxy_fields,
+)
 
 logger = logging.getLogger(__name__)
+
+_MASK = "***"
+_PROXY_SECRET_FIELDS = ("password", "raw", "rotation_url")
+
+
+def _load_notes_dict(raw: Any) -> dict | None:
+    """Parse a notes value into a dict; returns None for free-text notes."""
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.lstrip().startswith("{"):
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _raw_from_proxy(proxy: ProxyConfig) -> str | None:
+    """Rebuild the human-readable proxy string from structured fields."""
+    if proxy.is_direct():
+        return proxy.raw
+    proto = proxy.type.value
+    if proxy.has_auth():
+        return f"{proto}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}"
+    return f"{proto}://{proxy.host}:{proxy.port}"
+
+
+def _merge_proxy(incoming: ProxyConfig, stored: ProxyConfig, fields_set: set[str]) -> ProxyConfig:
+    """Field-set aware proxy update (audit D2-P0-3 / D2-P1-4).
+
+    A client that echoes the masked API copy must never wipe the credentials,
+    and a partial body must never drop the structured host/port/auth that the
+    launcher needs (the web modal only sends ``raw`` + ``type``).
+    """
+    merged = stored.model_copy(deep=True)
+
+    if "raw" in fields_set:
+        raw = (incoming.raw or "").strip()
+        if not raw or raw.lower() in ("direct", "none", "null"):
+            return ProxyConfig(type=ProxyType.DIRECT, raw=raw or None)
+        if _MASK in raw:
+            # Display copy: adopt typed host/port changes, keep stored secrets.
+            parsed = ProxyConfig.parse(raw)
+            merged.host = parsed.host if parsed.host is not None else stored.host
+            merged.port = parsed.port if parsed.port is not None else stored.port
+            merged.username = parsed.username if parsed.username not in (None, "", _MASK) else stored.username
+            merged.password = stored.password if parsed.password in (None, "", _MASK) else parsed.password
+            merged.type = parsed.type
+            merged.rotation_url = stored.rotation_url if parsed.rotation_url is None else parsed.rotation_url
+            merged.raw = _raw_from_proxy(merged)
+        else:
+            parsed = ProxyConfig.parse(raw)
+            if parsed.rotation_url is None and "rotation_url" not in fields_set:
+                parsed.rotation_url = stored.rotation_url
+            merged = parsed
+
+    for field in fields_set - {"raw"}:
+        if field not in ProxyConfig.model_fields:
+            continue
+        value = getattr(incoming, field, None)
+        if value == _MASK:
+            value = getattr(stored, field, None)
+        setattr(merged, field, value)
+
+    if "raw" not in fields_set and fields_set & {"host", "port", "username", "password"}:
+        merged.raw = _raw_from_proxy(merged)
+    if "active" not in fields_set and "raw" in fields_set:
+        merged.active = stored.active
+    return merged
+
+
+def _sanitize_notes(new_profile: BrowserProfile, stored_profile: BrowserProfile | None) -> None:
+    """Persist notes without ever writing a display mask over a secret (D2-P0-2)."""
+    if not new_profile.google:
+        return
+    incoming = _load_notes_dict(new_profile.google.notes)
+    if incoming is None:
+        return
+    stored = None
+    if stored_profile is not None and stored_profile.google:
+        stored = _load_notes_dict(stored_profile.google.notes)
+    cleaned = sanitize_notes_for_write(incoming, stored or {})
+    new_profile.google.notes = json.dumps(encrypt_notes(cleaned))
+
+
+def _merge_fingerprint(incoming: FingerprintConfig, stored: FingerprintConfig) -> FingerprintConfig:
+    """Field-set aware fingerprint update (audit D2-P1-4).
+
+    The web modal sends only the fields it renders; a wholesale replacement
+    would silently reset every other device property (seeds, media devices,
+    unmasked WebGL strings, shield toggles) back to the model defaults.
+    """
+    merged = stored.model_copy(deep=True)
+    for field in incoming.model_fields_set:
+        if field in FingerprintConfig.model_fields:
+            setattr(merged, field, getattr(incoming, field))
+    return merged
+
+
+def _merge_google(incoming: GoogleSettings | None, stored: GoogleSettings | None) -> GoogleSettings | None:
+    """Field-set aware google-settings update (audit D2-P1-4).
+
+    A partial body (or a dialog that only touched one field) must not blank
+    ``notes`` / ``tags`` back to the model defaults.
+    """
+    if stored is None:
+        return incoming
+    if incoming is None:
+        return stored.model_copy(deep=True)
+    merged = stored.model_copy(deep=True)
+    for field in incoming.model_fields_set:
+        if field in GoogleSettings.model_fields:
+            setattr(merged, field, getattr(incoming, field))
+    return merged
 
 
 class ProfileManager:
@@ -369,6 +490,8 @@ class ProfileManager:
             for item in data:
                 try:
                     if isinstance(item, dict):
+                        if isinstance(item.get("proxy"), dict):
+                            item["proxy"] = unprotect_proxy_fields(item["proxy"])
                         prof = BrowserProfile(**item)
                         prof.status = ProfileStatus.STOPPED
                         prof.pid = None
@@ -401,7 +524,13 @@ class ProfileManager:
             self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
             tmp_file = self.profiles_file.with_name(f"{self.profiles_file.name}.{uuid.uuid4().hex}.tmp")
             try:
-                data = [p.model_dump() for p in self.profiles.values()]
+                data = []
+                for p in self.profiles.values():
+                    item = p.model_dump()
+                    # Proxy credentials are protected at rest in every mode
+                    # except the user-selected `plain` (audit D2-P0-3).
+                    item["proxy"] = protect_proxy_fields(item.get("proxy") or {})
+                    data.append(item)
                 with open(tmp_file, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -436,6 +565,27 @@ class ProfileManager:
         with self._save_lock:
             return self.profiles.get(profile_id)
 
+    def _prepare_for_write(self, profile: BrowserProfile, stored: BrowserProfile | None) -> BrowserProfile:
+        """Normalize a client-supplied profile before it replaces anything on disk.
+
+        Notes: helper keys stripped, display masks / placeholders never overwrite
+        a stored secret, new plaintext values encrypted in the active mode.
+        Proxy: field-set aware merge so echoed masks and partial bodies cannot
+        drop credentials or the structured host/port the launcher needs.
+        """
+        if stored is None:
+            if profile.google and profile.google.notes:
+                incoming = _load_notes_dict(profile.google.notes)
+                if incoming is not None:
+                    profile.google.notes = json.dumps(encrypt_notes(sanitize_notes_for_write(incoming, {})))
+            return profile
+        profile.google = _merge_google(profile.google, stored.google)
+        _sanitize_notes(profile, stored)
+        profile.proxy = _merge_proxy(profile.proxy, stored.proxy, set(profile.proxy.model_fields_set))
+        if profile.fingerprint is not None and stored.fingerprint is not None:
+            profile.fingerprint = _merge_fingerprint(profile.fingerprint, stored.fingerprint)
+        return profile
+
     def create_profile(self, profile: BrowserProfile) -> BrowserProfile:
         with self._save_lock:
             if not profile.id:
@@ -444,6 +594,7 @@ class ProfileManager:
                 self._validate_id(profile.id)
                 if profile.id in self.profiles:
                     raise ValueError(f"Profile with id '{profile.id}' already exists")
+            profile = self._prepare_for_write(profile, None)
             self.profiles[profile.id] = profile
             self.save_profiles()
             return profile
@@ -451,8 +602,10 @@ class ProfileManager:
     def update_profile(self, profile: BrowserProfile) -> BrowserProfile | None:
         self._validate_id(profile.id)
         with self._save_lock:
-            if profile.id not in self.profiles:
+            stored = self.profiles.get(profile.id)
+            if stored is None:
                 return None
+            profile = self._prepare_for_write(profile, stored)
             profile.updated_at = datetime.now(timezone.utc).isoformat()
             self.profiles[profile.id] = profile
             self.save_profiles()
@@ -553,11 +706,51 @@ class ProfileManager:
         cloned_data["created_at"] = datetime.now(timezone.utc).isoformat()
         cloned_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        # Regenerate hardware seeds and UUIDs to ensure zero linkage with source profile
+        # A clone must be a different *device*, not the same hardware with fresh
+        # noise seeds (audit D2-P2-1): regenerate the device-identifying fields
+        # and keep only what is tied to the operator's locale / shield choices.
         if "fingerprint" in cloned_data and isinstance(cloned_data["fingerprint"], dict):
-            fp = cloned_data["fingerprint"]
-            orig_canvas = source.fingerprint.canvas_noise_seed if source.fingerprint else None
-            orig_audio = source.fingerprint.audio_noise_seed if source.fingerprint else None
+            src_fp = source.fingerprint
+            platform = src_fp.platform or "Win32"
+            if platform == "MacIntel":
+                os_type = "mac"
+            elif platform.lower().startswith("linux"):
+                os_type = "linux"
+            else:
+                os_type = "windows"
+
+            from .fingerprint_generator import generate_random_fingerprint
+
+            fresh = generate_random_fingerprint(os_type=os_type)
+            for _ in range(8):
+                if fresh.user_agent != src_fp.user_agent:
+                    break
+                fresh = generate_random_fingerprint(os_type=os_type)
+            fp = fresh.model_dump()
+            for field in (
+                "timezone",
+                "timezone_offset",
+                "language",
+                "languages",
+                "canvas_noise",
+                "audio_noise",
+                "client_rects_noise",
+                "block_port_scanning",
+                "block_sensors",
+                "webrtc_policy",
+                "battery",
+                "geolocation",
+            ):
+                fp[field] = (
+                    getattr(src_fp, field).model_dump()
+                    if field in ("battery", "geolocation")
+                    else getattr(src_fp, field)
+                )
+            cloned_data["fingerprint"] = fp
+
+            # Regenerate hardware seeds and UUIDs to ensure zero linkage with source profile
+            orig_canvas = src_fp.canvas_noise_seed
+            orig_audio = src_fp.audio_noise_seed
 
             canvas_seed = random.randint(10000, 999999)
             while orig_canvas is not None and canvas_seed == orig_canvas:
@@ -851,8 +1044,11 @@ class ProfileManager:
             return None
 
         with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 1. Profile metadata JSON
-            zf.writestr("profile.json", json.dumps(prof.model_dump(), indent=2, ensure_ascii=False))
+            # 1. Profile metadata JSON (proxy credentials protected at rest,
+            #    exactly as they are stored in profiles.json)
+            bundle_meta = prof.model_dump()
+            bundle_meta["proxy"] = protect_proxy_fields(bundle_meta.get("proxy") or {})
+            zf.writestr("profile.json", json.dumps(bundle_meta, indent=2, ensure_ascii=False))
 
             # 2. Profile cookies
             cookies = self.load_profile_cookies(profile_id)
@@ -893,6 +1089,8 @@ class ProfileManager:
                     return None
 
                 prof_data = json.loads(zf.read("profile.json").decode("utf-8"))
+                if isinstance(prof_data.get("proxy"), dict):
+                    prof_data["proxy"] = unprotect_proxy_fields(prof_data["proxy"])
                 new_id = f"prof_{uuid.uuid4().hex[:8]}"
                 prof_data["id"] = new_id
                 if new_name:

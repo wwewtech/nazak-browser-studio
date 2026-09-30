@@ -51,6 +51,9 @@ _SALT_BYTES = 16
 
 ENVELOPE_KEY = "_secrets_mode"
 SECRET_FIELDS = ("account_password", "totp_secret")
+# Shown instead of a value whose envelope cannot be opened right now. It is a
+# *display* value: it must never be written back over the real secret.
+UNAVAILABLE_PLACEHOLDER = "<encrypted: unavailable passphrase>"
 
 # Where the user-selected mode + (optional) passphrase are persisted.
 # Passphrase itself is NEVER persisted to disk; it is held in memory only
@@ -106,10 +109,21 @@ def get_current_mode() -> str:
 
 
 def set_current_mode(mode: str, passphrase: str | None = None) -> str:
-    """Switch the active mode at runtime (API/GUI call this)."""
+    """Switch the active mode at runtime (API/GUI call this).
+
+    Selecting ``passphrase`` without supplying one is rejected up front, so the
+    GUI/API can never advertise a strong mode while values land in plaintext.
+    """
     global _current_mode, _in_memory_passphrase
-    _current_mode = normalize_mode(mode)
-    _in_memory_passphrase = passphrase
+    effective = normalize_mode(mode)
+    if effective == "passphrase":
+        if passphrase:
+            _in_memory_passphrase = passphrase
+        elif not _in_memory_passphrase:
+            raise SecretsError("Passphrase mode requires a passphrase. Enter one to continue.")
+    else:
+        _in_memory_passphrase = None
+    _current_mode = effective
     _persist_mode()
     return _current_mode
 
@@ -269,8 +283,8 @@ def encrypt_secret(value: str, mode: str | None = None, passphrase: str | None =
     """Encrypt one field value into its self-describing envelope string.
 
     Empty values pass through. ``mode=None`` uses the active runtime mode.
-    In ``passphrase`` mode with no passphrase available the value is stored
-    as-is and a warning is logged (never blocks the user's workflow).
+    ``passphrase`` mode without a passphrase raises :class:`SecretsError` —
+    silently degrading to plaintext would make the mode selector a lie.
     """
     if not value:
         return value
@@ -282,8 +296,10 @@ def encrypt_secret(value: str, mode: str | None = None, passphrase: str | None =
     if effective_mode == "passphrase":
         eff_passphrase = passphrase if passphrase is not None else _in_memory_passphrase
         if not eff_passphrase:
-            logger.warning("Secrets: 'passphrase' mode is active but no passphrase is set; storing value as plaintext.")
-            return value
+            raise SecretsError(
+                "Passphrase mode is active but no passphrase is available. "
+                "Provide the passphrase (Settings -> Secrets Storage) instead of storing the value unprotected."
+            )
         return _fernet_encrypt(value.encode("utf-8"), eff_passphrase)
     raise SecretsError(f"Unsupported mode: {effective_mode!r}")
 
@@ -318,22 +334,45 @@ def _strip_helper_keys(notes: dict) -> dict:
 
 
 def encrypt_notes(notes: dict, mode: str | None = None, passphrase: str | None = None) -> dict:
-    """Encrypt ``SECRET_FIELDS`` inside a notes dict; adds the mode envelope key."""
+    """Encrypt ``SECRET_FIELDS`` inside a notes dict; adds the mode envelope key.
+
+    Like the proxy protection below, a mode that cannot encrypt right now
+    (``passphrase`` selected but not supplied) must not block the write — the
+    value stays readable and a warning is logged so the gap is visible.
+    """
     result = dict(_strip_helper_keys(notes))
+    incoming_label = notes.get(ENVELOPE_KEY)
+    encrypted_any = False
     for field in SECRET_FIELDS:
         raw = result.get(field)
         if raw and not is_encrypted_value(raw):
-            result[field] = encrypt_secret(str(raw), mode=mode, passphrase=passphrase)
-    result[ENVELOPE_KEY] = normalize_mode(mode) if mode else _current_mode
+            try:
+                result[field] = encrypt_secret(str(raw), mode=mode, passphrase=passphrase)
+                encrypted_any = True
+            except SecretsError as exc:
+                logger.warning("Secrets: notes %s left unprotected for this save: %s", field, exc)
+    # Label the record with the mode the values actually live in: keep the
+    # incoming label when nothing was (re)encrypted, so a mixed store never
+    # claims "plain" while envelopes are still present.
+    if encrypted_any:
+        result[ENVELOPE_KEY] = normalize_mode(mode) if mode else _current_mode
+    elif isinstance(incoming_label, str) and incoming_label:
+        try:
+            result[ENVELOPE_KEY] = normalize_mode(incoming_label)
+        except SecretsError:
+            result[ENVELOPE_KEY] = normalize_mode(mode) if mode else _current_mode
+    else:
+        result[ENVELOPE_KEY] = normalize_mode(mode) if mode else _current_mode
     return result
 
 
 def decrypt_notes(notes: dict, passphrase: str | None = None, reveal: bool = False) -> dict:
     """Decrypt ``SECRET_FIELDS`` inside a notes dict.
 
-    ``reveal=False`` returns masked values for API/GUI listing;
+    ``reveal=False`` returns masked values for API/GUI listing and never
+    exposes plaintext: ``_totp_raw`` is injected **only** on the ``reveal=True``
+    path (audit D2-P0-1 — a display listing must not hand out a live 2FA seed).
     ``reveal=True`` returns full plaintext for the actual login flow.
-    Additionally injects ``_totp_raw`` (raw TOTP secret) for the GUI ticker.
     """
     result = dict(notes)
     for field in SECRET_FIELDS:
@@ -344,9 +383,9 @@ def decrypt_notes(notes: dict, passphrase: str | None = None, reveal: bool = Fal
         try:
             plain = decrypt_secret(raw, passphrase=passphrase)
         except SecretsDecryptError:
-            result[field] = "<encrypted: unavailable passphrase>"
+            result[field] = UNAVAILABLE_PLACEHOLDER
             continue
-        if field == "totp_secret":
+        if field == "totp_secret" and reveal:
             result["_totp_raw"] = plain
         result[field] = plain if reveal else mask_secret(plain)
     return result
@@ -355,3 +394,84 @@ def decrypt_notes(notes: dict, passphrase: str | None = None, reveal: bool = Fal
 def reveal_notes(notes: dict, passphrase: str | None = None) -> dict:
     """Full-plaintext variant used by the automated login flow."""
     return decrypt_notes(notes, passphrase=passphrase, reveal=True)
+
+
+def is_display_value(value: str | None, stored_value: str | None) -> bool:
+    """True when ``value`` is only a rendering of ``stored_value``, not new input.
+
+    Covers the three shapes a client can echo back to us: the mask produced by
+    :func:`mask_secret`, the unavailable-passphrase placeholder, and the stored
+    envelope itself (pass-through).
+    """
+    if not isinstance(value, str) or not isinstance(stored_value, str):
+        return False
+    if value in (stored_value, UNAVAILABLE_PLACEHOLDER):
+        return True
+    if value.startswith("<encrypted"):
+        return True
+    try:
+        stored_plain = decrypt_secret(stored_value)
+    except SecretsDecryptError:
+        # Cannot tell display from intent — never let a non-envelope win.
+        return not is_encrypted_value(value)
+    return value == mask_secret(stored_plain)
+
+
+def sanitize_notes_for_write(new_notes: dict, stored_notes: dict | None = None) -> dict:
+    """Prepare client-supplied notes for persistence (audit D2-P0-2).
+
+    Rules: helper keys (``_*``) are always dropped, an existing envelope is
+    never replaced by its display mask / placeholder, and a genuinely new
+    plaintext value is passed through so the write path can encrypt it.
+    """
+    stored = dict(stored_notes or {})
+    # Helper keys are dropped, except the record's own mode label: losing it
+    # would make the write path re-label old envelopes with the current mode.
+    result = {k: v for k, v in new_notes.items() if not k.startswith("_") or k == ENVELOPE_KEY}
+    for field in SECRET_FIELDS:
+        if field not in result:
+            continue
+        stored_value = stored.get(field)
+        if stored_value and is_display_value(result[field], stored_value):
+            result[field] = stored_value
+    return result
+
+
+# --- Proxy credentials at rest (audit D2-P0-3) -----------------------------
+#
+# ``proxy.password`` / ``proxy.raw`` / ``proxy.rotation_url`` carry live
+# credentials in every storage mode; they are protected on the way to disk and
+# opened on the way back, so the rest of the codebase always sees plaintext.
+
+PROXY_SECRET_FIELDS = ("password", "raw", "rotation_url")
+
+
+def protect_proxy_fields(proxy: dict) -> dict:
+    """Encrypt the credential-bearing proxy keys for storage."""
+    if _current_mode == "plain":
+        return proxy
+    out = dict(proxy)
+    for field in PROXY_SECRET_FIELDS:
+        value = out.get(field)
+        if not value or not isinstance(value, str) or is_encrypted_value(value):
+            continue
+        try:
+            out[field] = encrypt_secret(value, mode=_current_mode)
+        except SecretsError as exc:
+            # Never block persistence: keep the value readable and say so.
+            logger.warning("Secrets: proxy %s left unprotected for this save: %s", field, exc)
+    return out
+
+
+def unprotect_proxy_fields(proxy: dict) -> dict:
+    """Best-effort decryption of proxy credentials read from storage."""
+    out = dict(proxy)
+    for field in PROXY_SECRET_FIELDS:
+        value = out.get(field)
+        if not value or not isinstance(value, str) or not is_encrypted_value(value):
+            continue
+        try:
+            out[field] = decrypt_secret(value)
+        except SecretsDecryptError as exc:
+            logger.warning("Secrets: cannot open stored proxy %s: %s", field, exc)
+    return out
