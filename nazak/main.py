@@ -66,8 +66,11 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (default: 8899)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser in web mode")
 
-    if len(sys.argv) > 1 and sys.argv[1] in ("list", "launch", "stop", "check", "check-all", "info", "help"):
-        run_cli()
+    _cli_groups = ("profile", "cookie", "proxy", "warmup", "scenario", "sync", "autopost", "account",
+                     "cdp", "secrets", "system",
+                     "list", "launch", "stop", "check", "check-all", "info", "help")
+    if len(sys.argv) > 1 and sys.argv[1] in _cli_groups:
+        raise SystemExit(run_cli())
         return
 
     args, _unknown = parser.parse_known_args()
@@ -97,7 +100,22 @@ def main():
         start_web_mode(args.host, args.port, not args.no_browser)
 
     elif args.mode == "cli":
-        run_cli()
+        # Forward everything after `--mode cli` to the rich CLI parser
+        # (strip launcher-only flags so `profile list --json` etc. just work).
+        cleaned: list[str] = []
+        skip_next = False
+        for tok in sys.argv[1:]:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok == "--mode":
+                skip_next = True
+                continue
+            if tok.startswith("--mode="):
+                continue
+            cleaned.append(tok)
+        sys.argv = [sys.argv[0], *cleaned]
+        raise SystemExit(run_cli())
 
 
 def start_web_mode(host: str, port: int, open_browser: bool = True):
