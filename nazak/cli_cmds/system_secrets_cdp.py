@@ -26,6 +26,12 @@ def register(sp) -> None:
     ssub = s.add_subparsers(dest="system_action", required=True)
     x = ssub.add_parser("info", help="Хост, Chrome, счётчики (алиас корневого info)")
     x.set_defaults(func=cmd_system_info)
+    x = ssub.add_parser("doctor", help="Самопроверка окружения для агентов: Chrome/FFmpeg/данные/сервер")
+    x.set_defaults(func=cmd_system_doctor)
+    x = ssub.add_parser("schema", help="Машиночитаемая схема всех команд (для function-calling агентов)")
+    x.set_defaults(func=cmd_system_schema)
+    x = ssub.add_parser("version", help="Версии CLI/пакета/Python/платформы")
+    x.set_defaults(func=cmd_system_version)
 
     s = sp.add_parser("secrets", help="Secrets storage: plain/dpapi/passphrase (выбор пользователя)")
     ssub = s.add_subparsers(dest="secrets_action", required=True)
@@ -68,10 +74,16 @@ def cmd_system_info(args, opt: GlobalOptions) -> int:
     chrome = find_chrome_executable()
     profiles = pm.list_profiles()
     running = sum(1 for p in profiles if bl.is_profile_running(p.id))
-    payload = {"success": True, "chrome_installed": bool(chrome), "chrome_executable": chrome,
-               "total_profiles": len(profiles), "running_profiles": running,
-               "data_directory": str(PROFILES_DIR.resolve()), "extensions_directory": str(EXTENSIONS_DIR.resolve()),
-               "platform": os.name}
+    payload = {
+        "success": True,
+        "chrome_installed": bool(chrome),
+        "chrome_executable": chrome,
+        "total_profiles": len(profiles),
+        "running_profiles": running,
+        "data_directory": str(PROFILES_DIR.resolve()),
+        "extensions_directory": str(EXTENSIONS_DIR.resolve()),
+        "platform": os.name,
+    }
     if opt.as_json:
         emit(payload, opt)
     else:
@@ -86,6 +98,173 @@ def cmd_system_info(args, opt: GlobalOptions) -> int:
     return EXIT_OK
 
 
+def cmd_system_doctor(args, opt: GlobalOptions) -> int:
+    """Preflight для агентов: первый шаг перед любой серией команд."""
+    import sys as _sys
+
+    from nazak.config import PROFILES_DIR, PROFILES_FILE
+
+    checks: list[dict] = []
+
+    def _add(name: str, ok: bool, detail: str = "") -> None:
+        checks.append({"name": name, "ok": ok, "detail": detail})
+
+    _add("data_dir", PROFILES_DIR.exists() and os.access(PROFILES_DIR, os.W_OK), str(PROFILES_DIR))
+    try:
+        pm, _bl = get_managers()
+        n = len(pm.list_profiles())
+        _add("profiles_db", True, f"{n} профилей в {PROFILES_FILE.name}")
+    except Exception as exc:
+        _add("profiles_db", False, str(exc)[:160])
+
+    from nazak.config import find_chrome_executable
+
+    chrome = find_chrome_executable()
+    _add("chrome", bool(chrome), chrome or "не найден: launch/cdp/account login невозможны")
+
+    from nazak.core.video_uniquifier import find_ffmpeg
+
+    ffmpeg = find_ffmpeg()
+    _add("ffmpeg", bool(ffmpeg), ffmpeg or "не найден: autopost uniquify/launch --demo невозможны")
+
+    from nazak.core.secrets_store import get_current_mode
+
+    try:
+        _add("secrets_mode", True, get_current_mode())
+    except Exception as exc:
+        _add("secrets_mode", False, str(exc)[:160])
+
+    _add("python", True, _sys.version.split()[0])
+    if opt.server:
+        try:
+            server_request(opt, "GET", "/api/system/info")
+            _add("api_server", True, opt.server)
+        except Exception as exc:
+            _add("api_server", False, str(exc)[:160])
+    else:
+        _add("api_server", True, "direct-core режим (сервер не требуется)")
+
+    overall = all(c["ok"] for c in checks if c["name"] not in ("api_server",))
+    payload = {
+        "success": True,
+        "overall_ok": overall,
+        "checks": checks,
+        "hint": "Если overall_ok=false — чините красные пункты; launch/upload без chrome не взлетят",
+    }
+    if opt.as_json:
+        emit(payload, opt)
+    else:
+        t = Table(title="Doctor")
+        t.add_column("Check")
+        t.add_column("OK")
+        t.add_column("Detail")
+        for c in checks:
+            t.add_row(c["name"], "OK" if c["ok"] else "FAIL", c["detail"])
+        console.print(t)
+    return EXIT_OK if overall else EXIT_CONFLICT
+
+
+def cmd_system_version(args, opt: GlobalOptions) -> int:
+    import platform as _platform
+    import sys as _sys
+
+    try:
+        from nazak import __version__
+    except Exception:
+        __version__ = "unknown"
+    emit(
+        {
+            "success": True,
+            "nazak": __version__,
+            "python": _sys.version.split()[0],
+            "platform": _platform.platform(),
+            "exe": getattr(_sys, "frozen", False),
+        },
+        opt,
+    )
+    return EXIT_OK
+
+
+def cmd_system_schema(args, opt: GlobalOptions) -> int:
+    """Интроспекция argparse-парсера: точная схема всех групп/команд/аргументов."""
+    import argparse as _argparse
+
+    from nazak.cli import build_parser
+
+    parser = build_parser()
+    merged: dict[str, dict] = {}
+    for action in parser._actions:
+        if not isinstance(action, _argparse._SubParsersAction):
+            continue
+        top_helps = {a.dest: a.help or "" for a in getattr(action, "_choices_actions", [])}
+        for top_name, top_sub in action.choices.items():
+            nested = [a for a in top_sub._actions if isinstance(a, _argparse._SubParsersAction)]
+            if nested:
+                commands: list[dict] = []
+                for sub_act in nested:
+                    cmd_helps = {a.dest: a.help or "" for a in getattr(sub_act, "_choices_actions", [])}
+                    for cmd_name, cmd_sub in sub_act.choices.items():
+                        commands.append(
+                            {
+                                "name": cmd_name,
+                                "help": cmd_sub.description or cmd_helps.get(cmd_name, ""),
+                                "args": _schema_args(cmd_sub),
+                            }
+                        )
+                merged[top_name] = {
+                    "group": top_name,
+                    "help": top_sub.description or top_helps.get(top_name, ""),
+                    "commands": commands,
+                }
+            else:
+                legacy = merged.setdefault(
+                    "legacy", {"group": "legacy", "help": "Backward-compat корневые команды", "commands": []}
+                )
+                legacy["commands"].append(
+                    {
+                        "name": top_name,
+                        "help": top_sub.description or top_helps.get(top_name, ""),
+                        "args": _schema_args(top_sub),
+                    }
+                )
+    emit(
+        {
+            "success": True,
+            "schema_version": 1,
+            "global_flags": ["--json", "--yes", "--server", "--api-key", "--verbose"],
+            "env": ["NAZAK_JSON", "NAZAK_YES", "NAZAK_SERVER", "NAZAK_API_TOKEN", "NAZAK_PASSPHRASE"],
+            "exit_codes": {"0": "ok", "1": "not found", "2": "usage/validation", "4": "conflict/busy"},
+            "groups": list(merged.values()),
+        },
+        opt,
+    )
+    return EXIT_OK
+
+
+def _schema_args(subparser) -> list[dict]:
+    out: list[dict] = []
+    for a in subparser._actions:
+        if a.dest in ("help",):
+            continue
+        flags = list(a.option_strings) or [a.dest]
+        entry: dict = {
+            "flags": flags,
+            "dest": a.dest,
+            "required": bool(getattr(a, "required", False)),
+            "help": a.help or "",
+        }
+        if getattr(a, "choices", None):
+            try:
+                entry["choices"] = sorted(str(c) for c in a.choices)
+            except Exception:
+                entry["choices"] = [str(c) for c in a.choices]
+        default = getattr(a, "default", None)
+        if default not in (None, "==SUPPRESS=="):
+            entry["default"] = default
+        out.append(entry)
+    return out
+
+
 def cmd_secrets_get(args, opt: GlobalOptions) -> int:
     if opt.server:
         return _via_server(opt, "GET", "/api/security/secrets-mode")
@@ -94,9 +273,16 @@ def cmd_secrets_get(args, opt: GlobalOptions) -> int:
 
     set_mode_file(DATA_DIR / "secrets_mode.json")
     load_mode()
-    emit({"success": True, "mode": get_current_mode(), "available_modes": list(SECRETS_MODES),
-          "platform": os.name,
-          "notes": "plain=читаемо; dpapi=Windows; passphrase=Fernet+PBKDF2 (фраза нигде не хранится)"}, opt)
+    emit(
+        {
+            "success": True,
+            "mode": get_current_mode(),
+            "available_modes": list(SECRETS_MODES),
+            "platform": os.name,
+            "notes": "plain=читаемо; dpapi=Windows; passphrase=Fernet+PBKDF2 (фраза нигде не хранится)",
+        },
+        opt,
+    )
     return EXIT_OK
 
 
@@ -147,9 +333,16 @@ def cmd_cdp_start(args, opt: GlobalOptions) -> int:
         return emit_error(err or "CDP start failed", opt, EXIT_CONFLICT)
     p.status, p.pid = ProfileStatus.RUNNING, pid
     pm.update_profile(p)
-    emit({"success": True, "automation": {"port": port, "wsEndpoint": ws, "ws_endpoint": ws},
-          "pid": pid, "profile_id": p.id,
-          "hint": "Подключение: playwright connect_over_cdp(wsEndpoint)"}, opt)
+    emit(
+        {
+            "success": True,
+            "automation": {"port": port, "wsEndpoint": ws, "ws_endpoint": ws},
+            "pid": pid,
+            "profile_id": p.id,
+            "hint": "Подключение: playwright connect_over_cdp(wsEndpoint)",
+        },
+        opt,
+    )
     return EXIT_OK
 
 
@@ -176,8 +369,7 @@ def cmd_cdp_active(args, opt: GlobalOptions) -> int:
     for p in pm.list_profiles():
         if bl.is_profile_running(p.id):
             cdp = bl.get_cdp_info(p.id)
-            active.append({"profile_id": p.id, "name": p.name,
-                           "pid": bl.profile_pids.get(p.id), "automation": cdp})
+            active.append({"profile_id": p.id, "name": p.name, "pid": bl.profile_pids.get(p.id), "automation": cdp})
     if opt.as_json:
         emit({"success": True, "active_count": len(active), "profiles": active}, opt)
     else:
@@ -186,8 +378,13 @@ def cmd_cdp_active(args, opt: GlobalOptions) -> int:
             t.add_column(c)
         for a in active:
             auto = a["automation"] or {}
-            t.add_row(a["profile_id"], a["name"], str(a["pid"] or "-"),
-                      str(auto.get("port") or "-"), str(auto.get("ws_endpoint") or auto.get("wsEndpoint") or "-"))
+            t.add_row(
+                a["profile_id"],
+                a["name"],
+                str(a["pid"] or "-"),
+                str(auto.get("port") or "-"),
+                str(auto.get("ws_endpoint") or auto.get("wsEndpoint") or "-"),
+            )
         console.print(t)
     return EXIT_OK
 

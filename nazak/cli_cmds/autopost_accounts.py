@@ -50,7 +50,9 @@ def register(sp) -> None:
     s.add_argument("--profiles", default="", help="CSV профилей")
     s.add_argument("--all", action="store_true")
     s.add_argument("--video", default=None)
-    s.add_argument("--platform", default="youtube_shorts", choices=["youtube_shorts", "instagram_reels", "youtube", "instagram"])
+    s.add_argument(
+        "--platform", default="youtube_shorts", choices=["youtube_shorts", "instagram_reels", "youtube", "instagram"]
+    )
     s.add_argument("--title", default="{Video|New video|Fresh upload} {2026} #shorts")
     s.add_argument("--desc", default="New upload via Nazak Browser Studio.\n\n#shorts")
     s.add_argument("--tg", default="@your_channel")
@@ -115,9 +117,13 @@ def cmd_autopost_status(args, opt: GlobalOptions) -> int:
 
     mgr = _get_upload_mgr()
     vu = VideoUniquifier()
-    payload = {"success": True, "is_running": mgr.is_running,
-               "ffmpeg_available": vu.is_ffmpeg_available(), "ffmpeg_path": vu.ffmpeg_path,
-               "jobs": mgr.get_jobs_status()}
+    payload = {
+        "success": True,
+        "is_running": mgr.is_running,
+        "ffmpeg_available": vu.is_ffmpeg_available(),
+        "ffmpeg_path": vu.ffmpeg_path,
+        "jobs": mgr.get_jobs_status(),
+    }
     emit(payload, opt)
     return EXIT_OK
 
@@ -127,9 +133,17 @@ def cmd_autopost_preview(args, opt: GlobalOptions) -> int:
     if not ids:
         return emit_error("Укажите --profiles id1,id2 или --all", opt)
     if opt.server:
-        return _via_server(opt, "POST", "/api/autopost/preview-spintax",
-                            json={"profile_ids": ids, "title_template": args.title,
-                                  "description_template": args.desc, "tg_channel": args.tg})
+        return _via_server(
+            opt,
+            "POST",
+            "/api/autopost/preview-spintax",
+            json={
+                "profile_ids": ids,
+                "title_template": args.title,
+                "description_template": args.desc,
+                "tg_channel": args.tg,
+            },
+        )
     from nazak.core.spintax import format_video_metadata
 
     pm, _ = get_managers()
@@ -137,10 +151,16 @@ def cmd_autopost_preview(args, opt: GlobalOptions) -> int:
     for pid in ids[:5]:
         prof = pm.get_profile(pid)
         pname = prof.name if prof else pid
-        meta = format_video_metadata(title_template=args.title, description_template=args.desc,
-                                     profile_name=pname, profile_id=pid, tg_channel=args.tg)
-        samples.append({"profile_id": pid, "profile_name": pname, "title": meta["title"],
-                        "description": meta["description"]})
+        meta = format_video_metadata(
+            title_template=args.title,
+            description_template=args.desc,
+            profile_name=pname,
+            profile_id=pid,
+            tg_channel=args.tg,
+        )
+        samples.append(
+            {"profile_id": pid, "profile_name": pname, "title": meta["title"], "description": meta["description"]}
+        )
     if opt.as_json:
         emit({"success": True, "samples": samples}, opt)
     else:
@@ -159,14 +179,17 @@ def cmd_autopost_uniquify(args, opt: GlobalOptions) -> int:
     if not src.exists():
         return emit_error(f"Видео не найдено: {args.video}", opt, EXIT_NOT_FOUND)
     if opt.server:
-        return _via_server(opt, "POST", "/api/autopost/uniquify",
-                            json={"source_video_path": str(src), "profile_ids": ids})
+        return _via_server(
+            opt, "POST", "/api/autopost/uniquify", json={"source_video_path": str(src), "profile_ids": ids}
+        )
     from nazak.core.video_uniquifier import VideoUniquifier
 
     vu = VideoUniquifier()
     results = asyncio.run(asyncio.to_thread(vu.batch_uniquify, src, ids))
-    formatted = {pid: {"success": ok, "output_path": str(path.resolve()) if path else None, "error": err}
-                 for pid, (ok, path, err) in results.items()}
+    formatted = {
+        pid: {"success": ok, "output_path": str(path.resolve()) if path else None, "error": err}
+        for pid, (ok, path, err) in results.items()
+    }
     emit({"success": True, "results": formatted, "count": len(formatted)}, opt)
     return EXIT_OK
 
@@ -179,9 +202,15 @@ def cmd_autopost_launch(args, opt: GlobalOptions) -> int:
         return emit_error("Укажите --profiles id1,id2 или --all", opt)
     platform = normalize_upload_platform(args.platform)
     if opt.server:
-        body = {"profile_ids": ids, "platform": platform, "title_template": args.title,
-                "description_template": args.desc, "tg_channel": args.tg,
-                "delay_seconds": args.delay, "demo": args.demo}
+        body = {
+            "profile_ids": ids,
+            "platform": platform,
+            "title_template": args.title,
+            "description_template": args.desc,
+            "tg_channel": args.tg,
+            "delay_seconds": args.delay,
+            "demo": args.demo,
+        }
         if args.video:
             body["source_video_path"] = args.video
         return _via_server(opt, "POST", "/api/autopost/launch", json=body)
@@ -206,13 +235,39 @@ def cmd_autopost_launch(args, opt: GlobalOptions) -> int:
             import subprocess
 
             src.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run([ffmpeg, "-y", "-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=5",
-                            "-f", "lavfi", "-i", "sine=frequency=440:duration=5",
-                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(src)],
-                           capture_output=True, check=False)
-    coro = mgr.run_batch_upload(profile_ids=ids, source_video_path=src, title_template=args.title,
-                                description_template=args.desc, tg_channel=args.tg,
-                                delay_between_accounts_sec=args.delay, platform=platform)
+            subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=size=1080x1920:rate=30:duration=5",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:duration=5",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    str(src),
+                ],
+                capture_output=True,
+                check=False,
+            )
+    coro = mgr.run_batch_upload(
+        profile_ids=ids,
+        source_video_path=src,
+        title_template=args.title,
+        description_template=args.desc,
+        tg_channel=args.tg,
+        delay_between_accounts_sec=args.delay,
+        platform=platform,
+    )
     if args.wait:
         asyncio.run(coro)
         emit({"success": True, "platform": platform, "jobs": mgr.get_jobs_status()}, opt)
@@ -220,8 +275,9 @@ def cmd_autopost_launch(args, opt: GlobalOptions) -> int:
         import threading
 
         threading.Thread(target=lambda: asyncio.run(coro), daemon=True, name="NazakAutopost").start()
-        return emit_success(f"Автопостинг запущен фоном ({platform}, {len(ids)} проф.)", opt,
-                            {"platform": platform, "profiles": ids})
+        return emit_success(
+            f"Автопостинг запущен фоном ({platform}, {len(ids)} проф.)", opt, {"platform": platform, "profiles": ids}
+        )
     return EXIT_OK
 
 
@@ -233,6 +289,7 @@ def cmd_autopost_cancel(args, opt: GlobalOptions) -> int:
 
 
 # --- accounts ---
+
 
 def cmd_account_import(args, opt: GlobalOptions) -> int:
     text = read_input_text(args.data, file=args.file, stdin_flag=args.stdin)
@@ -287,14 +344,25 @@ def cmd_account_list(args, opt: GlobalOptions) -> int:
         notes = _extract_account_notes(p)
         email = notes.get("account_email") or (p.google.target_account_email if p.google else "")
         group_lower = (p.group or "").lower()
-        looks_like_account = bool(email or notes.get("totp_secret") or "retriv" in group_lower
-                                  or "darkstore" in group_lower or "gmail" in group_lower)
+        looks_like_account = bool(
+            email
+            or notes.get("totp_secret")
+            or "retriv" in group_lower
+            or "darkstore" in group_lower
+            or "gmail" in group_lower
+        )
         if not looks_like_account:
             continue
-        rows.append({"profile_id": p.id, "name": p.name, "group": p.group,
-                     "email": email or "-",
-                     "totp_masked": mask_secret(notes.get("totp_secret", "")),
-                     "mode": (p.google.posting_mode if p.google and getattr(p.google, "posting_mode", None) else "browser")})
+        rows.append(
+            {
+                "profile_id": p.id,
+                "name": p.name,
+                "group": p.group,
+                "email": email or "-",
+                "totp_masked": mask_secret(notes.get("totp_secret", "")),
+                "mode": (p.google.posting_mode if p.google and getattr(p.google, "posting_mode", None) else "browser"),
+            }
+        )
     if opt.as_json:
         emit({"success": True, "count": len(rows), "accounts": rows}, opt)
     else:
@@ -348,7 +416,19 @@ def cmd_account_login(args, opt: GlobalOptions) -> int:
         return emit_error("account login работает только в direct-режиме", opt)
     from nazak.cli_auto_login_and_upload import run_live_flow
 
-    ok = asyncio.run(run_live_flow())
+    if opt.as_json:
+        # live_flow болтлив (print/эмодзи): в --json его прогресс уходит в stderr,
+        # а stdout остаётся одним JSON-документом — парсер агента не ломается.
+        import contextlib
+        import io
+        import sys as _sys
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ok = asyncio.run(run_live_flow())
+        _sys.stderr.write(buf.getvalue())
+    else:
+        ok = asyncio.run(run_live_flow())
     if ok:
         return emit_success("Auto-login + upload завершён", opt)
     return emit_error("Auto-login завершился с ошибкой (см. вывод + screenshots/live_run)", opt, EXIT_CONFLICT)

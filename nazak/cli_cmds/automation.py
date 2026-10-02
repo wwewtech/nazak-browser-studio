@@ -87,8 +87,12 @@ def _via_server(opt: GlobalOptions, method: str, path: str, **kw):
 
 def cmd_warmup_plan(args, opt: GlobalOptions) -> int:
     if opt.server:
-        return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/warmup/plan",
-                            json={"niche": args.niche, "steps_count": args.steps})
+        return _via_server(
+            opt,
+            "POST",
+            f"/api/profiles/{args.profile_id}/warmup/plan",
+            json={"niche": args.niche, "steps_count": args.steps},
+        )
     from nazak.core.warmup_engine import WarmupPlan
 
     pm, _ = get_managers()
@@ -101,8 +105,12 @@ def cmd_warmup_plan(args, opt: GlobalOptions) -> int:
 
 def cmd_warmup_launch(args, opt: GlobalOptions) -> int:
     if opt.server:
-        return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/warmup/launch",
-                            json={"niche": args.niche, "steps_count": args.steps})
+        return _via_server(
+            opt,
+            "POST",
+            f"/api/profiles/{args.profile_id}/warmup/launch",
+            json={"niche": args.niche, "steps_count": args.steps},
+        )
     from nazak.core.warmup_engine import WarmupPlan
     from nazak.models.profile import ProfileStatus
 
@@ -120,8 +128,7 @@ def cmd_warmup_launch(args, opt: GlobalOptions) -> int:
         return emit_error(err or "Launch failed", opt, EXIT_CONFLICT)
     p.status, p.pid = ProfileStatus.RUNNING, pid
     pm.update_profile(p)
-    return emit_success(f"Warmup запущен pid={pid}", opt, {"pid": pid, "start_url": start_url,
-                                                           "plan": plan.to_dict()})
+    return emit_success(f"Warmup запущен pid={pid}", opt, {"pid": pid, "start_url": start_url, "plan": plan.to_dict()})
 
 
 def cmd_scenario_list(args, opt: GlobalOptions) -> int:
@@ -184,19 +191,20 @@ def cmd_scenario_run(args, opt: GlobalOptions) -> int:
         return emit_error(f"Профили не найдены: {missing}", opt, EXIT_NOT_FOUND)
     ex = ScenarioExecutor(bl, pm)
     if args.wait:
-        res = asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids,
-                                              max_concurrency=args.concurrency))
+        res = asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids, max_concurrency=args.concurrency))
         emit({"success": True, "results": res}, opt)
     else:
         import threading
 
         def _bg():
-            asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids,
-                                            max_concurrency=args.concurrency))
+            asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids, max_concurrency=args.concurrency))
 
         threading.Thread(target=_bg, daemon=True, name="NazakScenarioRun").start()
-        return emit_success(f"Сценарий '{scenario.name}' запущен фоном для {len(ids)} профилей", opt,
-                            {"scenario": scenario.id, "profiles": ids})
+        return emit_success(
+            f"Сценарий '{scenario.name}' запущен фоном для {len(ids)} профилей",
+            opt,
+            {"scenario": scenario.id, "profiles": ids},
+        )
     return EXIT_OK
 
 
@@ -224,11 +232,19 @@ def cmd_sync_start(args, opt: GlobalOptions) -> int:
     if not workers:
         return emit_error("Укажите --workers id1,id2", opt)
     if opt.server:
-        return _via_server(opt, "POST", "/api/synchronizer/start",
-                            json={"master_profile_id": args.master, "worker_profile_ids": workers,
-                                  "humanize_jitter": not args.no_jitter,
-                                  "min_delay_ms": args.min_delay, "max_delay_ms": args.max_delay,
-                                  "coordinate_jitter_px": args.coord_jitter})
+        return _via_server(
+            opt,
+            "POST",
+            "/api/synchronizer/start",
+            json={
+                "master_profile_id": args.master,
+                "worker_profile_ids": workers,
+                "humanize_jitter": not args.no_jitter,
+                "min_delay_ms": args.min_delay,
+                "max_delay_ms": args.max_delay,
+                "coordinate_jitter_px": args.coord_jitter,
+            },
+        )
     pm, _ = get_managers()
     if not pm.get_profile(args.master):
         return emit_error("Master не найден", opt, EXIT_NOT_FOUND)
@@ -236,10 +252,13 @@ def cmd_sync_start(args, opt: GlobalOptions) -> int:
     if missing:
         return emit_error(f"Workers не найдены: {missing}", opt, EXIT_NOT_FOUND)
     mgr = _get_sync_mgr()
-    sess = mgr.start_session(master_profile_id=args.master, worker_profile_ids=workers,
-                             humanize_jitter=not args.no_jitter,
-                             delay_range_ms=(args.min_delay, args.max_delay),
-                             coordinate_jitter_px=args.coord_jitter)
+    sess = mgr.start_session(
+        master_profile_id=args.master,
+        worker_profile_ids=workers,
+        humanize_jitter=not args.no_jitter,
+        delay_range_ms=(args.min_delay, args.max_delay),
+        coordinate_jitter_px=args.coord_jitter,
+    )
     return emit_success("Синхронизация запущена", opt, {"session": sess.to_dict()})
 
 

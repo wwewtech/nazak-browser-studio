@@ -37,18 +37,42 @@ def test_parser_has_all_groups():
     assert actions, "subparsers missing"
     # все группы + legacy зарегистрированы
     help_text = p.format_help()
-    for grp in ("profile", "cookie", "proxy", "warmup", "scenario", "sync",
-                "autopost", "account", "cdp", "secrets", "system",
-                "list", "launch", "check-all"):
+    for grp in (
+        "profile",
+        "cookie",
+        "proxy",
+        "warmup",
+        "scenario",
+        "sync",
+        "autopost",
+        "account",
+        "cdp",
+        "secrets",
+        "system",
+        "list",
+        "launch",
+        "check-all",
+    ):
         assert grp in help_text
 
 
 def test_hoist_global_flags_both_orders():
     assert cli._hoist_global_flags(["profile", "list", "--json"]) == ["--json", "profile", "list"]
     assert cli._hoist_global_flags(["--json", "profile", "list"]) == ["--json", "profile", "list"]
-    assert cli._hoist_global_flags(["sync", "tile", "--cols", "2", "--json"]) == ["--json", "sync", "tile", "--cols", "2"]
+    assert cli._hoist_global_flags(["sync", "tile", "--cols", "2", "--json"]) == [
+        "--json",
+        "sync",
+        "tile",
+        "--cols",
+        "2",
+    ]
     assert cli._hoist_global_flags(["profile", "list", "--server", "http://x", "--json"]) == [
-        "--server", "http://x", "--json", "profile", "list"]
+        "--server",
+        "http://x",
+        "--json",
+        "profile",
+        "list",
+    ]
 
 
 def test_profile_crud_roundtrip_json():
@@ -113,8 +137,7 @@ def test_cookie_bulk_roundtrip_and_export_validation():
 
 
 def test_secrets_system_sync_cdp_autopost_status():
-    for argv in (["secrets", "get"], ["system", "info"], ["sync", "status"],
-                 ["cdp", "active"], ["autopost", "status"]):
+    for argv in (["secrets", "get"], ["system", "info"], ["sync", "status"], ["cdp", "active"], ["autopost", "status"]):
         code, payload = run_json(argv)
         assert code == 0 and payload.get("success") is True, argv
 
@@ -123,8 +146,7 @@ def test_autopost_preview_and_proxy_test_parse():
     code, created = run_json(["profile", "create", "--name", "AP", "--proxy", "direct"])
     pid = created["profile_id"]
     try:
-        code, payload = run_json(["autopost", "preview", "--profiles", pid,
-                                  "--title", "{A|B} clip", "--tg", "@t"])
+        code, payload = run_json(["autopost", "preview", "--profiles", pid, "--title", "{A|B} clip", "--tg", "@t"])
         assert code == 0 and payload["samples"]
     finally:
         run(["--yes", "profile", "delete", pid, "--json"])

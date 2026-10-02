@@ -16,14 +16,14 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-555%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-631%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.9.1 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.10.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -214,21 +214,30 @@ python -m nazak.main --mode gui
 
 # Or launch headless REST API and Web Studio
 python -m nazak.main --mode web
+
+# Or use the full CLI (1:1 parity with the GUI, `--json` for AI agents)
+python -m nazak.cli system doctor --json
+python -m nazak.cli profile list --json
+python -m nazak.cli cdp start prof_01 --json
 ```
+
+> 📖 **Full CLI documentation:** [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) — 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`), machine-readable `system schema`, stable exit codes `0/1/2/4`.
 
 ---
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **555 automated tests**:
+The project is backed by a comprehensive regression and unit test suite comprising **631 automated tests**:
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 596 passed, 2 deselected =============================
+============================ 631 passed, 2 deselected =============================
 ```
+
+New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 
 - `test_cdp_injector.py` — CDP stealth injector: UA/Client-Hints rebuilt from the real running Chrome version, per-session timezone override, `Fetch.authRequired` proxy credential answering (regression: `handleAuthRequests` must be enabled or 407 challenges never fire), injector handle lifecycle.
 - `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`) and synchronizer master→worker replication; deselected by default in regular runs.

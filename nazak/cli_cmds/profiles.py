@@ -13,7 +13,6 @@ from .common import (
     EXIT_OK,
     EXIT_USAGE,
     GlobalOptions,
-    confirm,
     console,
     emit,
     emit_error,
@@ -21,6 +20,7 @@ from .common import (
     get_managers,
     parse_ids,
     read_input_text,
+    require_confirm,
     resolve_ids,
     server_request,
 )
@@ -124,8 +124,18 @@ def register(sp) -> None:
     s.add_argument("--new-name", default=None)
     s.set_defaults(func=cmd_bundle_import)
 
+    s = sub.add_parser("ensure", help="Идемпотентно: найти по имени или создать (для ретраев агентов)")
+    s.add_argument("--name", required=True, help="Имя профиля (уникальный ключ)")
+    s.add_argument("--group", default="Manual", help="Группа (только при создании)")
+    s.add_argument("--proxy", default="direct", help="host:port:user:pass | socks5://... | direct")
+    s.add_argument("--os", default="windows", choices=["windows", "mac", "linux"])
+    s.add_argument("--target-page", default="google_login")
+    s.add_argument("--tags", default=None, help="Теги через запятую")
+    s.set_defaults(func=cmd_ensure)
+
 
 # --- helpers ---
+
 
 def _profile_row(p, running: bool) -> dict:
     proxy = p.proxy.to_display_string() if hasattr(p.proxy, "to_display_string") else str(p.proxy)
@@ -149,6 +159,7 @@ def _via_server(opt: GlobalOptions, method: str, path: str, **kw):
 
 # --- commands ---
 
+
 def cmd_list(args, opt: GlobalOptions) -> int:
     if opt.server:
         return _via_server(opt, "GET", "/api/profiles")
@@ -163,9 +174,15 @@ def cmd_list(args, opt: GlobalOptions) -> int:
         for c in ("ID", "Name", "Group", "Status", "Proxy", "Ping", "Google"):
             t.add_column(c)
         for r in rows:
-            t.add_row(r["id"], r["name"], r["group"], r["status"], r["proxy"],
-                      f"{r['ping_ms']} ms" if r["ping_ms"] else "-",
-                      "OK" if r["google_ok"] else "-")
+            t.add_row(
+                r["id"],
+                r["name"],
+                r["group"],
+                r["status"],
+                r["proxy"],
+                f"{r['ping_ms']} ms" if r["ping_ms"] else "-",
+                "OK" if r["google_ok"] else "-",
+            )
         console.print(t)
     return EXIT_OK
 
@@ -200,10 +217,13 @@ def cmd_create(args, opt: GlobalOptions) -> int:
     proxy_raw = read_input_text(args.proxy) or args.proxy
     fp = generate_random_fingerprint(os_type=args.os)
     tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
-    prof = BrowserProfile(name=args.name, group=args.group,
-                          proxy=ProxyConfig.parse(proxy_raw),
-                          fingerprint=fp,
-                          google=GoogleSettings(auto_open_page=args.target_page, tags=tags))
+    prof = BrowserProfile(
+        name=args.name,
+        group=args.group,
+        proxy=ProxyConfig.parse(proxy_raw),
+        fingerprint=fp,
+        google=GoogleSettings(auto_open_page=args.target_page, tags=tags),
+    )
     saved = pm.create_profile(prof)
     return emit_success(f"Профиль создан: {saved.id} ({saved.name})", opt, {"profile_id": saved.id})
 
@@ -244,12 +264,13 @@ def cmd_delete(args, opt: GlobalOptions) -> int:
     p = pm.get_profile(args.profile_id)
     if not p:
         return emit_error(f"Профиль '{args.profile_id}' не найден", opt, EXIT_NOT_FOUND)
-    if not confirm(f"Удалить профиль '{p.name}' ({p.id}) с данными?", opt):
-        if opt.as_json:
-            emit({"success": False, "cancelled": True}, opt)
-        else:
-            console.print("[yellow]Отменено[/yellow]")
-        return EXIT_OK
+    ok_confirm, code = require_confirm(
+        f"Удалить профиль '{p.name}' ({p.id}) с данными?",
+        opt,
+        retry_hint=f"profile delete {args.profile_id} --yes",
+    )
+    if not ok_confirm:
+        return int(code if code is not None else EXIT_OK)
     if bl.is_profile_running(args.profile_id):
         bl.stop(args.profile_id)
     ok = pm.delete_profile(args.profile_id, delete_data=True)
@@ -362,8 +383,12 @@ def cmd_bulk_import(args, opt: GlobalOptions) -> int:
     if not text.strip():
         return emit_error("Нет proxy-строк: передайте аргумент, --file или stdin", opt)
     if opt.server:
-        return _via_server(opt, "POST", "/api/profiles/bulk-import",
-                            json={"proxy_lines": text, "group": args.group, "target_page": args.target_page})
+        return _via_server(
+            opt,
+            "POST",
+            "/api/profiles/bulk-import",
+            json={"proxy_lines": text, "group": args.group, "target_page": args.target_page},
+        )
     from nazak.core.fingerprint_generator import generate_random_fingerprint
     from nazak.models.profile import BrowserProfile, GoogleSettings
     from nazak.models.proxy import ProxyConfig
@@ -374,10 +399,13 @@ def cmd_bulk_import(args, opt: GlobalOptions) -> int:
     for idx, line in enumerate(lines, start=len(pm.list_profiles()) + 1):
         proxy = ProxyConfig.parse(line)
         fp = generate_random_fingerprint(os_type="windows")
-        prof = BrowserProfile(name=f"Profile {idx:02d} ({proxy.host or 'Direct'})",
-                              group=args.group, proxy=proxy, fingerprint=fp,
-                              google=GoogleSettings(auto_open_page=args.target_page,
-                                                    tags=["Bulk Import", args.group]))
+        prof = BrowserProfile(
+            name=f"Profile {idx:02d} ({proxy.host or 'Direct'})",
+            group=args.group,
+            proxy=proxy,
+            fingerprint=fp,
+            google=GoogleSettings(auto_open_page=args.target_page, tags=["Bulk Import", args.group]),
+        )
         pm.create_profile(prof)
         created += 1
     return emit_success(f"Импортировано профилей: {created}", opt, {"created_count": created})
@@ -390,14 +418,30 @@ def cmd_mass_generate(args, opt: GlobalOptions) -> int:
     proxy_lines = [line for line in proxy_text.splitlines() if line.strip()] if proxy_text else None
     tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()] or None
     if opt.server:
-        return _via_server(opt, "POST", "/api/profiles/mass-generate",
-                            json={"count": args.count, "group": args.group, "proxy_lines": proxy_text or None,
-                                  "os_mix": args.os_mix, "tags": tags, "target_page": args.target_page,
-                                  "notes": args.notes})
+        return _via_server(
+            opt,
+            "POST",
+            "/api/profiles/mass-generate",
+            json={
+                "count": args.count,
+                "group": args.group,
+                "proxy_lines": proxy_text or None,
+                "os_mix": args.os_mix,
+                "tags": tags,
+                "target_page": args.target_page,
+                "notes": args.notes,
+            },
+        )
     pm, _ = get_managers()
-    created = pm.mass_generate_profiles(count=args.count, group=args.group,
-                                        proxy_list=proxy_lines, os_mix=args.os_mix,
-                                        tags=tags, auto_open_page=args.target_page, notes=args.notes)
+    created = pm.mass_generate_profiles(
+        count=args.count,
+        group=args.group,
+        proxy_list=proxy_lines,
+        os_mix=args.os_mix,
+        tags=tags,
+        auto_open_page=args.target_page,
+        notes=args.notes,
+    )
     ids = [p.id for p in created]
     return emit_success(f"Сгенерировано: {len(ids)}", opt, {"created_count": len(ids), "profile_ids": ids})
 
@@ -438,7 +482,13 @@ def cmd_seed_history(args, opt: GlobalOptions) -> int:
 
 def cmd_bundle_export(args, opt: GlobalOptions) -> int:
     if opt.server:
-        emit({"success": True, "hint": "В server-режиме скачайте GET /api/profiles/{id}/bundle/export через curl/браузер"}, opt)
+        emit(
+            {
+                "success": True,
+                "hint": "В server-режиме скачайте GET /api/profiles/{id}/bundle/export через curl/браузер",
+            },
+            opt,
+        )
         return _via_server(opt, "GET", f"/api/profiles/{args.profile_id}/bundle/export")
     pm, _ = get_managers()
     out = Path(args.out) if args.out else None
@@ -461,6 +511,66 @@ def cmd_bundle_import(args, opt: GlobalOptions) -> int:
     if not prof:
         return emit_error("Не удалось импортировать (битый архив?)", opt, EXIT_USAGE)
     return emit_success(f"Импортирован: {prof.id}", opt, {"profile_id": prof.id})
+
+
+def cmd_ensure(args, opt: GlobalOptions) -> int:
+    """Идемпотентный get-or-create по имени: безопасен для ретраев агентов."""
+    if opt.server:
+        existing = server_request(opt, "GET", "/api/profiles")
+        items = existing if isinstance(existing, list) else existing.get("data", existing)
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and item.get("name") == args.name:
+                emit(
+                    {
+                        "success": True,
+                        "created": False,
+                        "profile_id": item.get("id"),
+                        "hint": "Профиль уже существует — создан не был",
+                    },
+                    opt,
+                )
+                return EXIT_OK
+        return emit_error(
+            "ensure в server-режиме: профиль не найден, создайте через POST /api/profiles",
+            opt,
+            EXIT_NOT_FOUND,
+            hint=f'profile create --name "{args.name}" --server {opt.server}',
+        )
+    pm, _ = get_managers()
+    for p in pm.list_profiles():
+        if p.name == args.name:
+            if opt.as_json:
+                emit(
+                    {
+                        "success": True,
+                        "created": False,
+                        "profile_id": p.id,
+                        "hint": "Профиль уже существует — создан не был",
+                    },
+                    opt,
+                )
+            else:
+                console.print(f"[dim]Профиль уже существует:[/dim] {p.id} ({p.name})")
+            return EXIT_OK
+    from nazak.core.fingerprint_generator import generate_random_fingerprint
+    from nazak.models.profile import BrowserProfile, GoogleSettings
+    from nazak.models.proxy import ProxyConfig
+
+    proxy_raw = read_input_text(args.proxy) or args.proxy
+    tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()]
+    prof = BrowserProfile(
+        name=args.name,
+        group=args.group,
+        proxy=ProxyConfig.parse(proxy_raw),
+        fingerprint=generate_random_fingerprint(os_type=args.os),
+        google=GoogleSettings(auto_open_page=args.target_page, tags=tags),
+    )
+    saved = pm.create_profile(prof)
+    if opt.as_json:
+        emit({"success": True, "created": True, "profile_id": saved.id, "name": saved.name}, opt)
+    else:
+        console.print(f"[bold green]✓[/bold green] Профиль создан: {saved.id} ({saved.name})")
+    return EXIT_OK
 
 
 def add_legacy_parsers(sp: argparse.ArgumentParser) -> None:

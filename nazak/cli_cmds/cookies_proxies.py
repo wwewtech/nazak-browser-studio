@@ -84,8 +84,7 @@ def cmd_cookie_import(args, opt: GlobalOptions) -> int:
     if not text.strip():
         return emit_error("Нет данных cookies: аргумент/--file/stdin", opt)
     if opt.server:
-        return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/cookies/import",
-                            json={"cookies_data": text})
+        return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/cookies/import", json={"cookies_data": text})
     from nazak.core.cookie_manager import parse_any_cookies
 
     pm, _ = get_managers()
@@ -108,13 +107,18 @@ def cmd_cookie_export(args, opt: GlobalOptions) -> int:
         return emit_error("Профиль не найден", opt, EXIT_NOT_FOUND)
     cookies = pm.load_profile_cookies(args.profile_id)
     if args.format == "netscape":
-        payload = {"success": True, "format": "netscape", "content": cookies_to_netscape(cookies),
-                   "cookies_count": len(cookies)}
+        payload = {
+            "success": True,
+            "format": "netscape",
+            "content": cookies_to_netscape(cookies),
+            "cookies_count": len(cookies),
+        }
     else:
         payload = {"success": True, "format": "json", "cookies": cookies, "cookies_count": len(cookies)}
     if args.out:
-        Path(args.out).write_text(payload.get("content", json.dumps(cookies, ensure_ascii=False, indent=2)),
-                                   encoding="utf-8")
+        Path(args.out).write_text(
+            payload.get("content", json.dumps(cookies, ensure_ascii=False, indent=2)), encoding="utf-8"
+        )
         return emit_success(f"Сохранено в {args.out} ({len(cookies)} шт.)", opt, {"cookies_count": len(cookies)})
     emit(payload, opt)
     return EXIT_OK
@@ -125,9 +129,12 @@ def cmd_cookie_bulk_import(args, opt: GlobalOptions) -> int:
     if not text.strip():
         return emit_error("Нет данных: аргумент/--file/stdin", opt)
     if opt.server:
-        return _via_server(opt, "POST", "/api/cookies/bulk-import",
-                            json={"cookies_data": text, "auto_create_missing": not args.no_autocreate,
-                                  "group": args.group})
+        return _via_server(
+            opt,
+            "POST",
+            "/api/cookies/bulk-import",
+            json={"cookies_data": text, "auto_create_missing": not args.no_autocreate, "group": args.group},
+        )
     from nazak.core.cookie_manager import parse_bulk_cookie_input
 
     pm, _ = get_managers()
@@ -144,9 +151,14 @@ def cmd_cookie_bulk_export(args, opt: GlobalOptions) -> int:
         return emit_error("Укажите --profiles id1,id2 или --all", opt)
     if opt.server:
         if args.format == "zip":
-            emit({"success": True, "hint": "В server-режиме ZIP скачивается GET-запросом: POST /api/cookies/bulk-export вернёт файл"}, opt)
-        return _via_server(opt, "POST", "/api/cookies/bulk-export",
-                            json={"profile_ids": ids, "format": args.format})
+            emit(
+                {
+                    "success": True,
+                    "hint": "В server-режиме ZIP скачивается GET-запросом: POST /api/cookies/bulk-export вернёт файл",
+                },
+                opt,
+            )
+        return _via_server(opt, "POST", "/api/cookies/bulk-export", json={"profile_ids": ids, "format": args.format})
     pm, _ = get_managers()
     data = pm.export_all_cookies(ids)
     if args.format == "zip":
@@ -170,7 +182,9 @@ def _print_health(profile_name: str, res, opt: GlobalOptions) -> None:
     console.print(f" • Статус: {res.status.value.upper()}")
     console.print(f" • Ping: {res.ping_ms} ms")
     console.print(f" • IP: {res.ip} ({res.country}, {res.city})")
-    console.print(f" • Google: main={res.google.google_main} auth={res.google.google_accounts} ads={res.google.google_ads} yt={res.google.youtube}")
+    console.print(
+        f" • Google: main={res.google.google_main} auth={res.google.google_accounts} ads={res.google.google_ads} yt={res.google.youtube}"
+    )
     console.print(f" • Изоляция диска: {'OK' if res.data_isolation_ok else 'FAIL'}")
 
 
@@ -249,7 +263,6 @@ def cmd_proxy_rotate(args, opt: GlobalOptions) -> int:
         req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
         with urllib.request.urlopen(req, timeout=10.0) as resp:
             body = resp.read().decode("utf-8", errors="ignore")[:200]
-            return emit_success(f"IP rotated (HTTP {resp.status})", opt,
-                                {"status_code": resp.status, "response": body})
+            return emit_success(f"IP rotated (HTTP {resp.status})", opt, {"status_code": resp.status, "response": body})
     except Exception as e:
         return emit_error(f"Ротация не удалась: {e}", opt, EXIT_CONFLICT)

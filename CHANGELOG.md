@@ -1,6 +1,24 @@
 # Changelog
 
-All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md) and the [REST API reference](docs/API_REFERENCE.md).
+All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
+
+## v1.10.0 — CLI Parity with GUI + AI-Agent Contract (2026-10-03)
+
+The terminal CLI now covers **everything the GUI can do**: 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`) with 1:1 parity to the Fluent views and the REST API. 631 tests pass (612 before, plus 19 new CLI tests); `ruff` and `ruff format` are clean.
+
+### Added
+
+- **Modular CLI (`nazak/cli_cmds/`).** Direct-core by default (no server needed); `--server http://127.0.0.1:8899` replays the same commands through the running GUI/web API with `X-API-Key` support. Old root commands (`list`, `launch`, `stop`, `check`, `check-all`, `info`) keep working.
+- **Profiles:** CRUD, `clone`, `batch-launch`/`batch-stop`, `bulk-import`, `mass-generate` (1–200, `--os-mix`), `fingerprint`, `clear-cache`, `seed-history`, `.nazak` `bundle-export`/`bundle-import`, idempotent `ensure --name` for agent retries.
+- **Cookies / proxies:** single + bulk import/export (`json`/`netscape`/`zip`, `--file`/`@file`/stdin), `proxy check`/`check-all`/`test`/`rotate`.
+- **Automation:** `warmup plan`/`launch`, `scenario list`/`run` (built-ins + aliases, `--concurrency`, `--wait`), `sync start`/`stop`/`status`/`tile`/`navigate`.
+- **Autopost / accounts:** `autopost status`/`preview`/`uniquify`/`launch`/`cancel`, `account import`/`list`/`totp`/`login` (the former standalone `cli_auto_login_and_upload.py` flow, now parameterised).
+- **CDP / system:** `cdp start`/`stop`/`active`/`info` (Dolphin `/v1.0` parity, `wsEndpoint` for `connect_over_cdp`), `system info`/`doctor`/`schema`/`version`, `secrets get`/`set`.
+- **AI-agent contract:** `--json` accepted anywhere (stdout is a single JSON document, chatty progress goes to stderr), stable exit codes `0/1/2/4` (API 404→1, 400/409/422→2), every error carries a `hint` with the exact next command, destructive commands fail fast with `--yes` hint instead of hanging on `input()`, env duplicates (`NAZAK_JSON`, `NAZAK_YES`, `NAZAK_SERVER`, `NAZAK_API_TOKEN`, `NAZAK_PASSPHRASE`), machine-readable `system schema` (schema_version 1) for function-calling.
+
+### Docs
+
+- New [CLI reference](docs/CLI_REFERENCE.md) with the agent recipe (`doctor` → `schema` → `ensure` → `check` → `cdp start`); README Quick Start and test-coverage sections updated; REST API reference links to the CLI.
 
 ## v1.9.1 — Round-2 Audit Remediation (DEEP_AUDIT_ROUND2) (2026-09-30)
 

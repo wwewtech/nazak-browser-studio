@@ -123,6 +123,7 @@ def _show_help(args, opt: GlobalOptions) -> int:
 
 # --- legacy shims -> новые модули ---
 
+
 def _legacy_list(args, opt: GlobalOptions) -> int:
     ns = argparse.Namespace(group=getattr(args, "group_filter", None))
     return profiles.cmd_list(ns, opt)
@@ -209,11 +210,18 @@ def run_cli() -> int:
         return 130
     except BrokenPipeError:
         return EXIT_OK
-    except Exception as exc:  # server недоступен / транспорт: чистый JSON вместо traceback
-        from nazak.cli_cmds.common import EXIT_CONFLICT, emit_error
+    except Exception as exc:  # транспорт/API: чистый JSON вместо traceback
+        from nazak.cli_cmds.common import EXIT_CONFLICT, ApiError, api_error_code, emit_error
 
         if opt.verbose:
             raise
+        if isinstance(exc, ApiError):
+            return emit_error(
+                f"API: {exc.detail}",
+                opt,
+                api_error_code(exc.status),
+                hint="Проверьте ID/параметры командой system schema --json",
+            )
         return emit_error(f"Команда не выполнена: {exc}", opt, EXIT_CONFLICT)
 
 
@@ -297,10 +305,14 @@ def check_all_cli(pm):
 
 def show_system_info():
     chrome_exe = find_chrome_executable()
-    console.print(Panel(f"[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or '[red]Not found[/red]'}\n"
-                        f"[bold]Profiles Directory:[/bold] {PROFILES_DIR.resolve()!s}\n"
-                        f"[bold]Extensions Directory:[/bold] {EXTENSIONS_DIR.resolve()!s}",
-                        title="System Configuration"))
+    console.print(
+        Panel(
+            f"[bold]Chrome/Chromium Exe:[/bold] {chrome_exe or '[red]Not found[/red]'}\n"
+            f"[bold]Profiles Directory:[/bold] {PROFILES_DIR.resolve()!s}\n"
+            f"[bold]Extensions Directory:[/bold] {EXTENSIONS_DIR.resolve()!s}",
+            title="System Configuration",
+        )
+    )
 
 
 if __name__ == "__main__":

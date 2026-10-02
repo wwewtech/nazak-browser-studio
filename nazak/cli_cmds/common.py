@@ -33,13 +33,35 @@ class GlobalOptions:
     verbose: bool = False
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "y")
+
+
+class ApiError(Exception):
+    """Проброс HTTP-ошибки API (server-режим) с исходным статусом."""
+
+    def __init__(self, status: int, detail: str):
+        super().__init__(f"API {status}: {detail}")
+        self.status = status
+        self.detail = detail
+
+
+def api_error_code(status: int) -> int:
+    """Маппинг HTTP-статуса API в CLI exit-код: 404->1, 400/409/422->2, остальное->4."""
+    if status == 404:
+        return EXIT_NOT_FOUND
+    if status in (400, 409, 422):
+        return EXIT_USAGE
+    return EXIT_CONFLICT
+
+
 def build_global_options(args) -> GlobalOptions:
     return GlobalOptions(
-        as_json=bool(getattr(args, "json", False)),
-        yes=bool(getattr(args, "yes", False)),
-        server=getattr(args, "server", None),
+        as_json=bool(getattr(args, "json", False)) or _env_flag("NAZAK_JSON"),
+        yes=bool(getattr(args, "yes", False)) or _env_flag("NAZAK_YES"),
+        server=getattr(args, "server", None) or os.environ.get("NAZAK_SERVER") or None,
         api_key=getattr(args, "api_key", None) or os.environ.get("NAZAK_API_TOKEN"),
-        verbose=bool(getattr(args, "verbose", False)),
+        verbose=bool(getattr(args, "verbose", False)) or _env_flag("NAZAK_VERBOSE"),
     )
 
 
@@ -54,11 +76,17 @@ def emit(data: Any, opt: GlobalOptions) -> None:
             console.print(str(data))
 
 
-def emit_error(message: str, opt: GlobalOptions, code: int = EXIT_USAGE) -> int:
+def emit_error(message: str, opt: GlobalOptions, code: int = EXIT_USAGE, hint: str | None = None) -> int:
+    """Ошибка + точная подсказка следующего шага (hint) — агент не гадает, что делать."""
     if opt.as_json:
-        print(json.dumps({"success": False, "error": message, "code": code}, ensure_ascii=False))
+        payload: dict[str, Any] = {"success": False, "error": message, "code": code}
+        if hint:
+            payload["hint"] = hint
+        print(json.dumps(payload, ensure_ascii=False))
     else:
         err_console.print(f"[bold red]Ошибка:[/bold red] {message}")
+        if hint:
+            err_console.print(f"[dim]Подсказка: {hint}[/dim]")
     return code
 
 
@@ -75,14 +103,40 @@ def emit_success(message: str, opt: GlobalOptions, extra: dict | None = None) ->
     return EXIT_OK
 
 
+def is_interactive() -> bool:
+    """False под пайпом/в CI/у агентов — там спрашивать бесполезно, надо сразу говорить что делать."""
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
 def confirm(prompt: str, opt: GlobalOptions) -> bool:
     if opt.yes:
         return True
+    if not is_interactive():
+        # Не висим на input() в неинтерактиве: caller вернёт ошибку с hint про --yes.
+        return False
     try:
         ans = input(f"{prompt} [y/N]: ").strip().lower()
-    except EOFError:
+    except (EOFError, OSError):
         return False
     return ans in ("y", "yes", "д", "да")
+
+
+def require_confirm(prompt: str, opt: GlobalOptions, retry_hint: str) -> tuple[bool, int | None]:
+    """confirm() + готовый код возврата для неинтерактивного отказа.
+
+    Возвращает (ok, exit_code): при ok=True код None (продолжать),
+    при отказе в интерактиве — (False, 0) «Отменено», в неинтерактиве — (False, 4) с hint.
+    """
+    if confirm(prompt, opt):
+        return True, None
+    if not is_interactive() or opt.as_json:
+        emit_error("Требуется подтверждение", opt, EXIT_CONFLICT, hint=retry_hint)
+        return False, EXIT_CONFLICT
+    console.print("[yellow]Отменено[/yellow]")
+    return False, EXIT_OK
 
 
 def read_input_text(explicit: str | None = None, file: str | None = None, stdin_flag: bool = False) -> str:
@@ -145,6 +199,7 @@ def resolve_ids(requested: list[str], allow_all: bool = False) -> list[str]:
 
 # --- server (HTTP) mode ---
 
+
 def server_request(opt: GlobalOptions, method: str, path: str, **kwargs) -> Any:
     """Thin httpx client to a running GUI/web server. Raises on transport error."""
     if not opt.server:
@@ -159,12 +214,17 @@ def server_request(opt: GlobalOptions, method: str, path: str, **kwargs) -> Any:
         resp = client.request(method, path, **kwargs)
         if resp.status_code >= 500:
             raise RuntimeError(f"server error HTTP {resp.status_code}: {resp.text[:160]}")
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except Exception:
+                raise RuntimeError(f"server returned non-JSON HTTP {resp.status_code}: {resp.text[:160]}") from None
+            detail = body.get("detail", body) if isinstance(body, dict) else body
+            raise ApiError(resp.status_code, str(detail))
         try:
             return resp.json()
         except Exception:
-            raise RuntimeError(
-                f"server returned non-JSON HTTP {resp.status_code}: {resp.text[:160]}"
-            ) from None
+            raise RuntimeError(f"server returned non-JSON HTTP {resp.status_code}: {resp.text[:160]}") from None
 
 
 def mask_proxy_dict(d: dict) -> dict:

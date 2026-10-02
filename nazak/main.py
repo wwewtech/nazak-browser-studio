@@ -66,9 +66,26 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (default: 8899)")
     parser.add_argument("--no-browser", action="store_true", help="Don't auto-open browser in web mode")
 
-    _cli_groups = ("profile", "cookie", "proxy", "warmup", "scenario", "sync", "autopost", "account",
-                     "cdp", "secrets", "system",
-                     "list", "launch", "stop", "check", "check-all", "info", "help")
+    _cli_groups = (
+        "profile",
+        "cookie",
+        "proxy",
+        "warmup",
+        "scenario",
+        "sync",
+        "autopost",
+        "account",
+        "cdp",
+        "secrets",
+        "system",
+        "list",
+        "launch",
+        "stop",
+        "check",
+        "check-all",
+        "info",
+        "help",
+    )
     if len(sys.argv) > 1 and sys.argv[1] in _cli_groups:
         raise SystemExit(run_cli())
         return

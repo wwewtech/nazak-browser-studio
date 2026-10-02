@@ -6,6 +6,8 @@
 > **OpenAPI Specification JSON**: [`http://127.0.0.1:8899/openapi.json`](http://127.0.0.1:8899/openapi.json)  
 >
 > **Access policy (local-only API)**: every non-static request must carry a `Host` of `localhost` / `127.0.0.1` and, when present, an `Origin` on one of the configured local ports (`8899`, `3000`, plus the port passed with `--port`); anything else is answered with `403`. CORS reflects exactly those ports with credentials allowed - never an arbitrary port. `/ws/events` applies the same check to the WebSocket `Origin` header. Set the optional environment variable `NAZAK_API_TOKEN` to additionally require `X-API-Key: <token>` on `/api/*` and `/v1.0/*` calls (off by default; the local web UI does not send it).
+>
+> **Prefer the terminal?** The CLI (`python -m nazak.cli ...`) covers every API group with 1:1 parity — see the [CLI reference](CLI_REFERENCE.md). With `--server http://127.0.0.1:8899` the same commands run through this API.
 
 ---
 

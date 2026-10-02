@@ -18,10 +18,12 @@ NazakBrowserStudio.exe list                           # legacy alias тоже р
 | Элемент | Правило |
 |---|---|
 | `--json` | ставится **где угодно**: `profile list --json` == `--json profile list` |
-| stdout | при `--json` — только JSON `{success, ...}`; без флага — Rich-таблицы |
-| stderr | только ошибки |
-| exit-коды | `0` ok · `1` not found · `2` usage/validation · `4` conflict/busy · `130` Ctrl+C |
-| `--yes / -y` | пропустить подтверждения (`profile delete`, destructive) |
+| stdout | при `--json` — ровно один JSON-документ (прогресс болтливых команд уходит в stderr); без флага — Rich-таблицы |
+| stderr | ошибки + human-прогресс в `--json`-режиме |
+| exit-коды | `0` ok · `1` not found (и API 404 в `--server`) · `2` usage/validation (API 400/409/422) · `4` conflict/busy (API 5xx/транспорт) · `130` Ctrl+C |
+| ошибки | всегда `{success: false, error, code, hint?}` — `hint` содержит точную следующую команду |
+| `--yes / -y` | пропустить подтверждения. В неинтерактиве (`--json`, пайп, CI) без `--yes` деструктивная команда **не висит**, а сразу возвращает код 4 с `hint: "... --yes"` |
+| env-дубли | `NAZAK_JSON=1`, `NAZAK_YES=1`, `NAZAK_SERVER=url`, `NAZAK_API_TOKEN`, `NAZAK_PASSPHRASE`, `NAZAK_VERBOSE=1` — то же, что флаги |
 | `--server URL` | выполнить через running GUI/web API (`http://127.0.0.1:8899`), `--api-key` или `$NAZAK_API_TOKEN` |
 | входные данные | аргумент, `@file`, `--file`, `--stdin`, pipe; прокси/аккаунты построчно |
 | секреты | маскируются (`***`, `ab...yz`); без `--reveal`-подобных флагов секреты не печатаются |
@@ -40,10 +42,25 @@ NazakBrowserStudio.exe list                           # legacy alias тоже р
 | `account` | `import [--file/stdin] --group --mode browser_stealth\|oauth_api · list · totp <id> · login [--profile --email --video --data-file]` | AccountsView + `cli_auto_login_and_upload.py` |
 | `cdp` | `start <id> [--url --port] · stop <id> · active · info <id>` (ответ `{automation: {port, wsEndpoint}}`, `connect_over_cdp`) | Dolphin `/v1.0/*` |
 | `secrets` | `get · set --mode plain\|dpapi\|passphrase [--passphrase/--passphrase-stdin/$NAZAK_PASSPHRASE]` | SettingsView |
-| `system` | `info` | SettingsView System card |
+| `system` | `info · doctor · schema · version` | SettingsView System card |
+| `profile` | `ensure --name ...` — идемпотентный get-or-create (ретраи без дублей, возвращает `created: true/false`) | — |
 | legacy root | `list · launch <id> [url] · stop <id> · check <id> · check-all · info · help` | старый `cli.py` |
 
-## 3. Примеры
+## 3. Рецепт агента (чтобы нигде не споткнуться)
+
+```powershell
+python -m nazak.cli system doctor --json     # 0) preflight: chrome/ffmpeg/данные
+python -m nazak.cli system schema --json     # 0b) точная схема всех 60+ команд для function-calling
+python -m nazak.cli profile ensure --name "Ads 01" --group "Google Ads" --json  # 1) идемпотентно
+python -m nazak.cli proxy check <id> --json  # 2) проверка перед запуском
+python -m nazak.cli cdp start <id> --json    # 3) wsEndpoint для connect_over_cdp
+# деструктивное — всегда с --yes (иначе код 4 + hint):
+python -m nazak.cli profile delete <id> --yes --json
+# через сервер: те же команды + --server; API 404/400 маппятся в коды 1/2
+python -m nazak.cli --server http://127.0.0.1:8899 sync status --json
+```
+
+## 4. Примеры
 
 ```powershell
 # Профили
@@ -96,24 +113,29 @@ python -m nazak.cli cdp active --json
 python -m nazak.cli secrets get --json
 python -m nazak.cli secrets set --mode passphrase --passphrase-stdin --json
 python -m nazak.cli system info --json
+python -m nazak.cli system doctor --json
+python -m nazak.cli system version --json
+python -m nazak.cli profile ensure --name "Farm 01" --group "Farm" --json
 
 # Через running сервер (единая валидация API)
 python -m nazak.cli --server http://127.0.0.1:8899 profile list --json
 $env:NAZAK_API_TOKEN="secret"; python -m nazak.cli --server http://127.0.0.1:8899 sync status --json
 ```
 
-## 4. Server-режим
+## 5. Server-режим
 
 По умолчанию команды идут **напрямую через core** (сервер не нужен). С `--server` те же команды
 идут через `httpx` к GUI/web API (те же пути, что в `docs/API_REFERENCE.md`).
 Исключения (только direct): `profile bundle-import`, `account import/login` — для них CLI честно
 возвращает ошибку с объяснением вместо молчаливого неверного результата.
 
-## 5. Exit-коды и ошибки
+## 6. Exit-коды и ошибки
 
 ```json
 {"success": false, "error": "Профиль 'prof_xx' не найден", "code": 1}
+{"success": false, "error": "Требуется подтверждение", "code": 4, "hint": "profile delete prof_xx --yes"}
 ```
 
 `1` — профиль/файл не найден · `2` — нет аргументов, плохой формат, пустой bulk ·
-`4` — уже запущен/очередь занята/нужен стоп/нет ffmpeg. В human-режиме та же ошибка — красная панель в stderr.
+`4` — уже запущен/очередь занята/нужен стоп/нет ffmpeg/нет `--yes` в неинтерактиве.
+В human-режиме та же ошибка — красная панель в stderr + дим-подсказка.
