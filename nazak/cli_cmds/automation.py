@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
+import time
 from pathlib import Path
 
 from rich.table import Table
@@ -29,6 +32,61 @@ SCENARIO_ALIASES = {
     "crypto_web3_farming": "scen_crypto_web3",
     "finance_high_cpc_banking": "scen_finance_banking",
 }
+
+
+def _background_scenario_command(args) -> list[str]:
+    """Команда для отдельного процесса, который реально выполнит прогрев."""
+    cmd = [sys.executable, "-m", "nazak.cli", "scenario", "run", "--wait", "--profiles", ",".join(args.profiles or [])]
+    if getattr(args, "all", False):
+        cmd.append("--all")
+    if getattr(args, "scenario", None):
+        cmd += ["--scenario", args.scenario]
+    if getattr(args, "scenario_file", None):
+        cmd += ["--scenario-file", args.scenario_file]
+    concurrency = getattr(args, "concurrency", None)
+    if concurrency:
+        cmd += ["--concurrency", str(concurrency)]
+    return cmd
+
+
+def _spawn_background_scenario(args, profile_ids: list[str]) -> tuple[int, Path] | None:
+    """Запускает прогрев отдельным процессом; возвращает (pid, путь к логу).
+
+    Audit R3-round2: фон обязан переживать выход CLI, иначе «success» — ложь.
+    """
+    import subprocess
+
+    from ..config import LOGS_DIR
+
+    args.profiles = profile_ids
+    cmd = _background_scenario_command(args)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / f"scenario_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    creationflags = 0
+    popen_kwargs: dict = {}
+    if os.name == "nt":
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: процесс не привязан к
+        # консоли CLI и не получает Ctrl+C вместе с ней.
+        creationflags = 0x00000008 | 0x00000200
+    else:
+        popen_kwargs["start_new_session"] = True
+    try:
+        log_file = log_path.open("ab")
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                creationflags=creationflags,
+                **popen_kwargs,
+            )
+        finally:
+            log_file.close()
+    except Exception as exc:
+        console.print(f"[red]Фоновый запуск не удался: {exc}[/red]")
+        return None
+    return proc.pid, log_path
 
 
 def register(sp) -> None:
@@ -194,16 +252,23 @@ def cmd_scenario_run(args, opt: GlobalOptions) -> int:
         res = asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids, max_concurrency=args.concurrency))
         emit({"success": True, "results": res}, opt)
     else:
-        import threading
-
-        def _bg():
-            asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids, max_concurrency=args.concurrency))
-
-        threading.Thread(target=_bg, daemon=True, name="NazakScenarioRun").start()
+        # Audit R3-round2: раньше здесь стартовал daemon-поток и команда сразу
+        # печатала success. main.py делает `raise SystemExit(run_cli())`, поэтому
+        # daemon-поток умирал на выходе интерпретатора: работа не выполнялась
+        # ВООБЩЕ, а агент получал success + exit 0. Теперь фон — это отдельный
+        # процесс (переживает выход CLI), с логом и pid в ответе.
+        launched = _spawn_background_scenario(args, ids)
+        if launched is None:
+            return emit_error(
+                "Не удалось запустить сценарий в фоне. Запустите с --wait для синхронного выполнения.",
+                opt,
+                EXIT_CONFLICT,
+            )
+        pid, log_path = launched
         return emit_success(
-            f"Сценарий '{scenario.name}' запущен фоном для {len(ids)} профилей",
+            f"Сценарий '{scenario.name}' запущен фоном для {len(ids)} профилей (pid={pid}, лог: {log_path})",
             opt,
-            {"scenario": scenario.id, "profiles": ids},
+            {"scenario": scenario.id, "profiles": ids, "pid": pid, "log": str(log_path), "background": True},
         )
     return EXIT_OK
 
