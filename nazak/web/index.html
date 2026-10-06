@@ -30,16 +30,16 @@
       </div>
 
       <div class="header-actions">
-        <button class="btn btn-warmup" onclick="openAutopostModal()">
+        <button class="btn btn-warmup" data-action="autopost-open">
           <span>🚀 YouTube Shorts Autoposting</span>
         </button>
-        <button class="btn btn-secondary" onclick="openBulkImportModal()">
+        <button class="btn btn-secondary" data-action="bulk-import-open">
           <span>📥 Import Proxies</span>
         </button>
-        <button class="btn btn-secondary" id="btn-check-all" onclick="checkAllProfiles()">
+        <button class="btn btn-secondary" id="btn-check-all" data-action="check-all-profiles">
           <span>🔍 Check Proxies</span>
         </button>
-        <button class="btn btn-primary" id="btn-add-profile" onclick="openCreateProfileModal()">
+        <button class="btn btn-primary" id="btn-add-profile" data-action="profile-create-open">
           <span>+ New Profile</span>
         </button>
       </div>
@@ -74,23 +74,23 @@
       <!-- Bulk Actions Bar (Shown when profiles selected) -->
       <section class="bulk-bar" id="bulk-bar" style="display: none;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" class="profile-checkbox">
+          <input type="checkbox" id="select-all-checkbox" data-action="select-all-toggle" class="profile-checkbox">
           <span class="bulk-count" id="bulk-count-text">Selected: 0 profiles</span>
         </div>
         <div class="bulk-actions-group">
-          <button class="btn btn-success btn-sm" onclick="batchLaunchSelected()">🚀 Launch Selected</button>
-          <button class="btn btn-danger btn-sm" onclick="batchStopSelected()">⏹ Stop Selected</button>
-          <button class="btn btn-secondary btn-sm" onclick="batchCheckSelected()">🔍 Check Proxies</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearSelection()">✕ Clear Selection</button>
+          <button class="btn btn-success btn-sm" data-action="batch-launch">🚀 Launch Selected</button>
+          <button class="btn btn-danger btn-sm" data-action="batch-stop">⏹ Stop Selected</button>
+          <button class="btn btn-secondary btn-sm" data-action="batch-check">🔍 Check Proxies</button>
+          <button class="btn btn-secondary btn-sm" data-action="selection-clear">✕ Clear Selection</button>
         </div>
       </section>
 
       <!-- Controls & Filter Bar -->
       <section class="controls-bar">
         <div class="search-filter-group">
-          <input type="text" class="search-input" id="search-input" placeholder="Search by name, group, tag, IP..." oninput="renderProfiles()">
+          <input type="text" class="search-input" id="search-input" placeholder="Search by name, group, tag, IP..." data-action="profiles-render">
           
-          <select class="filter-select" id="group-filter" onchange="renderProfiles()">
+          <select class="filter-select" id="group-filter" data-action="profiles-render">
             <option value="ALL">All Groups</option>
             <option value="Google Ads">Google Ads</option>
             <option value="Warmup">Warmup</option>
@@ -99,7 +99,7 @@
             <option value="Arbitrage">Arbitrage</option>
           </select>
 
-          <select class="filter-select" id="status-filter" onchange="renderProfiles()">
+          <select class="filter-select" id="status-filter" data-action="profiles-render">
             <option value="ALL">All Statuses</option>
             <option value="RUNNING">Running Only</option>
             <option value="STOPPED">Stopped Only</option>
@@ -107,7 +107,7 @@
         </div>
 
         <div>
-          <button class="btn btn-secondary btn-sm" onclick="fetchProfiles()">🔄 Refresh List</button>
+          <button class="btn btn-secondary btn-sm" data-action="profiles-fetch">🔄 Refresh List</button>
         </div>
       </section>
 
@@ -126,12 +126,12 @@
     <div class="modal-window">
       <div class="modal-header">
         <h3 class="modal-title" id="diag-modal-title">🔍 Profile Diagnostics</h3>
-        <button class="modal-close-btn" onclick="closeDiagModal()">&times;</button>
+        <button class="modal-close-btn" data-action="diag-close">&times;</button>
       </div>
       <div class="modal-body" id="diag-modal-body"></div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeDiagModal()">Close</button>
-        <button class="btn btn-primary" id="diag-launch-btn" onclick="launchFromDiag()">🚀 Launch Browser</button>
+        <button class="btn btn-secondary" data-action="diag-close">Close</button>
+        <button class="btn btn-primary" id="diag-launch-btn" data-action="diag-launch">🚀 Launch Browser</button>
       </div>
     </div>
   </div>
@@ -142,11 +142,11 @@
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 12px;">
           <h3 class="modal-title" id="profile-modal-title">Profile Settings</h3>
-          <button class="btn btn-secondary btn-sm" type="button" onclick="randomizeFingerprintInModal()" style="font-size: 11px;">
+          <button class="btn btn-secondary btn-sm" type="button" data-action="fingerprint-randomize" style="font-size: 11px;">
             🎲 Generate Fingerprint
           </button>
         </div>
-        <button class="modal-close-btn" onclick="closeProfileModal()">&times;</button>
+        <button class="modal-close-btn" data-action="profile-modal-close">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="edit-profile-id">
@@ -167,7 +167,7 @@
           <label class="form-label">Proxy (Format: host:port, host:port:user:pass, socks5://user:pass@host:port, or direct)</label>
           <div style="display: flex; gap: 8px;">
             <input type="text" class="form-input" style="flex: 1;" id="edit-proxy-raw" placeholder="socks5://user:pass@127.0.0.1:1080">
-            <button class="btn btn-secondary btn-sm" type="button" onclick="testModalProxy()">⚡ Check Proxies</button>
+            <button class="btn btn-secondary btn-sm" type="button" data-action="proxy-test-modal">⚡ Check Proxies</button>
           </div>
           <span id="proxy-test-result" style="font-size: 11px; font-family: var(--font-mono); margin-top: 4px;"></span>
         </div>
@@ -194,7 +194,7 @@
         <!-- Hardware & Fingerprint -->
         <div class="form-group">
           <label class="form-label">User-Agent & Platform Preset</label>
-          <select class="form-select" id="edit-ua-preset" onchange="applyUaPreset()">
+          <select class="form-select" id="edit-ua-preset" data-action="ua-preset-apply">
             <option value="win11_chrome133">Windows 11 / Chrome 133 (64-bit)</option>
             <option value="win10_chrome132">Windows 10 / Chrome 132 (64-bit)</option>
             <option value="mac_chrome133">macOS Sonoma / Chrome 133 (Apple Silicon)</option>
@@ -238,8 +238,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeProfileModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveProfileModal()">Save Profile</button>
+        <button class="btn btn-secondary" data-action="profile-modal-close">Cancel</button>
+        <button class="btn btn-primary" data-action="profile-save">Save Profile</button>
       </div>
     </div>
   </div>
@@ -249,7 +249,7 @@
     <div class="modal-window">
       <div class="modal-header">
         <h3 class="modal-title">📥 Bulk Proxy Import</h3>
-        <button class="modal-close-btn" onclick="closeBulkImportModal()">&times;</button>
+        <button class="modal-close-btn" data-action="bulk-import-close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
@@ -275,8 +275,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeBulkImportModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="submitBulkImport()">Create Profiles</button>
+        <button class="btn btn-secondary" data-action="bulk-import-close">Cancel</button>
+        <button class="btn btn-primary" data-action="bulk-import-submit">Create Profiles</button>
       </div>
     </div>
   </div>
@@ -286,7 +286,7 @@
     <div class="modal-window">
       <div class="modal-header">
         <h3 class="modal-title" id="warmup-modal-title">🔥 Automatic Google Account Warmup</h3>
-        <button class="modal-close-btn" onclick="closeWarmupModal()">&times;</button>
+        <button class="modal-close-btn" data-action="warmup-close">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="warmup-profile-id">
@@ -297,7 +297,7 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Warmup Topic (Niche)</label>
-            <select class="form-select" id="warmup-niche" onchange="previewWarmupPlan()">
+            <select class="form-select" id="warmup-niche" data-action="warmup-preview">
               <option value="ecommerce">E-Commerce & Shopping (Electronics, Products)</option>
               <option value="finance">Finance & Investing (ETFs, Stocks, Deposits)</option>
               <option value="tech">IT & Technology (Python, Docker, Cloud)</option>
@@ -307,7 +307,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Number of Search Sessions</label>
-            <select class="form-select" id="warmup-steps" onchange="previewWarmupPlan()">
+            <select class="form-select" id="warmup-steps" data-action="warmup-preview">
               <option value="3">3 sessions (~4.5 min)</option>
               <option value="5" selected>5 sessions (~7.5 min)</option>
               <option value="8">8 sessions (~12 min)</option>
@@ -324,8 +324,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeWarmupModal()">Cancel</button>
-        <button class="btn btn-warmup" onclick="startWarmup()">🔥 Start Warmup</button>
+        <button class="btn btn-secondary" data-action="warmup-close">Cancel</button>
+        <button class="btn btn-warmup" data-action="warmup-start">🔥 Start Warmup</button>
       </div>
     </div>
   </div>
@@ -335,7 +335,7 @@
     <div class="modal-window">
       <div class="modal-header">
         <h3 class="modal-title" id="cookie-modal-title">🍪 Cookie Manager</h3>
-        <button class="modal-close-btn" onclick="closeCookieModal()">&times;</button>
+        <button class="modal-close-btn" data-action="cookie-close">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="cookie-profile-id">
@@ -346,8 +346,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeCookieModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="submitCookiesImport()">Import Cookies</button>
+        <button class="btn btn-secondary" data-action="cookie-close">Cancel</button>
+        <button class="btn btn-primary" data-action="cookie-submit">Import Cookies</button>
       </div>
     </div>
   </div>
@@ -357,7 +357,7 @@
     <div class="modal-window" style="max-width: 780px;">
       <div class="modal-header">
         <h3 class="modal-title">🚀 YouTube Shorts Autoposting (Stealth Uploader)</h3>
-        <button class="modal-close-btn" onclick="closeAutopostModal()">&times;</button>
+        <button class="modal-close-btn" data-action="autopost-close">&times;</button>
       </div>
       <div class="modal-body">
         <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid var(--accent-emerald); border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: var(--text-primary);">
@@ -401,9 +401,9 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <label class="form-label" style="margin-bottom: 0;">Accounts to Publish To:</label>
             <div style="display: flex; gap: 8px;">
-              <button class="btn btn-secondary btn-sm" onclick="previewAutopostSpintax()">🎲 Preview Spintax</button>
-              <button class="btn btn-secondary btn-sm" onclick="selectAutopostAll(true)">Select All</button>
-              <button class="btn btn-secondary btn-sm" onclick="selectAutopostAll(false)">Deselect All</button>
+              <button class="btn btn-secondary btn-sm" data-action="autopost-spintax-preview">🎲 Preview Spintax</button>
+              <button class="btn btn-secondary btn-sm" data-action="autopost-select-all" data-selected="true">Select All</button>
+              <button class="btn btn-secondary btn-sm" data-action="autopost-select-all" data-selected="false">Deselect All</button>
             </div>
           </div>
           <div id="autopost-profiles-selector" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; background: var(--bg-app); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px; max-height: 140px; overflow-y: auto;">
@@ -424,9 +424,9 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeAutopostModal()">Close</button>
-        <button class="btn btn-danger btn-sm" onclick="cancelAutopost()" id="btn-cancel-autopost" style="display: none;">⏹ Stop Queue</button>
-        <button class="btn btn-warmup" onclick="startAutopostBatch()" id="btn-start-autopost">🚀 Start Autoposting</button>
+        <button class="btn btn-secondary" data-action="autopost-close">Close</button>
+        <button class="btn btn-danger btn-sm" data-action="autopost-cancel" id="btn-cancel-autopost" style="display: none;">⏹ Stop Queue</button>
+        <button class="btn btn-warmup" data-action="autopost-start" id="btn-start-autopost">🚀 Start Autoposting</button>
       </div>
     </div>
   </div>

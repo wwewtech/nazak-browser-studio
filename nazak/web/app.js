@@ -241,7 +241,7 @@ function renderProfiles() {
       <div class="profile-card ${isRunning ? "running" : ""}" id="card-${escapeHtml(p.id)}">
         <div class="card-header">
           <div class="profile-checkbox-row">
-            <input type="checkbox" class="profile-checkbox" ${isSelected ? "checked" : ""} onchange="toggleSelect('${escapeHtml(p.id)}', this.checked)">
+            <input type="checkbox" class="profile-checkbox" ${isSelected ? "checked" : ""} data-action="profile-select" data-id="${escapeHtml(p.id)}">
             <div class="profile-identity">
               <div class="profile-name-row">
                 <span class="profile-name">${escapeHtml(p.name)}</span>
@@ -266,27 +266,27 @@ function renderProfiles() {
         </div>
         <div class="card-actions">
           <div class="launch-group">
-            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopProfile('${escapeHtml(p.id)}')"><span>⏹ Stop</span></button>` : `<button class="btn btn-success btn-sm" onclick="launchProfile('${escapeHtml(p.id)}')"><span>🚀 Launch</span></button>`}
+            ${isRunning ? `<button class="btn btn-danger btn-sm" data-action="profile-stop" data-id="${escapeHtml(p.id)}"><span>⏹ Stop</span></button>` : `<button class="btn btn-success btn-sm" data-action="profile-launch" data-id="${escapeHtml(p.id)}"><span>🚀 Launch</span></button>`}
             <div class="dropdown">
-              <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('dropdown-${escapeHtml(p.id)}')"><span>⚡ Google ▾</span></button>
+              <button class="btn btn-secondary btn-sm dropdown-toggle" data-action="dropdown-toggle" data-target="dropdown-${escapeHtml(p.id)}"><span>⚡ Google ▾</span></button>
               <div class="dropdown-menu" id="dropdown-${escapeHtml(p.id)}">
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://accounts.google.com/ServiceLogin')">🔑 Google Sign In (Auth)</div>
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://ads.google.com')">📊 Google Ads Dashboard</div>
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://studio.youtube.com')">🎬 YouTube Studio</div>
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://www.google.com')">🔍 Google Search (Warmup)</div>
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://whoer.net')">🛡 Whoer.net (IP Test)</div>
-                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://browserleaks.com/ip')">🌐 BrowserLeaks IP</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://accounts.google.com/ServiceLogin">🔑 Google Sign In (Auth)</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://ads.google.com">📊 Google Ads Dashboard</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://studio.youtube.com">🎬 YouTube Studio</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://www.google.com">🔍 Google Search (Warmup)</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://whoer.net">🛡 Whoer.net (IP Test)</div>
+                <div class="dropdown-item" data-action="profile-launch" data-id="${escapeHtml(p.id)}" data-url="https://browserleaks.com/ip">🌐 BrowserLeaks IP</div>
               </div>
             </div>
-            <button class="btn btn-warmup btn-sm" onclick="openWarmupModal('${escapeHtml(p.id)}')" title="Automatic warmup"><span>🔥 Warmup</span></button>
+            <button class="btn btn-warmup btn-sm" data-action="warmup-open" data-id="${escapeHtml(p.id)}" title="Automatic warmup"><span>🔥 Warmup</span></button>
           </div>
           <div class="more-group">
-            <button class="btn btn-secondary btn-sm" onclick="openDiagModal('${escapeHtml(p.id)}')" title="Diagnostics"><span>🔍</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openCookieModal('${escapeHtml(p.id)}')" title="Cookies"><span>🍪</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${escapeHtml(p.id)}')" title="Settings"><span>⚙</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="cloneProfile('${escapeHtml(p.id)}')" title="Clone"><span>📋</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="clearCache('${escapeHtml(p.id)}')" title="Clear cache"><span>🧹</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="deleteProfile('${escapeHtml(p.id)}')" title="Delete" style="color: var(--accent-rose);"><span>🗑</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="diag-open" data-id="${escapeHtml(p.id)}" title="Diagnostics"><span>🔍</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="cookie-open" data-id="${escapeHtml(p.id)}" title="Cookies"><span>🍪</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="profile-edit-open" data-id="${escapeHtml(p.id)}" title="Settings"><span>⚙</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="profile-clone" data-id="${escapeHtml(p.id)}" title="Clone"><span>📋</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="profile-clear-cache" data-id="${escapeHtml(p.id)}" title="Clear cache"><span>🧹</span></button>
+            <button class="btn btn-secondary btn-sm" data-action="profile-delete" data-id="${escapeHtml(p.id)}" title="Delete" style="color: var(--accent-rose);"><span>🗑</span></button>
           </div>
         </div>
       </div>
@@ -721,7 +721,7 @@ function renderAutopostProfiles() {
     const proxyStr = p.proxy.raw ? (p.proxy.host ? `${p.proxy.host}:${p.proxy.port}` : "Direct") : "Direct";
     return `
       <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; padding: 4px 6px; background: var(--bg-surface); border-radius: 4px; border: 1px solid var(--border-subtle);">
-        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleAutopostProfile('${escapeHtml(p.id)}', this.checked)">
+        <input type="checkbox" ${isChecked ? "checked" : ""} data-action="autopost-profile-select" data-id="${escapeHtml(p.id)}">
         <span style="font-weight: 600; color: var(--text-primary);">${escapeHtml(p.name)}</span>
         <span style="color: var(--text-muted); font-size: 10px; margin-left: auto;">${escapeHtml(proxyStr)}</span>
       </label>
@@ -858,3 +858,104 @@ async function updateAutopostStatusView() {
     }).join("");
   } catch (e) {}
 }
+
+// ---------------------------------------------------------------------------
+// CSP-safe action delegation (audit R3-round2 / R3b-10-11)
+//
+// Раньше в разметке было 58 inline-атрибутов on*="...", из-за чего CSP обязан
+// был содержать script-src 'unsafe-inline' — то есть НЕ защищал от XSS (это
+// проверено в реальном браузере: со старым CSP payload всё равно исполнялся).
+// Теперь каждое действие объявлено как data-action="имя" (+ параметры в data-*),
+// а один делегированный слушатель на документе вызывает функцию из таблицы.
+// Следствие: сервер отдаёт строгий script-src 'self', и инжектированный
+// атрибут-обработчик (on*="…") не исполняется даже при ошибке экранирования.
+//
+// Правила для новых кнопок:
+//   <button data-action="profile-launch" data-id="${escapeHtml(p.id)}">…</button>
+// Все параметры попадают в обработчик строками: params.selected === "true",
+// для чекбоксов актуальное состояние берётся из el.checked.
+function _delegatedParams(el) {
+  const params = {};
+  for (const attr of el.attributes) {
+    if (!attr.name.startsWith("data-") || attr.name === "data-action") continue;
+    const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    params[key] = attr.value;
+  }
+  return params;
+}
+
+function _dispatchDelegatedAction(ev) {
+  const target = ev.target;
+  if (!target || typeof target.closest !== "function") return;
+  const el = target.closest("[data-action]");
+  if (!el) return;
+  const name = el.getAttribute("data-action");
+  const handler = DELEGATED_ACTIONS[name];
+  if (!handler) {
+    console.warn("unknown data-action:", name);
+    return;
+  }
+  try {
+    handler(el, _delegatedParams(el), ev);
+  } catch (err) {
+    console.error("data-action failed:", name, err);
+    showToast(`Action failed: ${name}`, "error");
+  }
+}
+
+const DELEGATED_ACTIONS = {
+  // ---- header & списки профилей
+  "autopost-open": () => openAutopostModal(),
+  "bulk-import-open": () => openBulkImportModal(),
+  "check-all-profiles": () => checkAllProfiles(),
+  "profile-create-open": () => openCreateProfileModal(),
+  "profiles-render": () => renderProfiles(),
+  "profiles-fetch": () => fetchProfiles(),
+  "select-all-toggle": (el) => toggleSelectAll(el.checked),
+  "selection-clear": () => clearSelection(),
+  "batch-launch": () => batchLaunchSelected(),
+  "batch-stop": () => batchStopSelected(),
+  "batch-check": () => batchCheckSelected(),
+  // ---- действия карточки профиля
+  "profile-select": (el, p) => toggleSelect(p.id, el.checked),
+  "profile-launch": (el, p) => launchProfile(p.id, p.url || null),
+  "profile-stop": (el, p) => stopProfile(p.id),
+  "dropdown-toggle": (el, p) => toggleDropdown(p.target),
+  "warmup-open": (el, p) => openWarmupModal(p.id),
+  "diag-open": (el, p) => openDiagModal(p.id),
+  "cookie-open": (el, p) => openCookieModal(p.id),
+  "profile-edit-open": (el, p) => openEditProfileModal(p.id),
+  "profile-clone": (el, p) => cloneProfile(p.id),
+  "profile-clear-cache": (el, p) => clearCache(p.id),
+  "profile-delete": (el, p) => deleteProfile(p.id),
+  // ---- диалог диагностики
+  "diag-close": () => closeDiagModal(),
+  "diag-launch": () => launchFromDiag(),
+  // ---- диалог создания/редактирования профиля
+  "fingerprint-randomize": () => randomizeFingerprintInModal(),
+  "profile-modal-close": () => closeProfileModal(),
+  "proxy-test-modal": () => testModalProxy(),
+  "ua-preset-apply": () => applyUaPreset(),
+  "profile-save": () => saveProfileModal(),
+  // ---- массовый импорт прокси
+  "bulk-import-close": () => closeBulkImportModal(),
+  "bulk-import-submit": () => submitBulkImport(),
+  // ---- прогрев
+  "warmup-close": () => closeWarmupModal(),
+  "warmup-preview": () => previewWarmupPlan(),
+  "warmup-start": () => startWarmup(),
+  // ---- cookie-менеджер
+  "cookie-close": () => closeCookieModal(),
+  "cookie-submit": () => submitCookiesImport(),
+  // ---- автопостинг
+  "autopost-close": () => closeAutopostModal(),
+  "autopost-spintax-preview": () => previewAutopostSpintax(),
+  "autopost-select-all": (el, p) => selectAutopostAll(p.selected === "true"),
+  "autopost-profile-select": (el, p) => toggleAutopostProfile(p.id, el.checked),
+  "autopost-cancel": () => cancelAutopost(),
+  "autopost-start": () => startAutopostBatch(),
+};
+
+document.addEventListener("click", _dispatchDelegatedAction);
+document.addEventListener("change", _dispatchDelegatedAction);
+document.addEventListener("input", _dispatchDelegatedAction);

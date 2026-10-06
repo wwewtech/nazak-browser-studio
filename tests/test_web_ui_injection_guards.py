@@ -10,7 +10,9 @@ Covered findings:
      country / city (third-party proxy-check response fetched over plain HTTP
      through the user's proxy) into ``innerHTML`` without escaping.
   2. Profile ids were interpolated straight into inline ``onclick`` /
-     ``onchange`` (and ``id``) attributes without escaping.
+     ``onchange`` (and ``id``) attributes without escaping. Round-3b removed the
+     inline handlers entirely (they required CSP ``script-src 'unsafe-inline'``),
+     so the ids now travel in ``data-*`` parameters and this file guards those.
   3. The autopost job table rendered ``<a href="${escapeHtml(j.video_url)}">``
      with no URL scheme allowlist, so a ``javascript:`` URL would survive.
 """
@@ -25,10 +27,10 @@ APP_JS_PATH = Path(__file__).resolve().parents[1] / "nazak" / "web" / "app.js"
 # ``[^{}]`` cannot cross a brace.
 _INTERPOLATION_RE = re.compile(r"\$\{([^{}]*)\}")
 
-# ``onclick="..."`` / ``onchange="..."`` attribute values. The inline handlers
-# in this file pass single-quoted JS strings, so a double quote cannot legally
-# appear inside the captured attribute value.
-_HANDLER_ATTR_RE = re.compile(r"""\bon(?:click|change)\s*=\s*"([^"]*)\"""")
+# ``data-*="..."`` attribute values — the CSP-safe replacement for inline
+# handlers (see DELEGATED_ACTIONS in app.js). The values pass single-quoted JS
+# strings only inside ``${...}``, so a double quote cannot legally appear here.
+_DATA_ATTR_RE = re.compile(r"""\bdata-[a-z-]+\s*=\s*"([^"]*)\"""")
 
 # ``id="..."`` attribute values.
 _ID_ATTR_RE = re.compile(r"""\bid\s*=\s*"([^"]*)\"""")
@@ -73,13 +75,17 @@ def test_profile_card_escapes_ip_and_geo():
     assert "escapeHtml(geoText)" in card
 
 
-def test_profile_ids_in_inline_handlers_are_escaped():
-    """Finding B: every ``${p.id}`` inside an inline handler is escapeHtml()-wrapped."""
+def test_profile_ids_in_data_parameters_are_escaped():
+    """Finding B: every ``${p.id}`` inside a ``data-*`` parameter is escaped.
+
+    Round-3b: inline handlers were replaced by ``data-action`` + ``data-*``, so
+    the injection surface moved from ``onclick`` values to these attributes.
+    """
     src = _app_js()
     seen = 0
     offenders = []
 
-    for attr in _HANDLER_ATTR_RE.finditer(src):
+    for attr in _DATA_ATTR_RE.finditer(src):
         for interp in _INTERPOLATION_RE.finditer(attr.group(1)):
             body = interp.group(1)
             if "p.id" not in body:
@@ -88,10 +94,10 @@ def test_profile_ids_in_inline_handlers_are_escaped():
             if "escapeHtml(" not in body:
                 offenders.append(body)
 
-    # Sanity check: the dashboard really does build inline handlers from p.id,
+    # Sanity check: the dashboard really does build data parameters from p.id,
     # so a clean run above is not vacuous.
-    assert seen >= 5, f"expected inline handlers interpolating p.id, found {seen}"
-    assert offenders == [], f"unescaped profile id inside inline handler: {offenders!r}"
+    assert seen >= 8, f"expected data-* parameters interpolating p.id, found {seen}"
+    assert offenders == [], f"unescaped profile id inside a data parameter: {offenders!r}"
 
 
 def test_profile_ids_in_id_attributes_are_escaped():
