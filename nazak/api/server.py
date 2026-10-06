@@ -661,7 +661,10 @@ class SynchronizerNavigateRequest(BaseModel):
         """
         from ..core.browser_launcher import sanitize_launch_url
 
-        return sanitize_launch_url(value)
+        sanitized = sanitize_launch_url(value)
+        if not sanitized:
+            raise ValueError("URL is empty")
+        return sanitized
 
 
 class WindowTileRequest(BaseModel):

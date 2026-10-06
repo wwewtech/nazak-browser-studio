@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import sys
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -214,9 +215,27 @@ def _fernet_decrypt(envelope: str, passphrase: str | None) -> bytes:
 # -- Windows DPAPI (user scope): no passphrase management needed ------------
 
 
+def _windows_dpapi_api() -> tuple[Any, Any]:
+    """Windows-only вход в crypt32/kernel32 через ctypes.
+
+    Audit R3-round2: обращаемся через getattr, потому что на Linux typeshed не
+    знает ``ctypes.windll``/``GetLastError`` — прямой доступ валил mypy
+    (attr-defined) на CI-раннере, хотя код всё равно работает только на Windows.
+    """
+    import ctypes
+
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:  # pragma: no cover - выполняется только вне Windows
+        raise SecretsError("DPAPI is only available on Windows")
+    get_last_error = getattr(ctypes, "GetLastError", None)
+    return windll, get_last_error
+
+
 def _dpapi_protect(raw: bytes) -> str:
     import ctypes
     import ctypes.wintypes
+
+    windll, get_last_error = _windows_dpapi_api()
 
     class _DATA_BLOB(ctypes.Structure):
         _fields_ = [
@@ -227,7 +246,7 @@ def _dpapi_protect(raw: bytes) -> str:
     buf = ctypes.create_string_buffer(raw, len(raw))
     input_blob = _DATA_BLOB(len(raw), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
     output_blob = _DATA_BLOB()
-    ok = ctypes.windll.crypt32.CryptProtectData(
+    ok = windll.crypt32.CryptProtectData(
         ctypes.byref(input_blob),
         None,
         None,
@@ -237,15 +256,18 @@ def _dpapi_protect(raw: bytes) -> str:
         ctypes.byref(output_blob),
     )
     if not ok:
-        raise SecretsError(f"DPAPI CryptProtectData failed: {ctypes.GetLastError()}")
+        code = get_last_error() if get_last_error else "unknown"
+        raise SecretsError(f"DPAPI CryptProtectData failed: {code}")
     out = ctypes.string_at(output_blob.pbData, output_blob.cbData)
-    ctypes.windll.kernel32.LocalFree(output_blob.pbData)
+    windll.kernel32.LocalFree(output_blob.pbData)
     return f"{_ENVELOPE_PREFIX}{_TAG_DPAPI}:{base64.b64encode(out).decode('ascii')}"
 
 
 def _dpapi_unprotect(envelope: str) -> bytes:
     import ctypes
     import ctypes.wintypes
+
+    windll, get_last_error = _windows_dpapi_api()
 
     class _DATA_BLOB(ctypes.Structure):
         _fields_ = [
@@ -262,7 +284,7 @@ def _dpapi_unprotect(envelope: str) -> bytes:
     buf = ctypes.create_string_buffer(raw, len(raw))
     input_blob = _DATA_BLOB(len(raw), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
     output_blob = _DATA_BLOB()
-    ok = ctypes.windll.crypt32.CryptUnprotectData(
+    ok = windll.crypt32.CryptUnprotectData(
         ctypes.byref(input_blob),
         None,
         None,
@@ -272,12 +294,12 @@ def _dpapi_unprotect(envelope: str) -> bytes:
         ctypes.byref(output_blob),
     )
     if not ok:
+        code = get_last_error() if get_last_error else "unknown"
         raise SecretsDecryptError(
-            f"DPAPI CryptUnprotectData failed: {ctypes.GetLastError()} "
-            "(envelope encrypted for a different Windows user?)"
+            f"DPAPI CryptUnprotectData failed: {code} (envelope encrypted for a different Windows user?)"
         )
     out = ctypes.string_at(output_blob.pbData, output_blob.cbData)
-    ctypes.windll.kernel32.LocalFree(output_blob.pbData)
+    windll.kernel32.LocalFree(output_blob.pbData)
     return out
 
 
