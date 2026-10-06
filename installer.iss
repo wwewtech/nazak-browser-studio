@@ -7,7 +7,7 @@
 ; Audit R3: fallback синхронизирован с nazak/__init__.py (build_exe.py всё равно
 ; подставляет актуальную версию через /DMyAppVersion).
 #ifndef MyAppVersion
-#define MyAppVersion "1.10.0"
+#define MyAppVersion "1.11.0"
 #endif
 #define MyAppPublisher "Nazak Technologies"
 #define MyAppURL "https://github.com/wwewtech/nazak-browser-studio"

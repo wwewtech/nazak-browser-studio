@@ -2,9 +2,20 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — Round-3 Audit Remediation (agent-first hardening)
+## v1.11.0 — Round-3 & Round-3b Audit Remediation (2026-10-06)
 
-Third audit pass, focused on the CLI/agent surface plus the local API perimeter. Full findings and evidence: [docs/AUDIT_ROUND3_FINDINGS.md](docs/AUDIT_ROUND3_FINDINGS.md). `ruff check`, `ruff format --check` and `mypy` (now with **no** suppressed error codes) are clean; 29 new regression tests in `tests/test_round3_fixes.py` + 5 in `tests/test_web_ui_injection_guards.py`.
+Two audit passes over the whole product: the first covered the CLI/agent surface, publication
+honesty, the local API perimeter, warmup and Docker; the second deliberately went into the code
+the first one had not read — the dashboard HTML and its font dependencies, the whole stealth-JS
+generator, the CDP injector loop, the synchronizer, `cli_cmds/automation.py`, the GUI dialogs,
+`nazak/tools/*`, the release build, bundle import and every API request model. 13 commits.
+Full findings with evidence, and an explicit list of what could not be verified:
+[docs/AUDIT_ROUND3_FINDINGS.md](docs/AUDIT_ROUND3_FINDINGS.md) (§1–§10 first pass, §11 second pass).
+
+Test suite: **725 collected** (3 `live` tests deselected by default), `ruff check`,
+`ruff format --check` and `mypy` (with **no** suppressed error codes) clean. 56 new regression
+tests. Verified on a real Docker engine (image build, runtime contract, `.dockerignore`) and, for
+the dashboard XSS, in a real Chromium with a differential control.
 
 ### Security — second audit pass (round-3b)
 

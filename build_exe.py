@@ -35,8 +35,8 @@ EXE_PATH = APP_DIR / "NazakBrowserStudio.exe"
 ISS_FILE = ROOT_DIR / "installer.iss"
 
 # Dynamically extract version from package
-# Audit R3: fallback обновлён вместе с версией пакета (был "1.9.1" при 1.10.0).
-_FALLBACK_VERSION = "1.10.0"
+# Audit R3: fallback обновляется вместе с версией пакета (был "1.9.1", затем "1.10.0").
+_FALLBACK_VERSION = "1.11.0"
 try:
     import re
 
