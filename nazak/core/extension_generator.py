@@ -5,11 +5,43 @@ can be queried or fingerprinted by websites or anti-fraud systems.
 """
 
 import json
+import logging
+import math
 import re
 import shutil
 from pathlib import Path
 
 from ..models.profile import BrowserProfile
+
+logger = logging.getLogger(__name__)
+
+
+def _js_number(value: object) -> str:
+    """Рендерит число как валидный JS-литерал.
+
+    Audit R3-round2: f-строка вставляла float через str(), поэтому Infinity и
+    NaN из JSON-тела (json.loads их принимает) превращались в python-литералы
+    ``inf``/``nan``. В браузере это неопределённые идентификаторы: getter
+    devicePixelRatio падал с ReferenceError (страница ломается + яркий признак
+    подмены), а аудио-шум молча отключался, потому что исключение глоталось
+    внешним try/catch.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.warning("non-numeric value %r rendered as 0 in stealth.js", value)
+        return "0"
+    if math.isnan(number):
+        logger.warning("NaN rendered as 0 in stealth.js")
+        return "0"
+    if math.isinf(number):
+        logger.warning("Infinity rendered as %s in stealth.js", "Infinity" if number > 0 else "-Infinity")
+        return "Infinity" if number > 0 else "-Infinity"
+    return repr(number)
 
 
 def _chrome_full_version(*candidates: str | None) -> str:
@@ -196,11 +228,15 @@ chrome.webRequest.onAuthRequired.addListener(
     webgpu_arch_json = json.dumps(gpu_arch_str)
 
     stealth_js = f"""
-// Nazak Total Hardware Shield v2.5 Enterprise Stealth
-if (window.__nazakShieldApplied) {{
+// Total Hardware Shield v2.5 Enterprise Stealth
+if (window.__nsi) {{
     // Already applied on this document (extension content script + CDP injector may both run).
 }} else {{
-window.__nazakShieldApplied = true;
+// Audit R3-round2: раньше здесь стоял брендовый флаг вида window.__nazak*,
+// по которому любая антифрод-система определяла продукт одной строкой. Флаг
+// идемпотентности остался, но переименован и сделан неперечислимым, чтобы не
+// попадать в обычное перечисление свойств window.
+Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enumerable: false, writable: false}});
 (function() {{
     'use strict';
 
@@ -328,7 +364,7 @@ window.__nazakShieldApplied = true;
         Object.defineProperty(Screen.prototype, 'availHeight', {{ get: makeNative(() => {fp.screen_avail_height}, 'get availHeight'), configurable: true, enumerable: true }});
         Object.defineProperty(Screen.prototype, 'colorDepth', {{ get: makeNative(() => {fp.color_depth}, 'get colorDepth'), configurable: true, enumerable: true }});
         Object.defineProperty(Screen.prototype, 'pixelDepth', {{ get: makeNative(() => {fp.pixel_depth}, 'get pixelDepth'), configurable: true, enumerable: true }});
-        Object.defineProperty(Window.prototype, 'devicePixelRatio', {{ get: makeNative(() => {fp.device_pixel_ratio}, 'get devicePixelRatio'), configurable: true, enumerable: true }});
+        Object.defineProperty(Window.prototype, 'devicePixelRatio', {{ get: makeNative(() => {_js_number(fp.device_pixel_ratio)}, 'get devicePixelRatio'), configurable: true, enumerable: true }});
     }} catch(e) {{}}
 
     // 6. Timezone & Locale Formatting
@@ -594,7 +630,7 @@ window.__nazakShieldApplied = true;
     // 12. AudioContext Fingerprint Noise & OfflineAudioContext
     if ({str(fp.audio_noise).lower()}) {{
         try {{
-            const factor = {fp.audio_noise_seed} || 0.00001;
+            const factor = {_js_number(fp.audio_noise_seed)} || 0.00001;
             const applyAudioNoise = function(buffer) {{
                 if (!buffer || !buffer.getChannelData) return buffer;
                 for (let c = 0; c < buffer.numberOfChannels; c++) {{

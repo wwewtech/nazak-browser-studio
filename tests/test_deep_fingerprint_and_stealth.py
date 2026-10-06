@@ -256,8 +256,11 @@ def test_stealth_js_contains_valid_iife_syntax(tmp_path):
     stealth = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
     # Double-apply guard (extension content script + CDP injector may both run):
-    # `if (window.__nazakShieldApplied) {} else { window.__nazakShieldApplied = true; (function(){...})(); }`
-    assert "window.__nazakShieldApplied" in stealth
+    # audit R3-round2 — брендовый флаг заменён на неперечислимое свойство, чтобы
+    # страница не могла определить продукт одним if.
+    assert "window.__nazakShieldApplied" not in stealth
+    assert "window.__nsi" in stealth
+    assert "enumerable: false" in stealth
     assert "(function() {" in stealth
     assert stealth.strip().endswith("})();\n}")
 

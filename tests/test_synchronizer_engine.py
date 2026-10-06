@@ -120,8 +120,15 @@ def test_jittered_point_bounds_and_identity():
 
 
 def test_sync_client_js_has_install_guard():
-    assert "__nazakSyncInstalled" in SYNC_CLIENT_JS
-    assert "__nazak_sync_event" in SYNC_CLIENT_JS
+    # audit R3-round2: брендовые имена убраны (страница могла определить Nazak),
+    # но guard от двойной установки и нейтральное имя binding'а остались.
+    from nazak.core.cdp_injector import SYNC_BINDING_NAME
+
+    assert "__nazakSyncInstalled" not in SYNC_CLIENT_JS
+    assert "__nazak" not in SYNC_CLIENT_JS
+    assert "__nse_c" in SYNC_CLIENT_JS
+    assert SYNC_BINDING_NAME == "__nse_ev"
+    assert SYNC_BINDING_NAME in SYNC_CLIENT_JS
     for etype in ("click", "keydown", "scroll", "input"):
         assert f"'{etype}'" in SYNC_CLIENT_JS or f'"{etype}"' in SYNC_CLIENT_JS
 

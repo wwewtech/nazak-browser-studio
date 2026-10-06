@@ -44,7 +44,39 @@ except ImportError:  # pragma: no cover - dependency guard
     websockets = None  # type: ignore[assignment]
 
 CHROME_VERSION_RE = re.compile(r"Chrome/\d+(?:\.\d+)*")
-SYNC_BINDING_NAME = "__nazak_sync_event"
+
+# Audit R3-round2 (безопасность + стелс):
+#  * имя binding'а было "__nazak_sync_event" — любая страница видела функцию,
+#    по имени которой продукт определяется в один if. Имя нейтральное.
+#  * Runtime.addBinding ставится для КАЖДОЙ attached-сессии, поэтому жест могли
+#    присылать и сторонние iframe'ы: теперь событие принимается только из
+#    main-world контекста главного фрейма top-level страницы (см.
+#    _binding_event_allowed) и только при активной arming-проверке.
+#  * payload ограничен по размеру и по частоте (анти-flood: обработка
+#    вынесена в задачу, чтобы не блокировать цикл чтения CDP).
+SYNC_BINDING_NAME = "__nse_ev"
+MAX_BINDING_PAYLOAD_BYTES = 4096
+BINDING_RATE_LIMIT_PER_SEC = 60.0
+BINDING_RATE_BURST = 120.0
+
+
+class _TokenBucket:
+    """Простой лимитер частоты (чистый, тестируемый)."""
+
+    def __init__(self, rate_per_sec: float, burst: float) -> None:
+        self.rate = max(0.0, float(rate_per_sec))
+        self.capacity = max(1.0, float(burst))
+        self.tokens = self.capacity
+        self.updated = time.monotonic()
+
+    def allow(self, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        self.tokens = min(self.capacity, self.tokens + max(0.0, now - self.updated) * self.rate)
+        self.updated = now
+        if self.tokens < 1.0:
+            return False
+        self.tokens -= 1.0
+        return True
 
 
 def build_runtime_user_agent(user_agent: str, chrome_version: str) -> str:
@@ -176,11 +208,26 @@ class StealthInjector:
         self.auth_errors = 0
         self.requests_paused = 0
         self.requests_continued = 0
+        self.binding_events_accepted = 0
+        self.binding_events_rejected = 0
+        self.binding_events_throttled = 0
+        self.immediate_inject_skipped = 0
         self._ws: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._next_id = 0
         self._pending: dict[int, asyncio.Future] = {}
         self._stop_event: asyncio.Event | None = None
+        # --- приём sync-жестов (audit R3-round2) -------------------------
+        # sessionId -> является ли таргет top-level страницей
+        self._session_is_page: dict[str, bool] = {}
+        # sessionId -> id главного фрейма этой сессии
+        self._main_frame: dict[str, str | None] = {}
+        # executionContextId -> (frameId, isDefault)
+        self._contexts: dict[int, tuple[str | None, bool]] = {}
+        # уже применённые документы: (sessionId, loaderId)
+        self._injected_docs: set[tuple[str, str]] = set()
+        self._binding_bucket = _TokenBucket(BINDING_RATE_LIMIT_PER_SEC, BINDING_RATE_BURST)
+        self._binding_tasks: set[asyncio.Task] = set()
 
     def request_stop(self) -> None:
         """Thread-safe-ish stop request (must run on the injector loop)."""
@@ -269,7 +316,18 @@ class StealthInjector:
                         # auto-continue so navigation never stalls.
                         asyncio.create_task(self._continue_paused(params, sid))
                     elif method == "Runtime.bindingCalled":
-                        self._on_binding_called(params)
+                        # Audit R3-round2: разбор payload'а (до 4 КиБ) вынесен в
+                        # задачу — раньше он выполнялся inline в цикле чтения и
+                        # флуд со страницы задерживал Fetch.continueRequest.
+                        task = asyncio.create_task(self._on_binding_called(params, sid))
+                        self._binding_tasks.add(task)
+                        task.add_done_callback(self._binding_tasks.discard)
+                    elif method == "Runtime.executionContextCreated":
+                        self._on_context_created(params)
+                    elif method == "Runtime.executionContextsCleared":
+                        self._contexts.clear()
+                    elif method == "Page.frameNavigated":
+                        self._on_frame_navigated(params, sid)
                     elif method == "Fetch.authRequired":
                         try:
                             await self._on_auth_required(params, sid)
@@ -283,7 +341,12 @@ class StealthInjector:
         info = params.get("targetInfo", {})
         if info.get("type") not in ("page", "iframe", "other", "webview"):
             return
-        await self._apply_session(params.get("sessionId"))
+        session_id = params.get("sessionId")
+        # Только top-level страницы имеют право присылать sync-жесты: OOPIF
+        # (type=iframe) — это чужой фрейм внутри страницы.
+        if session_id:
+            self._session_is_page[session_id] = info.get("type") == "page"
+        await self._apply_session(session_id)
 
     async def _apply_session(self, session_id: str | None) -> None:
         if not session_id:
@@ -324,12 +387,25 @@ class StealthInjector:
                 session_id=session_id,
             )
             if src:
-                # Apply immediately to the *current* document (addScript covers future ones).
-                await self._command(
-                    "Runtime.evaluate",
-                    {"expression": src, "awaitPromise": False, "returnByValue": False},
-                    session_id=session_id,
-                )
+                # Apply immediately to the *current* document (addScript covers
+                # future ones). Audit R3-round2: применяем ровно один раз на
+                # документ — иначе скрипт ставился дважды и его приходилось
+                # защищать видимым странице флагом window.__nazakShieldApplied.
+                frame_tree = await self._command("Page.getFrameTree", {}, session_id=session_id)
+                tree_frame = (frame_tree.get("frameTree") or {}).get("frame") or {}
+                main_frame_id = tree_frame.get("id")
+                if main_frame_id:
+                    self._main_frame[session_id] = str(main_frame_id)
+                doc_key = (session_id, str(tree_frame.get("loaderId") or main_frame_id or ""))
+                if doc_key[1] and doc_key not in self._injected_docs:
+                    self._injected_docs.add(doc_key)
+                    await self._command(
+                        "Runtime.evaluate",
+                        {"expression": src, "awaitPromise": False, "returnByValue": False},
+                        session_id=session_id,
+                    )
+                else:
+                    self.immediate_inject_skipped += 1
             self.sessions_applied += 1
             self.applied = True
         except Exception as exc:  # pragma: no cover - defensive
@@ -344,22 +420,83 @@ class StealthInjector:
         except Exception as exc:
             logger.debug("continueRequest failed: %s", exc)
 
-    def _on_binding_called(self, params: dict[str, Any]) -> None:
-        """Forward page-side gesture events to the synchronizer sink."""
+    def _on_context_created(self, params: dict[str, Any]) -> None:
+        ctx = params.get("context", {})
+        ctx_id = ctx.get("id")
+        aux = ctx.get("auxData", {}) or {}
+        if isinstance(ctx_id, int):
+            self._contexts[ctx_id] = (aux.get("frameId"), bool(aux.get("isDefault", False)))
+
+    def _on_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
+        frame = params.get("frame", {}) or {}
+        # Главный фрейм сессии — тот, у которого нет parentId.
+        if session_id and not frame.get("parentId") and frame.get("id"):
+            self._main_frame[session_id] = str(frame["id"])
+
+    def binding_event_allowed(self, params: dict[str, Any], session_id: str | None) -> tuple[bool, str]:
+        """Чистая проверка: можно ли принимать этот binding-вызов.
+
+        Возвращает (разрешено, причина_отказа). Вынесено отдельно, чтобы
+        покрывать тестами без браузера.
+        """
         if params.get("name") != SYNC_BINDING_NAME:
-            return
+            return False, "wrong-binding"
         sink = self.opts.event_sink
         if not sink or not self.opts.profile_id:
+            return False, "no-sink"
+        if not session_id or not self._session_is_page.get(session_id, False):
+            return False, "not-a-top-level-page"
+        ctx_id = params.get("executionContextId")
+        ctx = self._contexts.get(ctx_id) if isinstance(ctx_id, int) else None
+        if ctx is None:
+            # Контекст неизвестен (не пришёл executionContextCreated) — отказ.
+            return False, "unknown-context"
+        frame_id, is_default = ctx
+        if not is_default:
+            # Изолированный мир (content script / расширение) — не страница.
+            return False, "isolated-world"
+        main_frame = self._main_frame.get(session_id)
+        if main_frame and frame_id != main_frame:
+            # Субфрейм/iframe внутри той же сессии.
+            return False, "subframe"
+        payload = params.get("payload", "")
+        if not isinstance(payload, str) or len(payload.encode("utf-8", "ignore")) > MAX_BINDING_PAYLOAD_BYTES:
+            return False, "payload-too-large"
+        return True, ""
+
+    async def _on_binding_called(self, params: dict[str, Any], session_id: str | None = None) -> None:
+        """Forward page-side gesture events to the synchronizer sink.
+
+        Audit R3-round2: binding ставится во все attached-сессии, поэтому
+        страница (в т.ч. рекламный iframe) могла диктовать клики в браузерах
+        других профилей. Теперь принимаются только жесты из main-world
+        главного фрейма top-level страницы, с лимитом размера и частоты.
+        """
+        allowed, reason = self.binding_event_allowed(params, session_id)
+        if not allowed:
+            self.binding_events_rejected += 1
+            if reason not in ("wrong-binding",):
+                logger.debug("binding event rejected (%s)", reason)
+            return
+        if not self._binding_bucket.allow():
+            self.binding_events_throttled += 1
             return
         try:
             event = json.loads(params.get("payload", "{}"))
         except ValueError:
+            self.binding_events_rejected += 1
             return
-        if isinstance(event, dict) and event.get("type"):
-            try:
-                sink(self.opts.profile_id, event)
-            except Exception as exc:
-                logger.debug("sync event sink failed: %s", exc)
+        if not isinstance(event, dict) or not event.get("type") or not isinstance(event.get("type"), str):
+            self.binding_events_rejected += 1
+            return
+        sink = self.opts.event_sink
+        if sink is None:  # pragma: no cover - уже проверено в binding_event_allowed
+            return
+        self.binding_events_accepted += 1
+        try:
+            sink(self.opts.profile_id, event)
+        except Exception as exc:
+            logger.debug("sync event sink failed: %s", exc)
 
     async def _on_auth_required(self, params: dict[str, Any], session_id: str | None) -> None:
         self.auth_challenges += 1

@@ -12,19 +12,47 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Audit R3-round2: границы для синхронизатора.
+#  * MAX_PENDING_EVENTS — очередь мастер-жестов: без maxsize мёртвый/медленный
+#    насос копил события в памяти бесконечно.
+#  * MAX_DELAY_MS — интервал джиттера: отрицательное значение уходило в
+#    time.sleep вне try и убивало поток-насос (ValueError), а session.active
+#    оставался True, т.е. клиент видел активную сессию при мёртвом насосе.
+#  * MAX_SYNC_NAVIGATE_WAIT_SEC — ожидание ответа насоса при навигации.
+MAX_PENDING_EVENTS = 5000
+MAX_COORDINATE_JITTER_PX = 50
+MAX_DELAY_MS = 60_000
+MAX_SYNC_NAVIGATE_WAIT_SEC = 45.0
 
-# Sync client installed into every page the stealth injector touches
-# (audit fix P0-2/C2). Captures user gestures in the master page and forwards
-# them to Python through the Runtime binding registered by the CDP injector,
-# where the synchronizer mirrors them onto worker pages with humanization.
+
+def _clamp_delay_range(delay_range_ms: Any) -> tuple[int, int]:
+    """Нормализует интервал задержек: неотрицательный, упорядоченный, в границах."""
+    try:
+        low = int(delay_range_ms[0])
+        high = int(delay_range_ms[1])
+    except (TypeError, ValueError, IndexError):
+        return (20, 80)
+    low = max(0, min(low, MAX_DELAY_MS))
+    high = max(0, min(high, MAX_DELAY_MS))
+    if high < low:
+        low, high = high, low
+    return (low, high)
+
+
+# Sync client for master pages: captures user gestures and forwards them through
+# the Runtime binding registered by the CDP injector.
+# Audit R3-round2: раньше здесь стояли `window.__nazakSyncInstalled = true` и
+# `window.__nazak_sync_event` — любая страница могла определить Nazak одной
+# строкой. Флаг идемпотентности теперь невидим при обычном перечислении
+# (неперечислимое свойство), а имя binding'а нейтральное (SYNC_BINDING_NAME).
 SYNC_CLIENT_JS = """
 (() => {
-  if (window.__nazakSyncInstalled) return;
-  window.__nazakSyncInstalled = true;
+  if (window.__nse_c) return;
+  Object.defineProperty(window, '__nse_c', {value: true, configurable: false, enumerable: false});
   const send = (type, data) => {
     try {
-      if (typeof window.__nazak_sync_event === 'function') {
-        window.__nazak_sync_event(JSON.stringify(Object.assign({type}, data)));
+      if (typeof window.__nse_ev === 'function') {
+        window.__nse_ev(JSON.stringify(Object.assign({type}, data)));
       }
     } catch (e) {}
   };
@@ -86,14 +114,20 @@ class SynchronizerSession:
         self.master_profile_id = master_profile_id
         self.worker_profile_ids = [w for w in worker_profile_ids if w != master_profile_id]
         self.humanize_jitter = humanize_jitter
-        self.delay_range_ms = delay_range_ms
-        self.coordinate_jitter_px = coordinate_jitter_px
+        # Audit R3-round2: интервал нормализуется здесь, потому что отрицательный
+        # delay уходил в time.sleep вне try -> ValueError убивал поток-насос,
+        # а session.active оставался True (клиент видел "active" при мёртвом насосе).
+        self.delay_range_ms = _clamp_delay_range(delay_range_ms)
+        self.coordinate_jitter_px = max(0, min(int(coordinate_jitter_px), MAX_COORDINATE_JITTER_PX))
         self.active = False
         self.total_replicated_events = 0
+        self.dropped_events = 0
+        self.last_error: str | None = None
         self.started_at: float | None = None
         # Thread-safe event queue: the CDP injector (its own thread) appends
         # master gestures here, the mirror pump thread consumes them.
-        self.events: queue.Queue[dict[str, Any]] = queue.Queue()
+        # maxsize обязателен: без него мёртвый/медленный насос копил память.
+        self.events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_PENDING_EVENTS)
         # Control commands (mirror_navigation) executed by the pump thread so
         # every CDP session is opened on ONE thread (Playwright requirement).
         self.commands: queue.Queue[dict[str, Any]] = queue.Queue()
@@ -107,6 +141,8 @@ class SynchronizerSession:
             "coordinate_jitter_px": self.coordinate_jitter_px,
             "active": self.active,
             "total_replicated_events": self.total_replicated_events,
+            "dropped_events": self.dropped_events,
+            "last_error": self.last_error,
             "started_at": self.started_at,
         }
 
@@ -147,7 +183,14 @@ def tile_windows_win32(pids: list[int], cols: int | None = None) -> bool:
         if not hwnds:
             return False
         total = len(hwnds)
-        num_cols = cols or (2 if total <= 4 else (3 if total <= 9 else 4))
+        # Audit R3-round2: cols приходит из API/CLI. Отрицательное значение
+        # давало ZeroDivisionError или отрицательную геометрию окна (гасилось
+        # общим except и выглядело как «не сработало»), поэтому диапазон 1..8.
+        default_cols = 2 if total <= 4 else (3 if total <= 9 else 4)
+        try:
+            num_cols = max(1, min(int(cols), 8)) if cols is not None else default_cols
+        except (TypeError, ValueError):
+            num_cols = default_cols
         num_rows = (total + num_cols - 1) // num_cols
         cell_w = screen_w // num_cols
         cell_h = screen_h // num_rows
@@ -225,7 +268,19 @@ class SynchronizerManager:
             return False
         if not isinstance(event, dict) or "type" not in event:
             return False
-        session.events.put({"profile_id": profile_id, "event": event, "ts": time.time()})
+        try:
+            # Audit R3-round2: ограниченная очередь + явный счётчик отброшенных
+            # событий вместо бесконечного роста памяти.
+            session.events.put_nowait({"profile_id": profile_id, "event": event, "ts": time.time()})
+        except queue.Full:
+            session.dropped_events += 1
+            if session.dropped_events % 100 == 1:
+                logger.warning(
+                    "synchronizer event queue full (%d pending); dropped %d events so far",
+                    session.events.maxsize,
+                    session.dropped_events,
+                )
+            return False
         return True
 
     def _install_sync_client(self, master_profile_id: str) -> None:
@@ -243,6 +298,8 @@ class SynchronizerManager:
         import asyncio
 
         async def _install() -> None:
+            # Импорт внутри try: без playwright поток не должен падать
+            # необработанным исключением (audit R3-round2).
             from playwright.async_api import async_playwright
 
             endpoint = cdp_info.get("http_endpoint") if isinstance(cdp_info, dict) else None
@@ -261,7 +318,13 @@ class SynchronizerManager:
             finally:
                 await pw.stop()
 
-        thread = threading.Thread(target=lambda: asyncio.run(_install()), daemon=True, name="NazakSyncInstall")
+        def _runner() -> None:
+            try:
+                asyncio.run(_install())
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("synchronizer: gesture capture unavailable (%s)", exc)
+
+        thread = threading.Thread(target=_runner, daemon=True, name="NazakSyncInstall")
         thread.start()
 
     def get_status(self) -> dict[str, Any]:
@@ -282,12 +345,23 @@ class SynchronizerManager:
         workers = list(session.worker_profile_ids)
         if not workers:
             return {}
+        # Audit R3-round2: мёртвый насос не должен заставлять ждать ответа минуты.
+        pump = self._pump_thread
+        if pump is not None and not pump.is_alive():
+            session.active = False
+            session.last_error = session.last_error or "mirror pump is not running"
+            logger.warning("mirror_navigation: pump thread is dead; session deactivated")
+            return {w: False for w in workers}
+
         outcome_queue: queue.Queue[dict[str, bool]] = queue.Queue()
         session.commands.put({"command": "navigate", "url": url, "reply": outcome_queue})
         try:
             # Bounded queue.get: a dead pump must not leave a blocked executor
             # thread behind after wait_for cancels the await.
-            outcomes = await asyncio.wait_for(asyncio.to_thread(outcome_queue.get, True, 110), timeout=120)
+            outcomes = await asyncio.wait_for(
+                asyncio.to_thread(outcome_queue.get, True, int(MAX_SYNC_NAVIGATE_WAIT_SEC)),
+                timeout=MAX_SYNC_NAVIGATE_WAIT_SEC + 10,
+            )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("mirror_navigation failed: %s", exc)
             outcomes = {w: False for w in workers}
@@ -297,9 +371,12 @@ class SynchronizerManager:
     # --------------------------------------------------------------- mirror pump
     def _mirror_pump(self, session: SynchronizerSession) -> None:
         """Consume master gestures and mirror them onto worker pages (blocking pump)."""
-        from playwright.sync_api import sync_playwright
-
         try:
+            # Audit R3-round2: импорт внутри try — отсутствие playwright должно
+            # быть зафиксировано как last_error сессии, а не как необработанное
+            # исключение потока (pytest превращает его в падение теста).
+            from playwright.sync_api import sync_playwright
+
             with sync_playwright() as pw:
                 while session.active:
                     command = self._pop_command(session)
@@ -315,7 +392,12 @@ class SynchronizerManager:
                         time.sleep(0.05)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("synchronizer mirror pump stopped: %s", exc)
+            session.last_error = str(exc)
         finally:
+            # Audit R3-round2: мёртвый насос обязан быть виден клиенту. Раньше
+            # session.active оставался True, get_status() отдавал "active", а
+            # mirror_navigation ждал ответа до 110 с.
+            session.active = False
             self._detach_workers()
 
     @staticmethod
@@ -351,10 +433,14 @@ class SynchronizerManager:
             info = pages.get(worker_id)
             if not info or not info.get("page"):
                 continue
-            if session.humanize_jitter:
-                delay_ms = random.uniform(*session.delay_range_ms)
-                time.sleep(delay_ms / 1000.0)
             try:
+                # Audit R3-round2: sleep ВНУТРИ try. Раньше он стоял снаружи, и
+                # отрицательный delay (невалидированный --min-delay/min_delay_ms)
+                # выбрасывал ValueError мимо обработчика -> насос умирал.
+                if session.humanize_jitter:
+                    delay_ms = random.uniform(*_clamp_delay_range(session.delay_range_ms))
+                    if delay_ms > 0:
+                        time.sleep(delay_ms / 1000.0)
                 ok = self._dispatch_event(info["page"], session, event)
                 info["total"] = int(info.get("total", 0)) + int(bool(ok))
             except Exception as exc:
@@ -364,18 +450,24 @@ class SynchronizerManager:
     # ------------------------------------------------------ worker attachments
     def _ensure_worker_pages(self, worker_ids: list[str], browser: Any = None) -> dict[str, dict[str, Any]]:
         """Attach one Playwright page per worker (cached, lazily reconnected)."""
+        # Audit R3-round2: сначала проверяем кэш — если все страницы живы,
+        # playwright не нужен вовсе (раньше импорт выполнялся всегда и падал
+        # там, где зависимость не установлена, хотя работы не требовалось).
+        need_attach = [
+            worker_id
+            for worker_id in worker_ids
+            if not (self._worker_pages.get(worker_id) and self._page_alive(self._worker_pages[worker_id]))
+        ]
+        if not need_attach:
+            return {wid: self._worker_pages[wid] for wid in worker_ids if wid in self._worker_pages}
+
         from playwright.sync_api import sync_playwright
 
         if browser is None:
             # Lazily start a private Playwright driver only when some worker
             # actually needs attaching (keeps unit tests and read-only paths free).
-            for worker_id in worker_ids:
-                info = self._worker_pages.get(worker_id)
-                if info and self._page_alive(info):
-                    continue
-                browser = sync_playwright().start()
-                self._worker_pw_tmp = browser
-                break
+            browser = sync_playwright().start()
+            self._worker_pw_tmp = browser
         for worker_id in worker_ids:
             info = self._worker_pages.get(worker_id)
             if info and self._page_alive(info):
@@ -433,10 +525,21 @@ class SynchronizerManager:
         if not info or not info.get("page"):
             return False
         try:
+            # Audit R3-round2: URL приходит из API/CLI. Раньше он уходил в
+            # page.goto() как есть, т.е. file://, data: и javascript: открывались
+            # в браузерах воркеров (в warmup/launch такая же проверка уже была).
+            from .browser_launcher import sanitize_launch_url
+
+            target_url = sanitize_launch_url(url)
+        except ValueError as exc:
+            logger.warning("synchronizer navigate refused for %s: %s", worker_id, exc)
+            return False
+        try:
             if session.humanize_jitter:
-                delay_ms = random.uniform(*session.delay_range_ms)
-                time.sleep(delay_ms / 1000.0)
-            info["page"].goto(url, wait_until="domcontentloaded", timeout=45000)
+                delay_ms = random.uniform(*_clamp_delay_range(session.delay_range_ms))
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+            info["page"].goto(target_url, wait_until="domcontentloaded", timeout=45000)
             return True
         except Exception as exc:
             logger.warning("synchronizer navigate failed for %s: %s", worker_id, exc)
