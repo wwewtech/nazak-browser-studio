@@ -94,6 +94,13 @@ def normalize_mode(mode: str | None) -> str:
         raise SecretsError(f"Unknown secrets mode {mode!r}. Available: {', '.join(SECRETS_MODES)}")
     if mode == "dpapi" and not IS_WINDOWS:
         raise SecretsError("Mode 'dpapi' is Windows-only. Choose 'passphrase' or 'plain' on this platform.")
+    if mode == "passphrase" and not _HAS_CRYPTOGRAPHY:
+        # Audit R3: раньше флаг _HAS_CRYPTOGRAPHY вычислялся и нигде не читался,
+        # поэтому без пакета cryptography режим падал с NameError в недрах KDF.
+        raise SecretsError(
+            "Mode 'passphrase' requires the 'cryptography' package (pip install cryptography). "
+            "Choose 'dpapi' on Windows or 'plain'."
+        )
     return mode
 
 
@@ -294,6 +301,8 @@ def encrypt_secret(value: str, mode: str | None = None, passphrase: str | None =
     if effective_mode == "dpapi":
         return _dpapi_protect(value.encode("utf-8"))
     if effective_mode == "passphrase":
+        if not _HAS_CRYPTOGRAPHY:
+            raise SecretsError("Passphrase mode needs the 'cryptography' package (pip install cryptography).")
         eff_passphrase = passphrase if passphrase is not None else _in_memory_passphrase
         if not eff_passphrase:
             raise SecretsError(
@@ -318,6 +327,8 @@ def decrypt_secret(envelope: str, passphrase: str | None = None) -> str:
             raise SecretsDecryptError("DPAPI envelope found on a non-Windows platform.")
         return _dpapi_unprotect(envelope).decode("utf-8")
     if body.startswith(_TAG_PWD + ":"):
+        if not _HAS_CRYPTOGRAPHY:
+            raise SecretsDecryptError("Passphrase envelope found, but the 'cryptography' package is not installed.")
         eff_passphrase = passphrase if passphrase is not None else _in_memory_passphrase
         return _fernet_decrypt(envelope, eff_passphrase).decode("utf-8")
     raise SecretsDecryptError(f"Unknown envelope scheme: {body.split(':', 1)[0]!r}")
@@ -350,7 +361,9 @@ def encrypt_notes(notes: dict, mode: str | None = None, passphrase: str | None =
                 result[field] = encrypt_secret(str(raw), mode=mode, passphrase=passphrase)
                 encrypted_any = True
             except SecretsError as exc:
-                logger.warning("Secrets: notes %s left unprotected for this save: %s", field, exc)
+                # Значение остаётся читаемым намеренно (не блокируем запись), но
+                # это ошибка уровня ERROR, а не тихое предупреждение (audit R3).
+                logger.error("Secrets: notes %s left unprotected for this save: %s", field, exc)
     # Label the record with the mode the values actually live in: keep the
     # incoming label when nothing was (re)encrypted, so a mixed store never
     # claims "plain" while envelopes are still present.
@@ -458,8 +471,8 @@ def protect_proxy_fields(proxy: dict) -> dict:
         try:
             out[field] = encrypt_secret(value, mode=_current_mode)
         except SecretsError as exc:
-            # Never block persistence: keep the value readable and say so.
-            logger.warning("Secrets: proxy %s left unprotected for this save: %s", field, exc)
+            # Never block persistence: keep the value readable and say so loudly.
+            logger.error("Secrets: proxy %s left unprotected for this save: %s", field, exc)
     return out
 
 

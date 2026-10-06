@@ -18,7 +18,7 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from nazak.api.server import app as fastapi_app, configure_local_access
+from nazak.api.server import app as fastapi_app, configure_local_access, enforce_exposure_policy
 from nazak.cli import run_cli
 from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
 
@@ -94,6 +94,10 @@ def main():
 
     # Trust whatever port we are about to bind (local-only origin policy).
     configure_local_access(args.port)
+
+    # Audit R3: не-loopback bind без NAZAK_API_TOKEN больше не запускается —
+    # иначе любой клиент проходит guard, просто прислав Host: 127.0.0.1.
+    enforce_exposure_policy(args.host)
 
     if args.mode == "gui":
         try:

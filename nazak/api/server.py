@@ -3,13 +3,13 @@ FastAPI Server & WebSocket Real-time Hub for Nazak Browser Studio.
 """
 
 import asyncio
+import http.client
 import ipaddress
 import json
 import logging
 import os
 import re
 import socket
-import subprocess
 import tempfile
 import urllib.error
 import urllib.parse
@@ -236,12 +236,44 @@ app.add_middleware(
 # from this machine's own pages". Cross-site pages are rejected by Origin, and
 # DNS-rebinding style access is rejected by the Host check.
 
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Starlette TestClient присылает Host: testserver. Держим его в списке только
+# когда это явно разрешено (conftest выставляет NAZAK_ALLOW_TEST_HOST), чтобы в
+# проде «testserver» не считался локальным хостом (audit R3).
+if os.environ.get("NAZAK_ALLOW_TEST_HOST", "").strip().lower() in ("1", "true", "yes", "y"):
+    _LOCAL_HOSTS.add("testserver")
 _ALLOWED_PORTS: set[int] = {DEFAULT_PORT, 3000}
 _LOCAL_SCHEMES = ("http", "https")
 # Opt-in shared secret for setups that expose the port beyond loopback:
 # set NAZAK_API_TOKEN and send it as `X-API-Key` on /api and /v1.0 calls.
 _API_TOKEN_ENV = "NAZAK_API_TOKEN"
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def api_token_configured() -> bool:
+    return bool((os.environ.get(_API_TOKEN_ENV) or "").strip())
+
+
+def enforce_exposure_policy(host: str) -> None:
+    """Не даём выставить неаутентифицированный API наружу (audit R3).
+
+    Локальный solo-сценарий (127.0.0.1) не меняется вообще: токен не нужен.
+    Но если сервер биндится не на loopback (сервер/докер/0.0.0.0), без
+    NAZAK_API_TOKEN он больше не поднимется — иначе Host-заголовок `127.0.0.1`
+    от любого клиента делает весь guard бессмысленным.
+    """
+    if not host or host in _LOOPBACK_HOSTS:
+        return
+    if api_token_configured():
+        return
+    raise SystemExit(
+        f"Отказ запуска: --host {host} выставляет API за пределы loopback, "
+        f"а {_API_TOKEN_ENV} не задан. Варианты:\n"
+        f"  1) слушать только локально: --host 127.0.0.1 (по умолчанию);\n"
+        f"  2) осознанно выставить наружу: задайте {_API_TOKEN_ENV}=<секрет> "
+        f"и передавайте заголовок X-API-Key (CLI: --api-key)."
+    )
 
 
 def configure_local_access(port: int) -> None:
@@ -284,13 +316,17 @@ def _is_api_token_valid(request_headers) -> bool:
     expected = os.environ.get(_API_TOKEN_ENV)
     if not expected:
         return True
-    return request_headers.get("x-api-key") == expected
+    import hmac
+
+    return hmac.compare_digest(str(request_headers.get("x-api-key") or ""), str(expected))
 
 
 @app.middleware("http")
 async def local_only_guard(request, call_next):
     path = request.url.path
-    if path.startswith(("/static", "/docs", "/redoc", "/openapi.json", "/swagger")):
+    # Статика нужна локальному дашборду; /docs и /openapi.json больше НЕ
+    # исключаются из Host-проверки (audit R3: схема API отдавалась любому Host).
+    if path.startswith("/static"):
         return await call_next(request)
 
     if not _is_local_host(request.headers.get("host")):
@@ -303,6 +339,14 @@ async def local_only_guard(request, call_next):
         return JSONResponse(
             status_code=403,
             content={"detail": "Local access only: cross-origin requests are refused"},
+        )
+    # CSRF-щит для запросов без Origin: современные браузеры помечают чужие
+    # подгрузки (img/script) как cross-site (audit R3).
+    sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+    if sec_fetch_site == "cross-site":
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Local access only: cross-site requests are refused"},
         )
     if path.startswith(("/api", "/v1.0")) and not _is_api_token_valid(request.headers):
         return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key"})
@@ -1022,6 +1066,29 @@ def _require_launch_url(url: str | None) -> str | None:
         ) from None
 
 
+# Расширения, которые вообще имеет смысл отдавать ffmpeg'у (audit R3): эндпоинт
+# принимает путь из запроса, поэтому это ещё и фильтр «не даём скормить
+# уникализатору произвольный файл системы».
+_MEDIA_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".mpg", ".mpeg", ".wmv", ".flv")
+
+
+def resolve_media_source(raw_path: str) -> Path:
+    """Проверяет source_video_path до передачи в ffmpeg (audit R3)."""
+    if not raw_path or not str(raw_path).strip():
+        raise HTTPException(status_code=400, detail="source_video_path must be a non-empty path")
+    src = Path(str(raw_path)).expanduser()
+    if not src.exists():
+        raise HTTPException(status_code=400, detail=f"Source video not found: {raw_path}")
+    if not src.is_file():
+        raise HTTPException(status_code=400, detail=f"Source path is not a regular file: {raw_path}")
+    if src.suffix.lower() not in _MEDIA_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported media extension {src.suffix!r}: expected one of {', '.join(_MEDIA_EXTENSIONS)}",
+        )
+    return src
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Refuse redirects outright: a rotation URL must not bounce us anywhere."""
 
@@ -1029,7 +1096,7 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         raise urllib.error.HTTPError(req.full_url, code, "redirects are not followed", headers, fp)
 
 
-_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+_NO_REDIRECT_HANDLER = _NoRedirectHandler()
 
 
 def _resolve_host_ips(hostname: str, port: int) -> list[str]:
@@ -1047,16 +1114,15 @@ def _resolve_host_ips(hostname: str, port: int) -> list[str]:
         infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError, OSError):
         return []
-    return [info[4][0] for info in infos]
+    return [str(info[4][0]) for info in infos]
 
 
-def _reject_rotation_url(url: str) -> str | None:
-    """Return a reason string when the rotation URL must not be fetched.
+def _rotation_target(url: str) -> tuple[str, int, str] | str:
+    """(host, port, validated_ip) для ротации или строка-причина отказа.
 
-    Audit D2-P1-2: the endpoint used to fetch whatever was stored, so a
-    ``file:///C:/Windows/win.ini`` or ``http://169.254.169.254/...`` URL turned
-    the server into a local/SSRF reader. Policy: public http(s) hosts only,
-    no redirects, no detail leaking back to the caller.
+    Audit R3: проверка адреса и сам запрос раньше резолвили имя дважды, поэтому
+    DNS-ответ «сначала публичный, потом приватный» обходил фильтр (TOCTOU).
+    Теперь соединение пиннится к проверенному IP.
     """
     try:
         parts = urllib.parse.urlsplit(url)
@@ -1079,7 +1145,71 @@ def _reject_rotation_url(url: str) -> str | None:
             return "host cannot be resolved"
         if not ip.is_global:
             return "host must be a public address"
-    return None
+    return parts.hostname, port, addresses[0]
+
+
+def _reject_rotation_url(url: str) -> str | None:
+    """Return a reason string when the rotation URL must not be fetched.
+
+    Audit D2-P1-2: the endpoint used to fetch whatever was stored, so a
+    ``file:///C:/Windows/win.ini`` or ``http://169.254.169.254/...`` URL turned
+    the server into a local/SSRF reader. Policy: public http(s) hosts only,
+    no redirects, no detail leaking back to the caller.
+    """
+    target = _rotation_target(url)
+    return target if isinstance(target, str) else None
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP-соединение строго с проверенным IP (без повторного DNS)."""
+
+    def __init__(self, host: str, *args, pinned_ip: str, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(host, *args, **kwargs)
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS к проверенному IP с SNI/проверкой сертификата по имени хоста."""
+
+    def __init__(self, host: str, *args, pinned_ip: str, context=None, **kwargs):
+        self._pinned_ip = pinned_ip
+        self._tls_context = context
+        super().__init__(host, *args, context=context, **kwargs)
+
+    def connect(self) -> None:
+        import ssl
+
+        raw = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        ctx = self._tls_context or ssl.create_default_context()
+        self.sock = ctx.wrap_socket(raw, server_hostname=self.host)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, pinned_ip: str):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def http_open(self, req):
+        return self.do_open(lambda host, **kw: _PinnedHTTPConnection(host, pinned_ip=self._pinned_ip, **kw), req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, pinned_ip: str):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def https_open(self, req):
+        return self.do_open(lambda host, **kw: _PinnedHTTPSConnection(host, pinned_ip=self._pinned_ip, **kw), req)
+
+
+def _build_pinned_opener(pinned_ip: str):
+    """Opener без редиректов, но с соединением строго на проверенный IP."""
+    return urllib.request.build_opener(
+        _NoRedirectHandler(), _PinnedHTTPHandler(pinned_ip), _PinnedHTTPSHandler(pinned_ip)
+    )
 
 
 @app.post("/api/profiles/{profile_id}/rotate-proxy", tags=["Proxies"], summary="Trigger mobile proxy IP rotation URL")
@@ -1093,12 +1223,14 @@ async def rotate_profile_proxy_endpoint(profile_id: str):
     url = prof.proxy.rotation_url
     if _is_display_mask_value(url):
         raise HTTPException(status_code=400, detail="Proxy rotation URL is masked; send the real URL to update it")
-    reason = _reject_rotation_url(url)
-    if reason:
-        raise HTTPException(status_code=400, detail=f"Proxy rotation URL refused: {reason}")
+    target = _rotation_target(url)
+    if isinstance(target, str):
+        raise HTTPException(status_code=400, detail=f"Proxy rotation URL refused: {target}")
+    _host, _port, pinned_ip = target
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
-        with _NO_REDIRECT_OPENER.open(req, timeout=10.0) as resp:
+        opener = _build_pinned_opener(pinned_ip)
+        with opener.open(req, timeout=10.0) as resp:
             resp_body = resp.read().decode("utf-8", errors="ignore")
             return {"success": True, "status_code": resp.status, "response": resp_body[:200]}
     except urllib.error.HTTPError as exc:
@@ -1355,9 +1487,7 @@ async def get_autopost_status():
 async def uniquify_videos_endpoint(req: UniquifyRequest):
     for pid in req.profile_ids:
         validate_pid(pid)
-    src = Path(req.source_video_path)
-    if not src.exists():
-        raise HTTPException(status_code=400, detail=f"Source video not found: {req.source_video_path}")
+    src = resolve_media_source(req.source_video_path)
     results = await asyncio.to_thread(video_uniquifier.batch_uniquify, src, req.profile_ids)
     formatted = {}
     for pid, (ok, path, err) in results.items():
@@ -1366,48 +1496,16 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
 
 
 def _generate_demo_video(path: Path) -> tuple[bool, str | None]:
-    """Create a REAL, playable demo clip via ffmpeg (audit fix P0-4).
+    """Create a REAL, playable demo clip via ffmpeg (audit fix P0-4 / R3).
 
     The old flow wrote ``b"DEMO_MP4_HEADER" + b"0" * 1024`` — garbage bytes that
     no player (and no uniqueizer) can process — yet the autopost would happily
-    try to upload it. A generated clip keeps the one-click demo experience
-    honest: invalid media now fails loudly in the uniquifier.
+    try to upload it. The generator now lives in ``core.video_uniquifier`` so the
+    API and the legacy CLI login flow share one honest implementation.
     """
-    from ..core.video_uniquifier import find_ffmpeg
+    from ..core.video_uniquifier import generate_demo_clip
 
-    ffmpeg = find_ffmpeg()
-    if not ffmpeg:
-        return False, "ffmpeg is not installed: install ffmpeg or provide a real source_video_path"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    res = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=size=1080x1920:rate=30:duration=5",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=5",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-shortest",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if res.returncode != 0 or not path.exists() or path.stat().st_size < 1000:
-        path.unlink(missing_ok=True)
-        return False, f"demo clip generation failed: {(res.stderr or '')[-200:]}"
-    return True, None
+    return generate_demo_clip(path)
 
 
 @app.post(
@@ -1425,9 +1523,7 @@ async def launch_autopost_batch(req: AutopostBatchRequest, background_tasks: Bac
 
     normalized_platform = normalize_upload_platform(req.platform)
     if req.source_video_path:
-        src_path = Path(req.source_video_path)
-        if not src_path.exists():
-            raise HTTPException(status_code=400, detail=f"Source video not found: {src_path}")
+        src_path = resolve_media_source(req.source_video_path)
     else:
         src_path = DATA_DIR / "videos" / "source.mp4"
         if not src_path.exists():
@@ -1494,10 +1590,13 @@ async def preview_spintax_endpoint(req: AutopostBatchRequest):
 # WebSocket Real-time Feed
 @app.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
-    # Audit D2-P1-1: the event stream had no Origin check, so any local page
-    # (or remote page via a rebinding host) could subscribe. Same policy as HTTP.
-    if not _is_local_host(websocket.headers.get("host")) or (
-        websocket.headers.get("origin") and not _is_local_origin(websocket.headers.get("origin"))
+    # Audit D2-P1-1 / R3: тот же Origin/Host/Sec-Fetch-Site-политика, что и для HTTP.
+    sec_fetch_site = (websocket.headers.get("sec-fetch-site") or "").strip().lower()
+    if (
+        not _is_local_host(websocket.headers.get("host"))
+        or (websocket.headers.get("origin") and not _is_local_origin(websocket.headers.get("origin")))
+        or sec_fetch_site == "cross-site"
+        or not _is_api_token_valid(websocket.headers)
     ):
         await websocket.close(code=1008)
         return

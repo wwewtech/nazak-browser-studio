@@ -17,6 +17,9 @@ from pathlib import Path
 
 _TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="nazak_test_data_"))
 os.environ["NAZAK_DATA_DIR"] = str(_TEST_DATA_DIR)
+# Starlette TestClient присылает Host: testserver. Audit R3 убрал этот хост из
+# продакшн-списка локальных хостов, поэтому тесты включают его явно.
+os.environ["NAZAK_ALLOW_TEST_HOST"] = "1"
 
 
 def _cleanup_test_data_dir() -> None:

@@ -146,6 +146,25 @@ class WarmupPlan:
         }
 
 
+_MAX_STEP_SECONDS = 600.0
+
+
+def _clamped_seconds(value: Any, default: float, *, lo: float = 0.5, hi: float = _MAX_STEP_SECONDS) -> float:
+    """Длительность шага из API/JSON: всегда конечное число в разумных границах.
+
+    Audit R3: `min_sec`/`duration_sec` приходили без валидации, и сценарий
+    ``{"action":"dwell","params":{"min_sec":1e12}}`` держал слот конкурентности
+    практически вечно.
+    """
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        num = float(default)
+    if num != num or num in (float("inf"), float("-inf")):  # NaN/inf
+        num = float(default)
+    return max(lo, min(hi, num))
+
+
 def generate_warmup_urls(queries: list[str]) -> list[str]:
     """Generates direct Google search URLs from query list."""
     urls = []
@@ -325,13 +344,17 @@ class ScenarioExecutor:
                 return False
             return await self._human_scroll(
                 page,
-                float(step.params.get("duration_sec", 3)),
+                _clamped_seconds(step.params.get("duration_sec", 3), 3.0),
                 str(step.params.get("direction", "down")),
             )
 
         if step.action == "dwell":
-            min_s = step.params.get("min_sec", 2)
-            max_s = step.params.get("max_sec", 5)
+            # Audit R3: min_sec/max_sec приходили из API без границ, и dwell с
+            # min_sec=1e12 навсегда занимал слот конкурентности.
+            min_s = _clamped_seconds(step.params.get("min_sec", 2), 2.0)
+            max_s = _clamped_seconds(step.params.get("max_sec", 5), 5.0)
+            if max_s < min_s:
+                min_s, max_s = max_s, min_s
             await asyncio.sleep(random.uniform(min_s, max_s))
             return True
 
@@ -341,18 +364,29 @@ class ScenarioExecutor:
             return await self._accept_cookie_dialog(page)
 
         if step.action == "watch_youtube":
-            watch_s = min(float(step.params.get("watch_seconds", 10)), 120.0)
+            watch_s = _clamped_seconds(step.params.get("watch_seconds", 10), 10.0, hi=120.0)
             if page is not None and step.params.get("url"):
                 await self._navigate(page, str(step.params["url"]))
             await asyncio.sleep(watch_s)
             return True
 
-        return True
+        # Audit R3: неизвестное действие больше не считается успешным шагом.
+        logger.warning("warmup: unknown action %r for profile %s", step.action, profile_id)
+        return False
 
     # ------------------------------------------------------------ CDP page actions
     async def _navigate(self, page: Any, url: str) -> bool:
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            # Audit R3: сценарий приходит из API, поэтому схема URL проверяется
+            # тем же правилом, что и custom_url при запуске Chrome.
+            from .browser_launcher import sanitize_launch_url
+
+            try:
+                safe_url = sanitize_launch_url(str(url)) or "about:blank"
+            except ValueError as exc:
+                logger.warning("warmup: refused navigation target %r: %s", url, exc)
+                return False
+            await page.goto(safe_url, wait_until="domcontentloaded", timeout=45000)
             await asyncio.sleep(random.uniform(0.6, 1.6))
             return True
         except Exception as exc:

@@ -45,15 +45,19 @@ def test_rotate_proxy_endpoint():
     mock_resp.read.return_value = b'{"status": "IP_CHANGED", "new_ip": "100.20.30.40"}'
     mock_resp.__enter__.return_value = mock_resp
 
+    # Audit R3: запрос идёт через opener, запинненный к проверенному IP.
     with (
         patch("nazak.api.server._resolve_host_ips", return_value=["93.184.216.34"]),
-        patch.object(nazak.api.server._NO_REDIRECT_OPENER, "open", return_value=mock_resp) as opener,
+        patch("nazak.api.server._build_pinned_opener") as build_opener,
     ):
+        build_opener.return_value.open.return_value = mock_resp
         res = client.post(f"/api/profiles/{created.id}/rotate-proxy")
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
         assert "IP_CHANGED" in data["response"]
+        assert build_opener.call_args.args[0] == "93.184.216.34"
+        opener = build_opener.return_value.open
         assert opener.call_args.args[0].full_url == "https://rotate.provider.com/new-ip"
 
 
@@ -74,10 +78,10 @@ def test_rotate_proxy_endpoint_refuses_local_and_file_targets(rotation_url):
     prof = BrowserProfile(name="Rotate Guard", proxy=proxy)
     created = profile_manager.create_profile(prof)
 
-    with patch.object(nazak.api.server._NO_REDIRECT_OPENER, "open") as opener:
+    with patch("nazak.api.server._build_pinned_opener") as build_opener:
         res = client.post(f"/api/profiles/{created.id}/rotate-proxy")
         assert res.status_code == 400
-        opener.assert_not_called()
+        build_opener.assert_not_called()
 
 
 def test_rotate_proxy_endpoint_refuses_unresolvable_hosts():
