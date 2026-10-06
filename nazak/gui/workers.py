@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal as Signal
 
+from ..core.browser_launcher import get_free_port
 from ..core.proxy_checker import check_proxy_health
 from ..core.spintax import format_video_metadata
 from ..core.video_uniquifier import VideoUniquifier
@@ -130,7 +131,7 @@ class AutopostBatchWorker(QThread):
                 )
 
                 self.job_update_signal.emit(pid, "launching", "Launching isolated browser...")
-                cdp_port = 9350 + idx
+                cdp_port = get_free_port()
                 launch_ok, pid_num, launch_err = self.browser_launcher.launch(prof, cdp_port=cdp_port)
                 if not launch_ok:
                     self.job_update_signal.emit(pid, "failed", f"Launch error: {launch_err}")

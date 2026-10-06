@@ -4,6 +4,7 @@ Eliminates all AI-slop tropes: no neon circles, no generic radial glow blobs.
 Pure Bauhaus / Swiss mathematical isometric prism geometry with exact vertex topology.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -13,9 +14,23 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QImage, QLinearGradient, QPainter
 from PyQt6.QtWidgets import QApplication
 
 
+def _resolve_package_version() -> str:
+    """Package version for the banner tag; also works when run as a plain script."""
+    try:  # audit: the banner release tag was hard-coded and lagged behind the package version
+        from .. import __version__ as version
+    except Exception:  # pragma: no cover - no package context when executed directly
+        init_file = Path(__file__).resolve().parents[1] / "__init__.py"
+        match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_file.read_text(encoding="utf-8"))
+        return match.group(1) if match else ""
+    return version
+
+
+PACKAGE_VERSION = _resolve_package_version()
+
+
 def generate_bespoke_brand():
     _app = QApplication.instance() or QApplication(sys.argv)
-    assets_dir = Path("D:/nazak/data/assets")
+    assets_dir = Path(__file__).resolve().parents[2] / "data" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     def draw_mathematical_stealth_prism(p: QPainter, cx: float, cy: float, size: float, mode: str = "dark"):
@@ -236,7 +251,7 @@ def generate_bespoke_brand():
     font_mono = QFont("JetBrains Mono", 10, QFont.Weight.Medium)
     p_b.setFont(font_mono)
     p_b.setPen(QColor(113, 113, 122))
-    p_b.drawText(360, 85, "SYS // ANTI-DETECT ARCHITECTURE • V1.3.0 RELEASE")
+    p_b.drawText(360, 85, f"SYS // ANTI-DETECT ARCHITECTURE • V{PACKAGE_VERSION} RELEASE")
 
     # Main Brand Name in High-Discipline Grotesk
     font_brand = QFont("Segoe UI Variable Display", 34, QFont.Weight.Bold)

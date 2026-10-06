@@ -22,8 +22,8 @@
   --accent-sky-glow: rgba(56, 189, 248, 0.15);
   --accent-purple: #a855f7;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "JetBrains Mono", "Courier New", monospace;
 }
 
 * {

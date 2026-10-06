@@ -1,6 +1,7 @@
 """
 Fluent Mass Profile Generator Dialog.
-Generates N (1 to 500) hardware-isolated profiles with automatic proxy round-robin and realistic GPU/OS mixes.
+Generates N (1 to 100) hardware-isolated profiles with automatic proxy round-robin and realistic GPU/OS mixes.
+The CLI/API mass-generate entry points accept a wider 1..200 count (`--count`).
 Windows 11 Fluent Iconography & Zero-Emoji Architecture.
 """
 

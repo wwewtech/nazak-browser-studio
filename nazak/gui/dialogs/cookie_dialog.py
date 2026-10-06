@@ -4,7 +4,7 @@ Fluent Iconography Architecture.
 """
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QMessageBox, QVBoxLayout
 from qfluentwidgets import (
     FluentIcon,
     InfoBar,
@@ -94,7 +94,14 @@ class CookieManagerDialog(QDialog):
             return
 
         # Persist cookies to profile storage
-        self.profile_manager.save_profile_cookies(self.profile.id, cookies)
+        if not self.profile_manager.save_profile_cookies(self.profile.id, cookies):
+            InfoBar.error(
+                "Save Failed",
+                f"Could not save {len(cookies)} cookie entries to the profile storage",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+            return
         InfoBar.success(
             "Cookies Imported",
             f"Successfully saved {len(cookies)} entries to the profile!",
@@ -104,7 +111,23 @@ class CookieManagerDialog(QDialog):
         self.accept()
 
     def on_clear_cache(self):
-        self.profile_manager.clear_profile_cache(self.profile.id)
+        confirm = QMessageBox.question(
+            self,
+            "Confirm cache cleanup",
+            f"Delete the browser cache, GPU cache and service workers of profile '{self.profile.name}'?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        if not self.profile_manager.clear_profile_cache(self.profile.id):
+            InfoBar.error(
+                "Cache Not Cleared",
+                "Could not remove the browser cache of this profile",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+            return
+
         InfoBar.success(
             "Cache Cleared", "Browser cache and service workers removed", parent=self, position=InfoBarPosition.TOP
         )

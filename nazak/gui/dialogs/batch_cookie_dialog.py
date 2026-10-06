@@ -241,6 +241,9 @@ class BatchCookieDialog(QDialog):
             group=self.edit_group.text().strip() or "Imported Cookies",
         )
 
-        msg = f"Imported: {res['matched']} updated, {res['created']} created"
-        InfoBar.success("Import Complete", msg, parent=self, position=InfoBarPosition.TOP)
+        msg = f"Imported: {res['matched']} updated, {res['created']} created, {res['failed']} failed"
+        if res["failed"]:
+            InfoBar.warning("Import Finished with Errors", msg, parent=self, position=InfoBarPosition.TOP)
+        else:
+            InfoBar.success("Import Complete", msg, parent=self, position=InfoBarPosition.TOP)
         self.accept()

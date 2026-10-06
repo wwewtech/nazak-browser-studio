@@ -343,7 +343,7 @@ async function openDiagModal(id) {
     const health = await res.json();
     renderDiagModalContent(prof, health, false);
   } catch (e) {
-    document.getElementById("diag-modal-body").innerHTML = `<div class="diag-step fail"><span>Error: ${e.message}</span></div>`;
+    document.getElementById("diag-modal-body").innerHTML = `<div class="diag-step fail"><span>Error: ${escapeHtml(e.message)}</span></div>`;
   }
 }
 
@@ -851,7 +851,7 @@ async function updateAutopostStatusView() {
             ${j.title ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Title: ${escapeHtml(j.title)}</div>` : ''}
           </div>
           <div>
-            ${safeVideoUrl ? `<a href="${escapeHtml(safeVideoUrl)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</a>` : (j.video_url ? `<span style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</span>` : '')}
+            ${safeVideoUrl ? `<a href="${escapeHtml(safeVideoUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</a>` : (j.video_url ? `<span style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</span>` : '')}
           </div>
         </div>
       `;
