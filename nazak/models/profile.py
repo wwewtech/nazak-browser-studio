@@ -7,10 +7,16 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .health import HealthCheckResult
 from .proxy import ProxyConfig, ProxyType as ProxyType
+
+# Audit R3-round2: JSON допускает литералы Infinity/NaN (json.loads их принимает),
+# а pydantic по умолчанию их не отвергает. Попав в генератор stealth.js, значение
+# превращалось в python-литерал "inf"/"nan" — невалидный JS (ReferenceError и
+# молча отключённый аудио-шум). Запрещаем нечисловые значения на входе моделей.
+_STRICT_NUMBERS = ConfigDict(allow_inf_nan=False)
 
 
 class ProfileStatus(str, Enum):
@@ -32,19 +38,23 @@ class MediaDeviceInfo(BaseModel):
 class BatterySpoofConfig(BaseModel):
     """Spoofed Battery Status API."""
 
+    model_config = _STRICT_NUMBERS
+
     charging: bool = True
-    charging_time: float | None = 0.0
-    discharging_time: float | None = None
-    level: float = 1.0
+    charging_time: float | None = Field(default=0.0, ge=0, le=86_400)
+    discharging_time: float | None = Field(default=None, ge=0, le=86_400)
+    level: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class GeolocationSpoofConfig(BaseModel):
     """Spoofed Geolocation API matching proxy location."""
 
+    model_config = _STRICT_NUMBERS
+
     enabled: bool = True
-    latitude: float | None = None
-    longitude: float | None = None
-    accuracy: float = 15.0
+    latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
+    accuracy: float = Field(default=15.0, ge=0.0, le=100_000.0)
 
 
 class FingerprintConfig(BaseModel):
@@ -52,6 +62,8 @@ class FingerprintConfig(BaseModel):
     Complete, deeply isolated hardware, system and browser fingerprint specification.
     Shields 100% of real host PC characteristics.
     """
+
+    model_config = _STRICT_NUMBERS
 
     # 1. OS & User-Agent
     user_agent: str = (

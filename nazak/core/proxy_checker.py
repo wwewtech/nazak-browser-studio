@@ -8,6 +8,8 @@ Performs:
 """
 
 import asyncio
+import math
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +25,43 @@ GOOGLE_ENDPOINTS = {
     "google_ads": "https://ads.google.com",
     "youtube": "https://www.youtube.com/generate_204",
 }
+
+# Audit R3-round2: гео-ответ идёт по открытому HTTP через прокси пользователя,
+# поэтому каждое поле санитизируется до попадания в профиль/DOM/stealth.js.
+_TIMEZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+){0,2}$")
+
+
+def _safe_text(value: object, limit: int) -> str | None:
+    """Строка ограниченной длины без управляющих символов, иначе None."""
+    if value is None:
+        return None
+    text = str(value)
+    text = "".join(ch for ch in text if ch >= " " or ch == "\t")
+    text = text.strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _safe_timezone(value: object) -> str | None:
+    """Только правдоподобное IANA-имя: значение уходит в TZ и Chrome-флаг."""
+    if not isinstance(value, str) or len(value) > 64:
+        return None
+    text = value.strip()
+    if text and _TIMEZONE_RE.match(text):
+        return text
+    return None
+
+
+def _finite_or_none(value: object, low: float, high: float) -> float | None:
+    """Конечное число в границах, иначе None (inf/nan/строки отбрасываются)."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or not low <= number <= high:
+        return None
+    return number
 
 
 async def measure_tcp_ping(host: str, port: int, timeout_sec: float = 3.0) -> float | None:
@@ -105,18 +144,24 @@ async def check_proxy_health(
             if geo_resp.status_code == 200:
                 geo_data = geo_resp.json()
                 if geo_data.get("status") == "success":
-                    result.ip = geo_data.get("query")
-                    result.country = geo_data.get("country")
-                    result.country_code = geo_data.get("countryCode")
-                    result.city = geo_data.get("city")
-                    result.region = geo_data.get("regionName")
-                    result.isp = geo_data.get("isp")
-                    result.asn = geo_data.get("as")
-                    result.timezone_name = geo_data.get("timezone")
-                    result.latitude = geo_data.get("lat")
-                    result.longitude = geo_data.get("lon")
+                    # Audit R3-round2: ответ приходит по открытому HTTP через
+                    # пользовательский прокси, т.е. полностью подконтролен
+                    # посреднику. Раньше значения писались в профиль как есть:
+                    # строка любой длины (память/логи/DOM) и нечисловые числа
+                    # (json.loads принимает Infinity/NaN -> pydantic-модели и
+                    # генератор stealth.js получали inf/nan).
+                    result.ip = _safe_text(geo_data.get("query"), 64)
+                    result.country = _safe_text(geo_data.get("country"), 128)
+                    result.country_code = _safe_text(geo_data.get("countryCode"), 8)
+                    result.city = _safe_text(geo_data.get("city"), 128)
+                    result.region = _safe_text(geo_data.get("regionName"), 128)
+                    result.isp = _safe_text(geo_data.get("isp"), 256)
+                    result.asn = _safe_text(geo_data.get("as"), 128)
+                    result.timezone_name = _safe_timezone(geo_data.get("timezone"))
+                    result.latitude = _finite_or_none(geo_data.get("lat"), -90.0, 90.0)
+                    result.longitude = _finite_or_none(geo_data.get("lon"), -180.0, 180.0)
                 else:
-                    result.error_message = geo_data.get("message", "Geo lookup returned fail status")
+                    result.error_message = _safe_text(geo_data.get("message", "Geo lookup returned fail status"), 512)
         except Exception as e:
             # Fallback to ipify if ip-api is throttled
             try:

@@ -7,6 +7,7 @@ import http.client
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -20,10 +21,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from starlette.background import BackgroundTask
 
 from .. import __version__
@@ -321,36 +323,121 @@ def _is_api_token_valid(request_headers) -> bool:
     return hmac.compare_digest(str(request_headers.get("x-api-key") or ""), str(expected))
 
 
+# Audit R3-round2: security-заголовки. Дашборд может запускать браузеры и
+# выгружать cookies, поэтому любой инжектированный в него разметкой скрипт
+# опасен. script-src вынужденно содержит 'unsafe-inline': UI построен на 58
+# inline-обработчиках (см. docs/AUDIT_ROUND3_FINDINGS.md), но даже такой CSP
+# запрещает внешние скрипты, object/embed, смену base URI и встраивание в
+# iframe, а nosniff/no-referrer закрывают MIME-сниффинг и утечку Referer.
+# Полный отказ от 'unsafe-inline' требует перевода обработчиков на
+# addEventListener (отдельная задача).
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), camera=(), microphone=(), usb=(), serial=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self'; "
+        "connect-src 'self' ws: wss:; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    ),
+}
+# Ответы API не должны оседать в дисковом кэше браузера (экспорт cookies и т.п.).
+_NO_STORE_PREFIXES = ("/api", "/v1.0")
+
+
+def _apply_security_headers(response, path: str):
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    if path.startswith(_NO_STORE_PREFIXES):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 @app.middleware("http")
 async def local_only_guard(request, call_next):
     path = request.url.path
     # Статика нужна локальному дашборду; /docs и /openapi.json больше НЕ
     # исключаются из Host-проверки (audit R3: схема API отдавалась любому Host).
     if path.startswith("/static"):
-        return await call_next(request)
+        return _apply_security_headers(await call_next(request), path)
 
     if not _is_local_host(request.headers.get("host")):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Local access only: Host header must be localhost or 127.0.0.1"},
+        return _apply_security_headers(
+            JSONResponse(
+                status_code=403,
+                content={"detail": "Local access only: Host header must be localhost or 127.0.0.1"},
+            ),
+            path,
         )
     origin = request.headers.get("origin")
     if origin and not _is_local_origin(origin):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Local access only: cross-origin requests are refused"},
+        return _apply_security_headers(
+            JSONResponse(
+                status_code=403,
+                content={"detail": "Local access only: cross-origin requests are refused"},
+            ),
+            path,
         )
     # CSRF-щит для запросов без Origin: современные браузеры помечают чужие
     # подгрузки (img/script) как cross-site (audit R3).
     sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
     if sec_fetch_site == "cross-site":
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Local access only: cross-site requests are refused"},
+        return _apply_security_headers(
+            JSONResponse(
+                status_code=403,
+                content={"detail": "Local access only: cross-site requests are refused"},
+            ),
+            path,
         )
     if path.startswith(("/api", "/v1.0")) and not _is_api_token_valid(request.headers):
-        return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key"})
-    return await call_next(request)
+        return _apply_security_headers(
+            JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key"}), path
+        )
+    return _apply_security_headers(await call_next(request), path)
+
+
+def _json_safe_error_payload(value: Any, _depth: int = 0) -> Any:
+    """Приводит значение из ошибки валидации к тому, что умеет json.dumps.
+
+    Audit R3-round2: pydantic v2 кладёт в ошибку исходный `input`. Если клиент
+    прислал `Infinity`/`NaN` (json.loads их принимает) или строку на 5 МБ,
+    стандартный ответ 422 падал на сериализации -> 500 и мусор в логе.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, dict) and _depth < 3:
+        return {str(k): _json_safe_error_payload(v, _depth + 1) for k, v in list(value.items())[:20]}
+    if isinstance(value, (list, tuple)) and _depth < 3:
+        return [_json_safe_error_payload(v, _depth + 1) for v in list(value)[:20]]
+    if isinstance(value, str) and len(value) > 200:
+        return value[:200] + f"…(+{len(value) - 200} chars)"
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    """422 с безопасным телом (без inf/nan и без эха многомегабайтного ввода)."""
+    errors = []
+    for error in exc.errors():
+        safe = {k: v for k, v in error.items() if k not in ("input", "ctx", "url")}
+        if "input" in error:
+            safe["input"] = _json_safe_error_payload(error["input"])
+        if "ctx" in error:
+            safe["ctx"] = _json_safe_error_payload(error["ctx"])
+        errors.append(safe)
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 def validate_pid(profile_id: str) -> str:
@@ -461,95 +548,124 @@ async def post_secrets_mode(req: SecretsModeRequest):
 
 
 # Schemas for requests
+#
+# Audit R3-round2: ни одна из моделей не имела границ, поэтому один запрос мог
+# повесить сервер (mass-generate на десятки тысяч профилей, пауза в батче на
+# годы, отрицательная задержка синхронизатора, нулевой/огромный cols). Границы
+# заданы здесь и продублированы клампами в сервисном слое.
+_MAX_PROFILE_IDS = 500
+_MAX_TEXT = 20_000
+_MAX_MEDIA_PATH = 4096
+
+
 class LaunchRequest(BaseModel):
-    custom_url: str | None = None
-    cdp_port: int | None = None
+    custom_url: str | None = Field(default=None, max_length=2048)
+    cdp_port: int | None = Field(default=None, ge=1, le=65535)
 
 
 class ProxyTestRequest(BaseModel):
-    raw_proxy: str
+    raw_proxy: str = Field(max_length=2048)
 
 
 class BulkImportRequest(BaseModel):
-    proxy_lines: str
-    group: str = "Google Ads"
-    target_page: str = "google_login"
+    proxy_lines: str = Field(max_length=1_000_000)
+    group: str = Field(default="Google Ads", max_length=120)
+    target_page: str = Field(default="google_login", max_length=64)
 
 
 class MassGenerateRequest(BaseModel):
-    count: int = 10
-    group: str = "Mass Generated"
-    proxy_lines: str | None = None
-    os_mix: str = "windows"
-    tags: list[str] | None = None
-    target_page: str = "google_login"
-    notes: str | None = None
+    # CLI использует тот же диапазон 1..200 (cli_cmds/profiles.py: cmd_mass_generate)
+    count: int = Field(default=10, ge=1, le=200)
+    group: str = Field(default="Mass Generated", max_length=120)
+    proxy_lines: str | None = Field(default=None, max_length=1_000_000)
+    os_mix: str = Field(default="windows", max_length=16)
+    tags: list[str] | None = Field(default=None, max_length=50)
+    target_page: str = Field(default="google_login", max_length=64)
+    notes: str | None = Field(default=None, max_length=4000)
 
 
 class BatchActionRequest(BaseModel):
-    profile_ids: list[str]
+    # Верхняя граница — защита от заваливания сервера списком; нижнюю проверяет
+    # сам эндпоинт и отвечает 400 (контракт не меняем).
+    profile_ids: list[str] = Field(max_length=_MAX_PROFILE_IDS)
 
 
 class AutopostBatchRequest(BaseModel):
-    profile_ids: list[str]
-    source_video_path: str | None = None
-    platform: str = "youtube_shorts"
-    title_template: str = DEFAULT_AUTOPOST_TITLE_TEMPLATE
-    description_template: str = DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE
-    tg_channel: str = DEFAULT_AUTOPOST_TG_CHANNEL
-    delay_seconds: int = 10
+    profile_ids: list[str] = Field(max_length=_MAX_PROFILE_IDS)
+    source_video_path: str | None = Field(default=None, max_length=_MAX_MEDIA_PATH)
+    platform: str = Field(default="youtube_shorts", max_length=32)
+    title_template: str = Field(default=DEFAULT_AUTOPOST_TITLE_TEMPLATE, max_length=500)
+    description_template: str = Field(default=DEFAULT_AUTOPOST_DESCRIPTION_TEMPLATE, max_length=5000)
+    tg_channel: str = Field(default=DEFAULT_AUTOPOST_TG_CHANNEL, max_length=120)
+    # Верхняя граница = 1 час: больше не бывает осмысленной паузой, а раньше
+    # значение вроде 10**9 усыпляло батч на годы, блокируя очередь (is_running).
+    delay_seconds: int = Field(default=10, ge=0, le=3600)
     # Audit fix P0-4: demo clips are generated ONLY on explicit request — the
     # old code silently wrote a fake "DEMO_MP4_HEADER" blob and uploaded it.
     demo: bool = False
 
 
 class UniquifyRequest(BaseModel):
-    source_video_path: str
-    profile_ids: list[str]
+    source_video_path: str = Field(max_length=_MAX_MEDIA_PATH)
+    profile_ids: list[str] = Field(max_length=_MAX_PROFILE_IDS)
 
 
 class CookieImportRequest(BaseModel):
-    cookies_data: str
+    cookies_data: str = Field(max_length=5_000_000)
 
 
 class BulkCookieImportRequest(BaseModel):
-    cookies_data: str
+    cookies_data: str = Field(max_length=5_000_000)
     auto_create_missing: bool = True
-    group: str = "Imported Cookies"
+    group: str = Field(default="Imported Cookies", max_length=120)
 
 
 class BulkCookieExportRequest(BaseModel):
-    profile_ids: list[str] | None = None
-    format: str = "json"
+    profile_ids: list[str] | None = Field(default=None, max_length=_MAX_PROFILE_IDS)
+    format: str = Field(default="json", pattern="^(json|netscape|zip)$")
 
 
 class WarmupRequest(BaseModel):
-    niche: str = "ecommerce"
-    steps_count: int = 5
+    niche: str = Field(default="ecommerce", max_length=64)
+    steps_count: int = Field(default=5, ge=1, le=20)
 
 
 class ScenarioRunRequest(BaseModel):
-    scenario_id: str | None = None
+    scenario_id: str | None = Field(default=None, max_length=128)
     scenario_data: dict[str, Any] | None = None
-    profile_ids: list[str]
-    max_concurrency: int = 3
+    profile_ids: list[str] = Field(max_length=_MAX_PROFILE_IDS)
+    max_concurrency: int = Field(default=3, ge=1, le=10)
 
 
 class SynchronizerStartRequest(BaseModel):
-    master_profile_id: str
-    worker_profile_ids: list[str]
+    master_profile_id: str = Field(max_length=64)
+    worker_profile_ids: list[str] = Field(max_length=_MAX_PROFILE_IDS)
     humanize_jitter: bool = True
-    min_delay_ms: int = 20
-    max_delay_ms: int = 80
-    coordinate_jitter_px: int = 2
+    # 0..60 c на событие: отрицательное значение раньше убивало поток-насос
+    # (time.sleep с отрицательным аргументом -> ValueError вне try).
+    min_delay_ms: int = Field(default=20, ge=0, le=60_000)
+    max_delay_ms: int = Field(default=80, ge=0, le=60_000)
+    coordinate_jitter_px: int = Field(default=2, ge=0, le=50)
 
 
 class SynchronizerNavigateRequest(BaseModel):
-    url: str
+    url: str = Field(max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, value: str) -> str:
+        """Только http(s): file://, data: и javascript: в воркеры не уходят.
+
+        Audit R3-round2: раньше URL доходил до page.goto() как есть (в warmup и
+        launch такая же проверка уже была).
+        """
+        from ..core.browser_launcher import sanitize_launch_url
+
+        return sanitize_launch_url(value)
 
 
 class WindowTileRequest(BaseModel):
-    cols: int | None = None
+    cols: int | None = Field(default=None, ge=1, le=8)
 
 
 # API Routes
