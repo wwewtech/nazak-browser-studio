@@ -1,14 +1,21 @@
 # Nazak Browser Studio Requirements
+# NOTE: pyproject.toml [project.dependencies] is the canonical list — keep both in sync
+# (audit R3: psutil and cryptography used to be missing here while the code imports them).
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.8.0
 httpx[socks]>=0.27.0
 requests[socks]>=2.31.0
 PySocks>=1.7.1
+psutil>=5.9.0
 PyQt6>=6.7.0
 PyQt6-Fluent-Widgets>=1.7.0
 rich>=13.7.0
-pytest>=7.4.0  # keep in sync with pyproject [project.optional-dependencies].dev and pytest minversion
-pytest-asyncio>=0.23.0
 websockets>=12.0
 playwright>=1.45.0
+cryptography>=42.0.0
+# Test tooling: pyproject [tool.pytest.ini_options].addopts passes --timeout,
+# so pytest-timeout is required for `python -m pytest tests` (README Quick Start).
+pytest>=7.4.0  # keep in sync with pyproject [project.optional-dependencies].dev and pytest minversion
+pytest-asyncio>=0.23.0
+pytest-timeout>=2.3.0

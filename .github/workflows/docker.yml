@@ -1,0 +1,107 @@
+name: Docker image (build & runtime smoke)
+
+# Audit R3: the Dockerfile had drifted from its base image (package names from
+# bookworm while `python:3.11-slim` had moved to trixie), so the image did not
+# build at all. This workflow runs exactly what a local `docker build` does and
+# then checks the runtime contract that the CLI/agents depend on.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "nazak/main.py"
+      - "nazak/api/server.py"
+      - "nazak/config.py"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "nazak/main.py"
+      - "nazak/api/server.py"
+      - "nazak/config.py"
+      - ".github/workflows/docker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    name: Build image + verify runtime contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: nazak-ci:${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml (interpolation + merge)
+        env:
+          NAZAK_API_TOKEN: ci-compose-token
+        run: docker compose config -q
+
+      - name: Build image
+        run: docker build --tag "$IMAGE" .
+
+      - name: Refuses to start on 0.0.0.0 without NAZAK_API_TOKEN
+        run: |
+          set +e
+          docker run --rm -e NAZAK_API_TOKEN= "$IMAGE" > refusal.log 2>&1
+          code=$?
+          set -e
+          cat refusal.log
+          if [ "$code" -eq 0 ]; then
+            echo "::error::the server started on a non-loopback host without a token"
+            exit 1
+          fi
+          if ! grep -q NAZAK_API_TOKEN refusal.log; then
+            echo "::error::refusal message does not tell the operator about NAZAK_API_TOKEN"
+            exit 1
+          fi
+
+      - name: Serves with the token and enforces key, Host and cross-site policy
+        run: |
+          set -euo pipefail
+          TOKEN=ci-smoke-token
+          docker run -d --name nazak-ci -e NAZAK_API_TOKEN="$TOKEN" -p 127.0.0.1:8899:8899 "$IMAGE"
+
+          for _ in $(seq 1 60); do
+            if curl -sf -o /dev/null -H "X-API-Key: $TOKEN" http://127.0.0.1:8899/api/system/info; then
+              break
+            fi
+            sleep 2
+          done
+
+          code_of() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          base=http://127.0.0.1:8899/api/system/info
+
+          echo "no key -> expect 401"
+          test "$(code_of "$base")" = "401"
+          echo "with key -> expect 200"
+          test "$(code_of -H "X-API-Key: $TOKEN" "$base")" = "200"
+          echo "wrong key -> expect 401"
+          test "$(code_of -H 'X-API-Key: nope' "$base")" = "401"
+          echo "foreign Host -> expect 403"
+          test "$(code_of -H "X-API-Key: $TOKEN" -H 'Host: evil.example.com' "$base")" = "403"
+          echo "cross-site fetch -> expect 403"
+          test "$(code_of -H "X-API-Key: $TOKEN" -H 'Sec-Fetch-Site: cross-site' "$base")" = "403"
+          echo "cross-origin -> expect 403"
+          test "$(code_of -H "X-API-Key: $TOKEN" -H 'Origin: https://evil.example.com' "$base")" = "403"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs nazak-ci || true
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f nazak-ci || true

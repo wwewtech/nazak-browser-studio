@@ -1,13 +1,20 @@
-version: '3.8'
-
 services:
   nazak-studio:
     build: .
     container_name: nazak-browser-studio
     restart: unless-stopped
     ports:
-      - "8899:8899"
+      # Порт публикуется ТОЛЬКО на loopback этого хоста — как и нативный запуск
+      # (`--host 127.0.0.1`). Для доступа из LAN замените на "8899:8899" и
+      # осознанно задайте NAZAK_API_TOKEN (ниже он обязателен в любом случае,
+      # потому что внутри контейнера приложение слушает 0.0.0.0).
+      - "127.0.0.1:8899:8899"
     volumes:
       - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      # Обязательный токен: без него сервер отказывается стартовать на
+      # не-loopback хосте (nazak/api/server.py: enforce_exposure_policy).
+      # Положите рядом файл .env со строкой:  NAZAK_API_TOKEN=<длинный секрет>
+      # Клиенты (CLI/Playwright) передают его заголовком X-API-Key.
+      - NAZAK_API_TOKEN=${NAZAK_API_TOKEN:?set NAZAK_API_TOKEN in a .env file next to docker-compose.yml}

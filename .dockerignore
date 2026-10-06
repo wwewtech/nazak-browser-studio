@@ -1,0 +1,46 @@
+# Audit R3: without this file `COPY . .` baked local runtime state into the image —
+# data/profiles.json (account passwords and TOTP seeds in `plain` mode), profile
+# cookie/session files, plus the whole .git history. Per dockerignore(5) matched
+# paths are removed from the build context and therefore never reach an image layer
+# created by COPY/ADD.
+#
+# Runtime state arrives through the bind mount (docker-compose.yml: ./data:/app/data),
+# so excluding it from the image is safe; the app recreates data/ on first start.
+data/
+.git/
+.github/
+
+# Secrets and local artefacts
+.env
+*.env
+*.pem
+*.key
+*.nazak
+*.bak
+*.log
+
+# Python noise
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage*
+pytest-cache-files-*/
+
+# PyInstaller / Inno Setup output
+build/
+dist/
+dist_installer/
+*.spec
+*.zip
+
+# Editors / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
