@@ -280,12 +280,56 @@ def print_summary():
     print(f'  gh release upload v{VERSION} "{ZIP_PATH}" --clobber\n')
 
 
+RUNTIME_DATA_DIRS = ("profiles", "extensions", "logs", "videos", "screenshots")
+RUNTIME_DATA_FILES = ("profiles.json", "secrets_mode.json")
+
+
+def sanitize_app_data():
+    """Убирает runtime-данные из дистрибутива перед упаковкой.
+
+    Audit R3-round2: `smoke_test()` запускает собранный exe, а фрозен-приложение
+    держит данные рядом с собой (`DATA_DIR = EXE_DIR/data`). Из-за этого в
+    `data/` появлялись profiles.json, profiles/, logs/, extensions/ — и попадали
+    и в ZIP (пакуется любой файл под APP_DIR), и в установщик
+    (`recursesubdirs`). Сегодня там дефолтные профили, но это ровно тот каталог,
+    где в режиме plain лежат пароли и 2FA-сиды: собери релиз на рабочей папке —
+    и секреты уедут пользователям. Оставляем только data/assets (иконки/баннеры).
+    """
+    print_step("Step 5b/7: Stripping Runtime Data From the Distribution")
+    app_data = APP_DIR / "data"
+    removed: list[str] = []
+    if app_data.exists():
+        for name in RUNTIME_DATA_DIRS:
+            target = app_data / name
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+                removed.append(f"{name}/")
+        for pattern in RUNTIME_DATA_FILES:
+            for target in app_data.glob(f"{pattern}*"):
+                try:
+                    target.unlink()
+                    removed.append(target.name)
+                except OSError:
+                    pass
+    # assets нужны приложению в рантайме (иконка/баннеры) — восстанавливаем.
+    source_assets = ROOT_DIR / "data" / "assets"
+    if source_assets.exists() and not (app_data / "assets").exists():
+        app_data.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_assets, app_data / "assets")
+        removed.append("(restored data/assets)")
+    if removed:
+        print_success(f"Runtime data excluded from the build: {', '.join(removed)}")
+    else:
+        print_success("No runtime data found next to the executable.")
+
+
 def main():
     validate_environment()
     clean_artifacts()
     run_pyinstaller()
     optimize_distribution()
     smoke_test()
+    sanitize_app_data()
     package_zip()
     build_inno_installer()
     print_summary()

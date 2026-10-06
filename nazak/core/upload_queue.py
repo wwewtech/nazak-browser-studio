@@ -20,6 +20,11 @@ from .spintax import format_video_metadata
 from .video_uniquifier import VideoUniquifier
 from .youtube_uploader import YouTubeUploader
 
+# Audit R3-round2: верхняя граница паузы между аккаунтами (1 час). Значение
+# приходит из API/CLI, поэтому ограничивается и в сервисном слое, а не только
+# в pydantic-модели: иначе батч «засыпал» на годы, удерживая is_running=True.
+MAX_BATCH_DELAY_SECONDS = 3600
+
 # Audit R3: "403" убран из списка — это блок/отказ в правах, а не сбой сети;
 # ретраить его 4 раза значит долбить платформу и рисковать аккаунтом.
 RETRYABLE_UPLOAD_ERRORS = (
@@ -430,7 +435,12 @@ class UploadQueueManager:
                         )
 
                     if idx < len(profile_ids) and not self._cancel_requested:
-                        delay = random.randint(max(5, delay_between_accounts_sec - 3), delay_between_accounts_sec + 5)
+                        # Audit R3-round2: пауза приходит из API/CLI, поэтому
+                        # ограничена и здесь (Field(ge=0, le=3600) — первый слой).
+                        # Раньше delay_seconds=10**9 усыплял батч на годы, а
+                        # is_running=True всё это время блокировал новые запуски.
+                        safe_delay = max(0, min(int(delay_between_accounts_sec), MAX_BATCH_DELAY_SECONDS))
+                        delay = random.randint(max(1, safe_delay - 3), safe_delay + 5)
                         await asyncio.sleep(delay)
 
         finally:

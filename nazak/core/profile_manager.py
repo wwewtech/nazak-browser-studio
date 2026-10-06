@@ -38,6 +38,16 @@ logger = logging.getLogger(__name__)
 _MASK = "***"
 _PROXY_SECRET_FIELDS = ("password", "raw", "rotation_url")
 
+# Audit R3-round2: границы пакетных операций и импорта бандлов.
+# mass-generate: тот же диапазон, что у CLI (`--count 1..200`).
+MAX_MASS_GENERATE_COUNT = 200
+# Импорт .nazak — это zip от пользователя/из интернета: без лимитов
+# 100-килобайтный архив разворачивался в 100+ МиБ на диске.
+MAX_BUNDLE_ENTRIES = 20_000
+MAX_BUNDLE_ENTRY_BYTES = 512 * 1024 * 1024
+MAX_BUNDLE_TOTAL_BYTES = 1024 * 1024 * 1024
+_BUNDLE_CHUNK = 1024 * 1024
+
 
 def _load_notes_dict(raw: Any) -> dict | None:
     """Parse a notes value into a dict; returns None for free-text notes."""
@@ -988,6 +998,11 @@ class ProfileManager:
         """
         from .fingerprint_generator import generate_random_fingerprint
 
+        # Audit R3-round2: границы и здесь (защита в глубину к Field(ge/le) в API).
+        # Раньше запрос с count=10**5 валил сервер: каждый профиль перезаписывает
+        # весь profiles.json, т.е. стоимость квадратична по числу профилей.
+        count = max(1, min(int(count), MAX_MASS_GENERATE_COUNT))
+
         created_profiles: list[BrowserProfile] = []
         proxies_parsed = [ProxyConfig.parse(p) for p in (proxy_list or []) if p and p.strip()]
 
@@ -1087,7 +1102,23 @@ class ProfileManager:
 
         try:
             with zipfile.ZipFile(bundle_path, "r") as zf:
-                if "profile.json" not in zf.namelist():
+                infos = zf.infolist()
+                # Audit R3-round2: zip-бомба. ZipInfo.file_size берётся из
+                # central directory и может быть подделан вниз, поэтому реальный
+                # объём считается потоково при распаковке.
+                if len(infos) > MAX_BUNDLE_ENTRIES:
+                    logger.warning("Bundle import refused: %d entries > %d", len(infos), MAX_BUNDLE_ENTRIES)
+                    return None
+                declared_total = sum(max(0, info.file_size) for info in infos)
+                if declared_total > MAX_BUNDLE_TOTAL_BYTES:
+                    logger.warning(
+                        "Bundle import refused: declared %d bytes > %d",
+                        declared_total,
+                        MAX_BUNDLE_TOTAL_BYTES,
+                    )
+                    return None
+                names = zf.namelist()
+                if "profile.json" not in names:
                     return None
 
                 prof_data = json.loads(zf.read("profile.json").decode("utf-8"))
@@ -1111,6 +1142,7 @@ class ProfileManager:
                 # Restore session files safely
                 target_dir = (self.profiles_dir / new_id).resolve()
                 target_dir.mkdir(parents=True, exist_ok=True)
+                extracted_total = 0
 
                 for name in zf.namelist():
                     if name.startswith("data/"):
@@ -1125,11 +1157,27 @@ class ProfileManager:
                         if not target_file.is_relative_to(target_dir):
                             continue
                         target_file.parent.mkdir(parents=True, exist_ok=True)
-                        target_file.write_bytes(zf.read(name))
+                        # Потоковая распаковка с реальным учётом объёма.
+                        written = 0
+                        with zf.open(name) as src, target_file.open("wb") as dst:
+                            while True:
+                                chunk = src.read(_BUNDLE_CHUNK)
+                                if not chunk:
+                                    break
+                                written += len(chunk)
+                                if written > MAX_BUNDLE_ENTRY_BYTES:
+                                    raise ValueError(f"bundle entry {name!r} exceeds {MAX_BUNDLE_ENTRY_BYTES} bytes")
+                                extracted_total += len(chunk)
+                                if extracted_total > MAX_BUNDLE_TOTAL_BYTES:
+                                    raise ValueError(f"bundle expands beyond {MAX_BUNDLE_TOTAL_BYTES} bytes")
+                                dst.write(chunk)
 
                 # Restore cookies
                 if "cookies.json" in zf.namelist():
-                    cookies = json.loads(zf.read("cookies.json").decode("utf-8"))
+                    cookie_blob = zf.read("cookies.json")
+                    if len(cookie_blob) > MAX_BUNDLE_ENTRY_BYTES:
+                        raise ValueError("cookies.json in bundle is too large")
+                    cookies = json.loads(cookie_blob.decode("utf-8"))
                     from .cookie_manager import cookies_to_netscape
 
                     (target_dir / "cookies.json").write_text(json.dumps(cookies, indent=2), encoding="utf-8")
@@ -1139,5 +1187,9 @@ class ProfileManager:
                 self.profiles[new_id] = restored_profile
                 self.save_profiles()
                 return restored_profile
-        except Exception:
+        except Exception as exc:
+            # Не оставляем полураспакованный каталог после отказа по лимитам.
+            logger.warning("Bundle import failed: %s", exc)
+            if "target_dir" in locals():
+                shutil.rmtree(target_dir, ignore_errors=True)
             return None

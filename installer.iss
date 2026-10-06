@@ -55,8 +55,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
 
 [Files]
-; Dist directory produced by PyInstaller COLLECT
-Source: "dist\NazakBrowserStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Dist directory produced by PyInstaller COLLECT.
+; Audit R3-round2: runtime-данные явно исключены вторым слоем защиты (первый —
+; sanitize_app_data() в build_exe.py). Этот каталог хранит пароли и 2FA-сиды в
+; режиме plain и не должен попадать ни в установщик, ни в ZIP релиза.
+Source: "dist\NazakBrowserStudio\*"; DestDir: "{app}"; Excludes: "data\profiles\*,data\profiles.json,data\profiles.json.*,data\secrets_mode.json,data\secrets_mode.json.*,data\logs\*,data\extensions\*,data\videos\*,data\screenshots\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"

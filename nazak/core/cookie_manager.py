@@ -10,6 +10,12 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+# Audit R3-round2: лимиты для cookie-ZIP (архив приходит из GUI/CLI от
+# пользователя; без границ 100-килобайтный архив разворачивался в память).
+MAX_COOKIE_ZIP_ENTRIES = 200
+MAX_COOKIE_ZIP_ENTRY_BYTES = 32 * 1024 * 1024
+MAX_COOKIE_ZIP_TOTAL_BYTES = 64 * 1024 * 1024
+
 
 def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
     """
@@ -220,7 +226,7 @@ def parse_cookie_files_from_zip(zip_source: Any) -> dict[str, list[dict[str, Any
     """
     Extracts and parses all .json / .txt cookie files from a zip archive (Path, bytes, or file-like object).
     """
-    results = {}
+    results: dict[str, list[dict[str, Any]]] = {}
     try:
         if isinstance(zip_source, (str, Path)):
             zf = zipfile.ZipFile(zip_source, "r")
@@ -230,13 +236,29 @@ def parse_cookie_files_from_zip(zip_source: Any) -> dict[str, list[dict[str, Any
             zf = zipfile.ZipFile(zip_source, "r")
 
         with zf:
-            for name in zf.namelist():
+            infos = zf.infolist()
+            # Audit R3-round2: cookie-архивы тоже читаются целиком в память,
+            # поэтому ограничиваем число записей и суммарный объём.
+            if len(infos) > MAX_COOKIE_ZIP_ENTRIES:
+                return results
+            total_declared = sum(max(0, info.file_size) for info in infos)
+            if total_declared > MAX_COOKIE_ZIP_TOTAL_BYTES:
+                return results
+            consumed = 0
+            for info in infos:
+                name = info.filename
                 if name.endswith("/") or name.startswith("__MACOSX"):
                     continue
                 p = Path(name)
                 if p.suffix.lower() in (".json", ".txt"):
                     try:
-                        content = zf.read(name).decode("utf-8", errors="ignore")
+                        if info.file_size > MAX_COOKIE_ZIP_ENTRY_BYTES:
+                            continue
+                        blob = zf.read(name)
+                        consumed += len(blob)
+                        if consumed > MAX_COOKIE_ZIP_TOTAL_BYTES:
+                            return results
+                        content = blob.decode("utf-8", errors="ignore")
                         cookies = parse_any_cookies(content)
                         if cookies:
                             results[p.stem] = cookies
