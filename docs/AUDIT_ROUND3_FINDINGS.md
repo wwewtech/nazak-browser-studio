@@ -677,3 +677,264 @@ runtime-данные из `data/` после проверки удалены, к
 6. **R3-14/R3-16/R3-15** — привести `requirements.txt` и `addopts` в рабочее состояние, сузить `disable_error_code`.
 7. **R3-10/R3-12/R3-13** — методы/валидация путей/пиннинг IP.
 8. Остальное — по таблице §1.
+
+---
+
+## 11. Второй проход аудита (round-3b): участки, которые в §1–§10 не проверялись
+
+Первый проход закрыл периметр API, CLI-секреты, честность публикации, warmup и Docker.
+Второй проход целенаправленно смотрел туда, где я ещё не читал код: `index.html` и
+шрифтовые зависимости дашборда, генератор stealth-JS целиком, `cdp_injector` (цикл
+CDP), `synchronizer`, `cli_cmds/automation.py`, `gui/dialogs/*`, `nazak/tools/*`,
+`build_exe.py`/`installer.iss` (сборка релиза), `profile_manager.import_profile_bundle`
+и cookie-ZIP, а также все pydantic-модели запросов API на предмет границ.
+
+### Сводка
+
+| # | Находка | Severity | Как проверял | Статус |
+|---|---|---|---|---|
+| R3b-01 | `scenario run` без `--wait`: daemon-поток убивался `SystemExit`, команда печатала success | High | репро механизма + чтение | исправлено, тест |
+| R3b-02 | Отрицательный `min_delay_ms` → `ValueError` вне `try` убивал поток-насос, `session.active` оставался `True` | Medium | запуск: `_mirror_one` пробросил `ValueError('sleep length must be non-negative')` | исправлено, тесты |
+| R3b-03 | `Infinity`/`NaN` из JSON принимались моделями → в stealth.js попадали литералы `inf`/`nan` | Medium | сквозной запуск: POST 200 → `() => inf`, `const factor = nan` | исправлено, тесты |
+| R3b-04 | `MassGenerateRequest.count` без верхней границы → O(n²) перезаписи `profiles.json` | Medium | замер: 20→0.06 с, 40→0.15 с, 80→0.43 с | исправлено, тесты |
+| R3b-05 | `AutopostBatchRequest.delay_seconds` без границы → батч «засыпал» на годы, блокируя `is_running` | Medium | расчёт + чтение `upload_queue.py:227` | исправлено, тесты |
+| R3b-06 | `.nazak` и cookie-ZIP распаковывались без лимитов | Medium | замер: 100 КиБ архив → 100 МиБ на диске | исправлено, тесты |
+| R3b-07 | Сборка релиза увозила runtime `data/` (в т.ч. `profiles.json`) в ZIP и установщик | Medium | фрозен-путь воспроизведён: `data/{profiles.json,profiles,extensions,logs}` рядом с exe | исправлено, тест |
+| R3b-08 | GUI-воркеры использовали предсказуемый диапазон CDP-портов `9350 + idx` | Low-Medium | чтение + grep | исправлено, тест |
+| R3b-09 | `Runtime.addBinding` стоял во всех сессиях: любая страница мастера (включая iframe) могла диктовать клики в браузерах других профилей | High | чтение цепочки `_on_binding_called → submit_event → _dispatch_event` | исправлено, тесты |
+| R3b-10/11 | Ни одного security-заголовка; CSP отсутствовал | Medium | grep по репозиторию + живой сервер | исправлено (частичный CSP), тесты |
+| R3b-12 | GUI: удаление кэша без подтверждения, ложный успех импорта cookie | Medium | чтение | исправлено, статические тесты |
+| R3b-13 | В инжектируемом JS были page-visible маркеры `__nazakShieldApplied`, `__nazakSyncInstalled`, `__nazak_sync_event` | Low (для антидетекта — Medium) | генерация stealth.js и проверка содержимого | исправлено, тесты |
+| R3b-14 | Мелочи: `${e.message}` в `innerHTML`, `target="_blank"` без `rel`, Google Fonts с CDN, `D:/nazak/...` в tools, «V1.3.0» в ассете, docstring 1..500 против слайдера 1..100, неограниченная очередь событий, inline-разбор binding'а в цикле CDP, `cols<0` | Low | чтение + запуск | исправлено |
+
+### R3b-01. `nazak scenario run` без `--wait` рапортовал успех, не выполняя работу
+
+`cli_cmds/automation.py:196-207` (до фикса) стартовал `threading.Thread(target=_bg, daemon=True)`
+и сразу возвращал `emit_success`. `nazak/main.py:90` и `:139` — `raise SystemExit(run_cli())`,
+поэтому интерпретатор завершался немедленно и daemon-поток уничтожался. Воспроизведено
+отдельным репро: процесс печатает «success reported, exiting now», `exit=0`, а файл-маркер,
+который поток должен был создать через 1.5 с, не появился и через 2.5 с.
+
+**Исправлено:** фон — отдельный процесс (`subprocess.Popen` с `DETACHED_PROCESS |
+CREATE_NEW_PROCESS_GROUP` на Windows, `start_new_session=True` на POSIX), stdout/stderr
+пишутся в `data/logs/scenario_<timestamp>.log`, в JSON-ответе `pid` и путь к логу; при
+невозможности старта — честная ошибка с подсказкой про `--wait`. Команду целиком я не
+запускал, чтобы не поднимать реальный браузер на машине пользователя.
+
+### R3b-02. Отрицательный джиттер убивал синхронизатор, а статус оставался «active»
+
+`synchronizer.py:355-356` (до фикса) — `time.sleep(delay_ms / 1000.0)` стоял **вне**
+per-event `try` (строка 357). `SynchronizerStartRequest.min_delay_ms` (`server.py:542`)
+и CLI `--min-delay` не имели нижней границы. Запуск подтвердил:
+`_mirror_one` с интервалом `(-1.0, -0.5)` пробросил `ValueError('sleep length must be non-negative')`;
+в `_mirror_pump` его ловил `except` (строка 316), который писал warning и выходил, **не
+сбрасывая `session.active`** — `get_status()` продолжал отдавать `active: true`, а
+`mirror_navigation` ждал ответа до 110 с.
+
+**Исправлено:** `_clamp_delay_range()` нормализует интервал (неотрицательный,
+упорядоченный, ≤60 с) и вызывается и в `SynchronizerSession.__init__`, и перед sleep;
+sleep перенесён внутрь `try`; `finally` насоса выставляет `session.active = False` и
+пишет `last_error`; `mirror_navigation` проверяет живость потока и не ждёт мёртвый насос;
+очередь событий ограничена `MAX_PENDING_EVENTS` с честным счётчиком `dropped_events`.
+
+### R3b-03. `Infinity`/`NaN` ломали stealth.js
+
+`json.loads` принимает литералы `Infinity`/`NaN`, pydantic v2 по умолчанию их не
+отвергает, а шаблон stealth-JS подставлял два float-поля через `str()`
+(`extension_generator.py:335` — `device_pixel_ratio`, `:601` — `audio_noise_seed`).
+Сквозной запуск: `POST /api/profiles` с `{"device_pixel_ratio":Infinity,"audio_noise_seed":NaN}`
+→ **HTTP 200**, в модели `inf`/`nan`, в `stealth.js`:
+
+```
+Object.defineProperty(Window.prototype, 'devicePixelRatio', { get: makeNative(() => inf, ...
+const factor = nan || 0.00001;
+```
+
+`inf`/`nan` — не идентификаторы JS (там `Infinity`/`NaN`): первое даёт ReferenceError на
+каждом чтении `devicePixelRatio` (страница ломается и это яркий признак подмены), второе
+глотается внешним `try/catch` → аудио-шум молча отключался.
+
+**Исправлено:** `allow_inf_nan=False` в `FingerprintConfig`/`BatterySpoofConfig`/
+`GeolocationSpoofConfig`; `_js_number()` в генераторе (защита в глубину: `inf`→`Infinity`,
+`nan`→`0` с warning); ответ валидации больше не падает с 500 — `RequestValidationError`
+обрабатывается безопасно (см. R3b-10/11); нечисловые `lat/lon` и слишком长 строки из
+гео-ответа санитизируются в `proxy_checker` (`_finite_or_none`, `_safe_text`, `_safe_timezone`).
+
+### R3b-04 / R3b-05. Отсутствие границ у числовых полей запросов
+
+Ни одна модель запроса не имела `Field(ge/le)` (`server.py:464-553` до фикса). Замер
+стоимости `mass_generate_profiles` (каждый профиль перезаписывает весь `profiles.json`):
+`count=20 → 0.06 с`, `40 → 0.15 с`, `80 → 0.43 с` — то есть один запрос с `count=10000`
+вешает сервер на часы (CLI при этом всегда проверял `1..200`). Для `delay_seconds`
+`upload_queue.py:433` считал `random.randint(max(5, d-3), d+5)`, а вход в новый батч
+закрыт, пока идёт текущий (`upload_queue.py:227`) — `delay_seconds=10**9` означал паузу
+≈31 год и выключенный автопостинг до перезапуска.
+
+**Исправлено:** границы в моделях (`count 1..200`, `delay_seconds 0..3600`, `min/max_delay_ms
+0..60000`, `coordinate_jitter_px 0..50`, `cols 1..8`, `cdp_port 1..65535`, `max_concurrency
+1..10`, `steps_count 1..20`, `max_length` для строк и списков, `format` по pattern) и
+**дублирующие клампы в сервисном слое** (`mass_generate_profiles`, `run_batch_upload`,
+`SynchronizerSession`, `tile_windows_win32`). Нижние границы, отвечавшие за 400-контракт
+эндпоинтов, намеренно не добавлялись — проверено, что три существующих теста на 400
+проходят.
+
+### R3b-06. Zip-бомба в импорте бандла и cookie-архива
+
+`profile_manager.py:1090/1115/1131` использовал только `namelist()`/`read()` — ни проверки
+`ZipInfo.file_size`, ни счётчика записей. Замер: архив **100 КиБ → 100 МиБ** записано на
+диск (5 записей по 20 МиБ нулей). Cookie-ZIP (`cookie_manager.py:233`) читался в память целиком.
+
+**Исправлено:** лимиты по числу записей (20 000 / 200), по записи (512 МиБ / 32 МиБ) и по
+сумме (1 ГиБ / 64 МиБ); распаковка бандла потоковая с реальным подсчётом байт (заявленный
+`file_size` подделывается вниз), при превышении — отказ и удаление полураспакованного каталога.
+
+### R3b-07. Релизные артефакты увозили `data/`
+
+Фрозен-приложение держит данные рядом с собой (`config.py:13-17`, `DATA_DIR = EXE_DIR/data`),
+а `build_exe.py:182` запускает собранный exe в рамках сборки — после чего в
+`dist/NazakBrowserStudio/data/` появляются `profiles.json`, `profiles/`, `logs/`,
+`extensions/`. ZIP пакует любой файл под `APP_DIR` (`build_exe.py:204-209`), установщик
+копирует всё рекурсивно (`installer.iss:59`). Воспроизведено на фрозен-пути: рядом с
+фейковым exe создаётся `data/{profiles.json,profiles,extensions,logs,videos}`; в
+`profiles.json` — 10 дефолтных профилей (проверено: паролей и 2FA там нет). Сегодня это
+не утечка, но это ровно тот каталог, где в режиме `plain` лежат пароли и 2FA-сиды.
+
+**Исправлено:** `sanitize_app_data()` в `build_exe.py` (вызывается между `smoke_test()` и
+`package_zip()`, удаляет runtime-файлы и каталоги, восстанавливает `data/assets` для иконки)
+плюс второй слой — `Excludes:` в `installer.iss`. Полный `pyinstaller`/`ISCC` я не запускал:
+проверен механизм (фрозен-каталог и `rglob("*")` в упаковке), сам факт содержимого ZIP — вывод.
+
+### R3b-08. Предсказуемые CDP-порты в GUI-воркерах
+
+`gui/workers.py:133` — `cdp_port = 9350 + idx`, тогда как остальные пути берут эфемерный
+порт (`browser_launcher.get_free_port()`). В связке с отсутствием аутентификации у CDP
+локальный процесс может угадать порт и подключиться к живой сессии профиля.
+
+**Исправлено:** `get_free_port()`; тест проверяет, что литерала `9350` больше нет, а также
+что функция возвращает различные bindable порты.
+
+### R3b-09. Инъекция действий со страницы в браузеры других профилей
+
+`Runtime.addBinding` ставится для каждой attached-сессии (`cdp_injector.py:317`),
+обработчик проверял только имя и `type` (`:347-360`), после чего событие уходило в
+`submit_event` (`synchronizer.py:221-228`) и проигрывалось как `mouse.click`,
+`keyboard.press` или ввод до 8 символов в **worker-профилях** (`:454`, `:466`, `:470-477`).
+Пока идёт sync-сессия, любой скрипт на странице мастера (в том числе рекламный iframe)
+мог кликать в чужих залогиненных профилях.
+
+**Исправлено:** `binding_event_allowed()` (чистая, тестируемая) принимает жест только если
+это main-world контекст (`auxData.isDefault`) **главного** фрейма (`Page.getFrameTree` +
+`Page.frameNavigated`) top-level страницы (`targetInfo.type == "page"`, OOPIF исключён);
+payload ограничен 4 КиБ; включён token-bucket (60 событий/с, burst 120); разбор payload'а
+вынесен в задачу, чтобы флуд со страницы не задерживал `Fetch.continueRequest` в цикле чтения
+CDP; счётчики `binding_events_accepted/rejected/throttled` доступны в статусе инжектора.
+
+### R3b-10/11. Security-заголовки и частичный CSP
+
+Ни `Content-Security-Policy`, ни `X-Content-Type-Options`, ни `Referrer-Policy`, ни
+`X-Frame-Options` не выставлялись нигде (`grep` по репозиторию — 0 совпадений); `/`
+отдавался голым `FileResponse`. Строгий CSP сейчас невозможен: в `index.html` 40, а в
+генерируемой `app.js` разметке ещё 18 inline-обработчиков `on*`.
+
+**Исправлено:** middleware выставляет `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`,
+`Cross-Origin-Resource-Policy`, `Permissions-Policy` и CSP с `object-src 'none'`,
+`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`, `script-src 'self'
+'unsafe-inline'`; для `/api` и `/v1.0` добавлен `Cache-Control: no-store` (экспорт cookies
+не должен оседать в дисковом кэше). **Честная граница:** проверено в реальном браузере, что
+этот CSP НЕ останавливает сам XSS — версия дашборда без экранирования продолжает исполнять
+payload при включённом CSP (`country=1, city=1, ip=1`, 323 байта из
+`/api/security/secrets-mode`). Защиту держит экранирование (R3-05), CSP — второй слой
+против внешних скриптов, object/embed и встраивания. Строгий CSP требует перевода
+inline-обработчиков на `addEventListener` — отдельная задача, в этот раунд не входила.
+
+### R3b-12. GUI-диалоги: подтверждение и честные результаты
+
+`gui/dialogs/cookie_dialog.py:106-107` — один клик удалял Cache/Code Cache/GPUCache/
+DawnCache/Service Worker/CacheStorage без подтверждения и игнорировал `False` от
+`clear_profile_cache`; `:97-98` печатал «Successfully saved N entries» независимо от
+результата `save_profile_cookies`; `batch_cookie_dialog.py:244-245` не показывал счётчик
+`failed`.
+
+**Исправлено:** `QMessageBox.question` + проверка обоих булевых результатов (ошибка вместо
+успеха), счётчик `failed` в сводке с `InfoBar.warning`. GUI без PyQt6 не запускается,
+поэтому проверено чтением и статическим тестом; поведение диалогов в живом GUI не проверялось.
+
+### R3b-13. Page-visible маркеры продукта
+
+В сгенерированном `stealth.js` был `window.__nazakShieldApplied`, в sync-клиенте —
+`window.__nazakSyncInstalled`, а binding назывался `__nazak_sync_event`: любая
+антифрод-система могла определить Nazak одной строкой `if (window.__nazak…)`.
+
+**Исправлено:** флаги идемпотентности переименованы (`window.__nsi`, `window.__nse_c`) и
+сделаны неперечислимыми (`enumerable: false`), имя binding'а — `__nse_ev`, бренд убран из
+комментариев внутри инжектируемого JS (комментарии видны через `Function.prototype.toString()`
+для незаклоаченных функций). Дополнительно инжектор применяет скрипт к текущему документу
+один раз на `(sessionId, loaderId)`, поэтому видимый странице флаг-«предохранитель» стал
+резервным, а не основным механизмом. Тесты: `"__nazak" not in SYNC_CLIENT_JS`,
+`"__nazakShieldApplied" not in stealth.js`.
+
+**Остаточный риск (не устранён):** страница всё ещё может найти эти свойства явным
+перечислением (`Object.getOwnPropertyNames(window)`, `getOwnPropertySymbols`). Полностью
+невидимый вариант требует убрать флаги и полагаться только на учёт инъекций на стороне CDP —
+это шире, чем правка этого раунда, и риск двойного применения скрипта выше выгоды.
+
+### R3b-14. Мелкие исправления
+
+- `app.js:346` — `${e.message}` теперь через `escapeHtml`; `app.js:854` — `rel="noopener noreferrer"`.
+- Google Fonts с CDN (`index.html:8-10`) убраны: дашборд больше не обращается к внешним
+  хостам и работает офлайн; `styles.css` использует явные системные стеки
+  (`Segoe UI Variable Text` / `Cascadia Mono`), других `url()`/`@import` в CSS нет.
+- `synchronizer._navigate_worker_sync` больше не передаёт URL в `page.goto()` как есть:
+  `file://`, `data:` и `javascript:` отклоняются (проверено запуском), плюс `field_validator`
+  на `SynchronizerNavigateRequest.url` отдаёт 422 на границе.
+- `nazak/tools/generate_brand_assets.py` — путь `D:/nazak/data/assets` заменён на
+  repo-relative, версия баннера берётся из пакета (было жёстко «V1.3.0»).
+- `mass_generate_dialog.py` — docstring приведён к реальному диапазону слайдера (1..100).
+- `synchronizer.py:150-153` — `cols` ограничен 1..8 (отрицательное значение давало
+  ZeroDivisionError/отрицательную геометрию, что гасилось общим `except`).
+- `synchronizer._ensure_worker_pages` проверяет кэш страниц **до** импорта playwright
+  (побочный эффект: тест `test_mirror_one_replicates_event_to_all_workers`, падавший из-за
+  отсутствия playwright, теперь проходит).
+- Классы `RequestValidationError`-ответа не эхо исходный ввод: тело 422 сериализуемо даже
+  для `Infinity`, а 5-мегабайтная строка не возвращается клиенту целиком.
+
+### Что проверено и НЕ подтвердилось во втором проходе
+
+- Утечек секретов в логи нет: все `logger.*` с упоминанием паролей/токенов логируют имена
+  полей, а не значения (`secrets_store.py:366/475/489`, `account_provisioner.py:549`).
+- `NazakBrowserStudio.spec:13-16` бандлит только `nazak/web` и `data/assets` — корневой
+  `data/` в образ не попадает; `app.manifest:15` — `requestedExecutionLevel="asInvoker"`,
+  `installer.iss:43` — `PrivilegesRequired=lowest` (никакого запроса администратора).
+- В сгенерированном JS нет небезопасных подстановок строк: все строковые/структурные
+  значения идут через `json.dumps`, «сырыми» остаются 14 числовых/булевых полей
+  (единственные float — те, что закрыты `_js_number`).
+- `parse_cookie_files_from_dir/zip` не распаковывают архив на диск (zip-slip невозможен),
+  `import_profile_bundle` фильтрует абсолютные пути, диски и `..`.
+
+### Что осталось непроверенным (прямо)
+
+- Исполнение R3b-09 в живом браузере: цепочку я прочитал и покрыл тестами на чистых
+  функциях, но реальную пару «мастер + воркер» с вредоносной страницей не поднимал.
+- Фактическое содержимое релизного ZIP/Setup.exe: `pyinstaller` и `ISCC` не запускались
+  (проверен механизм, а не готовый артефакт).
+- Поведение GUI-диалогов после правок (нет PyQt6/qfluentwidgets в окружении) и отрисовка
+  баннера в `generate_brand_assets.py` (нужны PyQt6 + Pillow).
+- Строгий CSP без `'unsafe-inline'` — не реализован, см. R3b-10/11.
+
+### Верификация второго прохода
+
+- Полный прогон: **725 collected, 3 live deselected**; `715 passed, 7 failed` без live
+  (7 — окружение: нет `qfluentwidgets`/`playwright`), против **9** падений на коммите
+  `5a25115` в том же окружении (одно падение закрыто улучшением `_ensure_worker_pages`).
+- Новые файлы тестов: `tests/test_round3b_api_bounds.py` (12),
+  `tests/test_round3b_stealth_and_sync.py` (16),
+  `tests/test_round3b_storage_and_packaging.py` (9),
+  `tests/test_round3b_cli_background.py` (4),
+  `tests/test_web_assets_hardening.py` (7), `tests/test_gui_and_tools_hardening.py` (8).
+- `ruff check`/`ruff format --check` — чисто; `mypy nazak` — `Success` (57 файлов).
+- В образе (`nazak-browser-studio-nazak-studio:latest`, Chromium внутри): живые заголовки
+  подтверждены (`CSP`, `nosniff`, `DENY`, `no-referrer`, `no-store`), все границы отдают 422,
+  `Infinity` в теле — 422 (было 500), `file://` в navigate — 422; живой XSS-тест в Chromium
+  проходит (21 passed вместе с web/gui-тестами), а на версии дашборда без экранирования —
+  падает, как и должно.

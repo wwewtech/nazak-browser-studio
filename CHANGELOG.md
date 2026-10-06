@@ -6,6 +6,94 @@ All notable changes to Nazak Browser Studio are documented here. For the full fe
 
 Third audit pass, focused on the CLI/agent surface plus the local API perimeter. Full findings and evidence: [docs/AUDIT_ROUND3_FINDINGS.md](docs/AUDIT_ROUND3_FINDINGS.md). `ruff check`, `ruff format --check` and `mypy` (now with **no** suppressed error codes) are clean; 29 new regression tests in `tests/test_round3_fixes.py` + 5 in `tests/test_web_ui_injection_guards.py`.
 
+### Security — second audit pass (round-3b)
+
+Second pass covered the areas the first one had not read: the dashboard HTML/fonts, the whole
+stealth-JS generator, the CDP injector loop, the synchronizer, `cli_cmds/automation.py`,
+the GUI dialogs, `nazak/tools/*`, the release build (`build_exe.py`/`installer.iss`), bundle
+import and every API request model. Findings, evidence and verification: §11 of the audit report.
+
+- **Page→browser action injection closed (`Runtime.addBinding`).** The binding was installed for
+  every attached session and the handler checked only the binding name, so any script in the
+  master page — including a third-party ad iframe — could feed gestures that the synchronizer
+  replayed as clicks/keys/typing in **other profiles'** logged-in browsers. Events are now accepted
+  only from the main-world context of the top frame of a top-level page, capped at 4 KiB, rate
+  limited (60/s, burst 120) and parsed off the CDP read loop.
+- **Non-finite numbers cannot reach the stealth layer.** `json.loads` accepts `Infinity`/`NaN` and
+  pydantic accepted them by default, so `device_pixel_ratio: Infinity` was stored and rendered as
+  the Python literal `() => inf` (ReferenceError on every `window.devicePixelRatio` read, and a
+  loud tamper signal), while `audio_noise_seed: NaN` silently disabled the audio-noise shield.
+  Models now use `allow_inf_nan=False`, the generator formats floats through `_js_number()`, a
+  hostile geo response is sanitized (`_finite_or_none`/`_safe_text`/`_safe_timezone`), and a
+  non-finite body returns a serializable 422 instead of a 500.
+- **Bounds on every request model** (`Field(ge/le/max_length/pattern)`) plus matching service-level
+  clamps: `mass-generate count 1..200` (measured: unbounded `count` is O(n²) in `profiles.json`
+  rewrites), `autopost delay_seconds 0..3600` (unbounded value held `is_running` for years),
+  synchronizer delays/jitter, `cols 1..8`, `cdp_port`, `max_concurrency`, profile-id lists and
+  text fields. Lower bounds that previously produced the endpoints' 400 contract were left intact.
+- **Archive limits.** `.nazak` bundle import and cookie-ZIP parsing had no caps (measured: a 100 KiB
+  archive wrote 100 MiB to disk). Entry-count, per-entry and total limits are now enforced, and a
+  refused bundle leaves no half-extracted directory behind.
+- **Release artifacts no longer carry runtime `data/`.** The build smoke-tests the freshly built
+  exe, and the frozen app keeps its data next to the executable, so `data/profiles.json`,
+  `data/profiles/`, `data/logs/`, `data/extensions/` ended up inside both the release ZIP and the
+  installer — the very directory that holds plaintext passwords and 2FA seeds in `plain` mode.
+  `sanitize_app_data()` strips them before packaging (`data/assets` is restored for the icon) and
+  the installer excludes them as a second layer.
+- **Security headers + partial CSP.** `/` was served with no headers at all. Responses now carry
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
+  COOP/CORP, `Permissions-Policy` and a CSP with `object-src 'none'`, `base-uri 'none'`,
+  `form-action 'self'`, `frame-ancestors 'none'`; API responses are `Cache-Control: no-store`
+  (cookie exports must not land in the disk cache). `script-src` still needs `'unsafe-inline'`
+  because the UI has 58 inline handlers — verified in a real browser that this CSP alone does
+  **not** stop the XSS; escaping remains the load-bearing defence. A strict CSP needs the
+  `addEventListener` refactor.
+- **GUI honesty.** Cache cleanup asks for confirmation and both `clear_profile_cache` and
+  `save_profile_cookies` results are honoured (error instead of a false success); the batch cookie
+  import shows the `failed` counter.
+- **Predictable CDP ports removed** in the GUI autopost worker (`9350 + idx` → `get_free_port()`),
+  which matters because CDP has no authentication.
+- **No page-visible brand markers.** `window.__nazakShieldApplied`, `window.__nazakSyncInstalled`
+  and the `__nazak_sync_event` binding told any anti-fraud script exactly which product was in use.
+  They are renamed to neutral, non-enumerable properties/binding (`__nsi`, `__nse_c`, `__nse_ev`),
+  and the injector applies the script once per `(session, loaderId)` document.
+
+### Fixed — CLI / synchronizer
+
+- **`scenario run` without `--wait` no longer lies.** It started a daemon thread and printed
+  success, but `main.py` exits with `SystemExit`, so the thread died before doing anything
+  (reproduced: exit 0, marker file never created). Background mode now spawns a detached process
+  (survives the CLI exit) that logs to `data/logs/scenario_<timestamp>.log` and returns its pid;
+  if the spawn fails the command reports an error and points at `--wait`.
+- **The synchronizer tells the truth about a dead pump.** `time.sleep()` sat outside the per-event
+  `try`, so a negative `--min-delay`/`min_delay_ms` raised `ValueError` (verified) and killed the
+  pump thread while `session.active` stayed `True` — `get_status()` kept reporting an active
+  session and `mirror_navigation` blocked ~110 s. Delays are clamped, the sleep is inside the
+  `try`, the pump's `finally` deactivates the session and records `last_error`, navigation checks
+  the pump thread first, and the event queue is bounded with a `dropped_events` counter.
+- **`sync navigate` refuses non-http(s) URLs.** The URL went straight into `page.goto()`, so
+  `file://`, `data:` and `javascript:` opened in the worker browsers (verified by execution);
+  the API now rejects them with 422 and the service layer refuses them too.
+- **`_ensure_worker_pages` checks the page cache before importing Playwright** — a pure
+  optimisation that also turned the pre-existing env failure of
+  `test_mirror_one_replicates_event_to_all_workers` into a pass.
+
+### Fixed — web dashboard
+
+- `e.message` in the diagnostics error path is escaped; the video link carries
+  `rel="noopener noreferrer"`.
+- The dashboard no longer loads Google-hosted webfonts: it works offline and does not phone a
+  third party on every load. `styles.css` uses explicit system stacks
+  (`Segoe UI Variable Text`, `Cascadia Mono`).
+
+### Fixed — tools
+
+- `nazak/tools/generate_brand_assets.py` wrote to the author's hard-coded `D:/nazak/data/assets`
+  (outside the repo, or crashed) and stamped a stale `V1.3.0` into the banner; both now derive
+  from the repository and the package version. The mass-generate dialog docstring matches its
+  actual 1..100 slider range.
+
+
 ### Security — CLI / agent surface
 
 - **`profile get` masks secrets by default.** Прокси-пароль, `account_password` и `totp_secret` в `google.notes` больше не попадают в stdout/логи агента: вывод маскируется (`***`, `ab...yz`), открытый текст — только по явному `--reveal` (или `NAZAK_REVEAL=1`). Ранее `model_dump()` печатал всё как есть, а хелпер `mask_proxy_dict` был мёртвым кодом.

@@ -34,6 +34,37 @@ When Nazak Browser Studio is running in server mode (`python -m nazak.main --mod
 - **ReDoc**: Available at `http://127.0.0.1:8899/redoc` for structured technical reference in three-panel format.
 - **OpenAPI Schema**: Raw schema available at `http://127.0.0.1:8899/openapi.json`.
 
+### Request validation, limits and response headers
+
+Every request model carries explicit bounds — a single call can no longer stall the server:
+
+| Field | Bound |
+|---|---|
+| `MassGenerateRequest.count` | `1..200` (matches the CLI; the service clamps too) |
+| `AutopostBatchRequest.delay_seconds` | `0..3600` |
+| `SynchronizerStartRequest.min_delay_ms` / `max_delay_ms` | `0..60000` |
+| `SynchronizerStartRequest.coordinate_jitter_px` | `0..50` |
+| `SynchronizerStartRequest.worker_profile_ids`, `BatchActionRequest.profile_ids`, `ScenarioRunRequest.profile_ids`, `UniquifyRequest.profile_ids` | ≤ 500 ids |
+| `WindowTileRequest.cols` | `1..8` |
+| `LaunchRequest.cdp_port` | `1..65535` |
+| `ScenarioRunRequest.max_concurrency` | `1..10` |
+| `WarmupRequest.steps_count` | `1..20` |
+| `BulkCookieExportRequest.format` | `json` \| `netscape` \| `zip` |
+| `CookieImportRequest.cookies_data`, `BulkCookieImportRequest.cookies_data` | ≤ 5 000 000 chars |
+| `SynchronizerNavigateRequest.url` | http(s) only — `file://`, `data:` and `javascript:` are rejected |
+
+Out-of-range values return **422** with a JSON-safe body. That body never echoes non-finite
+numbers or multi-megabyte inputs (a raw `Infinity` used to produce a 500 while serializing the
+error itself), and it does not include the request URL.
+
+Responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+`X-Frame-Options: DENY`, COOP/CORP, `Permissions-Policy` and a CSP (`object-src 'none'`,
+`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`). `/api` and `/v1.0` responses
+are `Cache-Control: no-store`. The CSP still needs `script-src 'unsafe-inline'` for the dashboard's
+inline handlers, so it is a defence-in-depth layer, not a replacement for escaping:
+[/docs/AUDIT_ROUND3_FINDINGS.md §11](AUDIT_ROUND3_FINDINGS.md) documents a verified real-browser run
+where the CSP alone did **not** stop the dashboard XSS.
+
 ---
 
 ## 🤖 1. Dolphin{anty} v1.0 & Nazak v1 Local Automation API

@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-669%20collected-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-725%20collected-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -246,19 +246,24 @@ curl -H "X-API-Key: change-me-to-a-long-random-secret" http://127.0.0.1:8899/api
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **669 collected tests** (666 selected; 3 `live` tests are deselected by default):
+The project is backed by a comprehensive regression and unit test suite comprising **725 collected tests** (722 selected; 3 `live` tests are deselected by default):
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 666 passed, 3 deselected =============================
+============================ 715 passed, 7 failed, 3 deselected =============================
 ```
+
+The 7 failures in a bare environment are dependency-related, not behavioural: `PyQt6`/`qfluentwidgets`
+(6 GUI tests) and `playwright` (1 live test) are not installed there; the same suite is green once
+those are present. The reference run on the previous commit in the same bare environment reported
+9 failures, so this round also closed one of them.
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 
-Round-3 audit regressions: `tests/test_round3_fixes.py` (29 tests: secret masking with `--reveal`, honest `account totp`, `@file`/`--out` hardening, publish-uncertain retry policy, warmup clamps, API perimeter) and `tests/test_web_ui_injection_guards.py` (5 tests: HTML-injection guards in the web dashboard).
+Round-3 audit regressions: `tests/test_round3_fixes.py` (29 tests: secret masking with `--reveal`, honest `account totp`, `@file`/`--out` hardening, publish-uncertain retry policy, warmup clamps, API perimeter), `tests/test_web_ui_injection_guards.py` (5 tests: HTML-injection guards) and the second-pass suites `tests/test_round3b_api_bounds.py` (12), `tests/test_round3b_stealth_and_sync.py` (16), `tests/test_round3b_storage_and_packaging.py` (9), `tests/test_round3b_cli_background.py` (4), `tests/test_web_assets_hardening.py` (7) and `tests/test_gui_and_tools_hardening.py` (8).
 
 - `test_cdp_injector.py` — CDP stealth injector: UA/Client-Hints rebuilt from the real running Chrome version, per-session timezone override, `Fetch.authRequired` proxy credential answering (regression: `handleAuthRequests` must be enabled or 407 challenges never fire), injector handle lifecycle.
 - `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`), synchronizer master→worker replication, and a real-browser XSS check of the dashboard (`test_dashboard_xss_live.py` — drives Chromium against the live Web Studio, feeds attacker-controlled `health.ip/country/city` values, and fails if the injected script executes or reaches the local API); deselected by default in regular runs.

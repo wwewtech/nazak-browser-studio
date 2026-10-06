@@ -89,11 +89,25 @@ python -m nazak.cli scenario list --json
 python -m nazak.cli scenario run --scenario youtube_shorts_warmup --profiles prof_01,prof_02 --concurrency 2 --json
 python -m nazak.cli warmup plan prof_01 --niche crypto --steps 5 --json
 
+# `scenario run` без --wait запускает ОТДЕЛЬНЫЙ процесс (не поток): он переживает
+# выход CLI и пишет лог в data/logs/scenario_<timestamp>.log. В JSON-ответе есть
+# "pid" и "log". Раньше это был daemon-поток, который умирал вместе с процессом:
+# команда печатала success, не сделав ничего. Если процесс не удалось запустить —
+# команда вернёт ошибку и подскажет флаг --wait.
+python -m nazak.cli scenario run --scenario youtube_shorts_warmup --profiles prof_01 --json
+# синхронный режим (ждёт завершения, ничего не остаётся в фоне):
+python -m nazak.cli scenario run --scenario youtube_shorts_warmup --profiles prof_01 --wait --json
+
 # Синхронизатор
 python -m nazak.cli sync start --master prof_01 --workers prof_02,prof_03 --json
 python -m nazak.cli sync navigate "https://www.google.com" --json
 python -m nazak.cli sync tile --cols 2 --json
 python -m nazak.cli sync stop --json
+
+# Границы синхронизатора: --min-delay/--max-delay 0..60000 мс (отрицательные
+# значения раньше убивали поток-насос, а статус продолжал показывать active),
+# --cols 1..8, navigate принимает только http(s) — file://, data: и javascript:
+# отклоняются (раньше URL уходил в page.goto() воркеров как есть).
 
 # Автопостинг
 python -m nazak.cli autopost status --json
