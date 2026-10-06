@@ -916,8 +916,14 @@ DawnCache/Service Worker/CacheStorage без подтверждения и иг�
 
 - Исполнение R3b-09 в живом браузере: цепочку я прочитал и покрыл тестами на чистых
   функциях, но реальную пару «мастер + воркер» с вредоносной страницей не поднимал.
-- Фактическое содержимое релизного ZIP/Setup.exe: `pyinstaller` и `ISCC` не запускались
-  (проверен механизм, а не готовый артефакт).
+- Фактическое содержимое релизного ZIP — **проверено на опубликованном релизе v1.11.0**: скачан
+  `NazakBrowserStudio-v1.11.0-Windows-x64.zip` (152.34 МБ, 4357 записей), SHA256 совпал с
+  опубликованным `SHA256SUMS.txt`, записей с runtime-данными (`profiles.json`, `profiles/`,
+  `logs/`, `extensions/`, `videos/`, `screenshots/`) — **0**, под `data/` только `assets/`;
+  правки дашборда внутри артефакта на месте (0 ссылок на Google Fonts, системные шрифты,
+  `escapeHtml(e.message)`, `rel="noopener noreferrer"`). Сам `Setup.exe` (формат Inno Setup)
+  не распаковывался: он собирается из того же каталога, что и ZIP, а в `installer.iss` добавлен
+  второй слой — `Excludes:`.
 - Поведение GUI-диалогов после правок (нет PyQt6/qfluentwidgets в окружении) и отрисовка
   баннера в `generate_brand_assets.py` (нужны PyQt6 + Pillow).
 - Строгий CSP без `'unsafe-inline'` — не реализован, см. R3b-10/11.
@@ -932,7 +938,12 @@ DawnCache/Service Worker/CacheStorage без подтверждения и иг�
   `tests/test_round3b_storage_and_packaging.py` (9),
   `tests/test_round3b_cli_background.py` (4),
   `tests/test_web_assets_hardening.py` (7), `tests/test_gui_and_tools_hardening.py` (8).
-- `ruff check`/`ruff format --check` — чисто; `mypy nazak` — `Success` (57 файлов).
+- `ruff check`/`ruff format --check` — чисто; `mypy nazak` — `Success` (57 файлов) **на обеих
+  платформах** (`--platform linux`, как на CI-раннере, и Windows). Первый прогон CI с полностью
+  включёнными error-кодами нашёл 7 ошибок, которых не видно на Windows: `ctypes.windll`/
+  `GetLastError` не существуют в typeshed для Linux (6 × `attr-defined` в `secrets_store.py`) и
+  `sanitize_launch_url()` возвращает `str | None` (1 × `return-value` в валидаторе URL
+  синхронизатора). Исправлено в `d6f6b51`.
 - В образе (`nazak-browser-studio-nazak-studio:latest`, Chromium внутри): живые заголовки
   подтверждены (`CSP`, `nosniff`, `DENY`, `no-referrer`, `no-store`), все границы отдают 422,
   `Infinity` в теле — 422 (было 500), `file://` в navigate — 422; живой XSS-тест в Chromium

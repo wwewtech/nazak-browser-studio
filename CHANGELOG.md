@@ -14,8 +14,10 @@ Full findings with evidence, and an explicit list of what could not be verified:
 
 Test suite: **725 collected** (3 `live` tests deselected by default), `ruff check`,
 `ruff format --check` and `mypy` (with **no** suppressed error codes) clean. 56 new regression
-tests. Verified on a real Docker engine (image build, runtime contract, `.dockerignore`) and, for
-the dashboard XSS, in a real Chromium with a differential control.
+tests. Verified on a real Docker engine (image build, runtime contract, `.dockerignore`), in a real
+Chromium for the dashboard XSS (with a differential control), and on the published release artifact
+itself: the released ZIP's SHA256 matches the published `SHA256SUMS.txt` and contains **no** runtime
+`data/` (0 of 4357 entries — only `data/assets`).
 
 ### Security — second audit pass (round-3b)
 
