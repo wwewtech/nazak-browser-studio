@@ -82,6 +82,8 @@ def test_cancel_all_stops_launched_profiles(mgr):
     for pid in ("p1", "p2", "p3"):
         mgr.jobs[pid] = _J(profile_id=pid, profile_name=pid, source_video="v.mp4")
         mgr.jobs[pid].status = "uploading"
+        # audit R3: очередь останавливает только те браузеры, которые подняла сама
+        mgr._launched_here.add(pid)
     with patch.object(mgr.browser_launcher, "stop", wraps=mgr.browser_launcher.stop) as _s:
         mgr.cancel_all()
     assert mgr._cancel_requested is True
@@ -89,6 +91,17 @@ def test_cancel_all_stops_launched_profiles(mgr):
         assert j.status == "canceled"
         assert j.progress_message == "Upload canceled by user"
     assert sorted(mgr.browser_launcher.stopped) == ["p1", "p2", "p3"]
+
+
+def test_cancel_all_leaves_foreign_sessions_alone(mgr):
+    """Профиль, который очередь не запускала (открыт пользователем), не гасим."""
+    from nazak.core.upload_queue import UploadJob as _J
+
+    mgr.jobs["foreign"] = _J(profile_id="foreign", profile_name="foreign", source_video="v.mp4")
+    mgr.jobs["foreign"].status = "uploading"
+    mgr.cancel_all()
+    assert mgr.browser_launcher.stopped == []
+    assert mgr.jobs["foreign"].status == "canceled"
 
 
 def test_cancel_all_noop_without_launched():

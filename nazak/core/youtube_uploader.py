@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .publish_status import publish_uncertain
+
 
 def ensure_async_playwright():
     try:
@@ -95,6 +97,10 @@ class YouTubeUploader:
             return False, None, f"Video file not found: {video_path}"
 
         async_playwright = ensure_async_playwright()
+
+        # Audit R3: после клика «Publish» повторный прогон = дубль публикации,
+        # поэтому такие сбои помечаются publish-uncertain и не ретраятся.
+        publish_clicked = False
 
         async with async_playwright() as p:
             try:
@@ -215,6 +221,7 @@ class YouTubeUploader:
 
                 done_btn = page.locator("#done-button").first
                 await done_btn.click()
+                publish_clicked = True
                 await asyncio.sleep(5)
 
                 # 10. Extract the published URL: poll briefly — the info link
@@ -244,4 +251,7 @@ class YouTubeUploader:
                 return True, video_url, None
 
             except Exception as e:
+                if publish_clicked:
+                    # Публикация могла состояться: не ретраим и не выдаём за успех.
+                    return False, None, publish_uncertain(f"YouTube: publish was clicked, result unverified ({e})")
                 return False, None, f"YouTube upload error: {e!s}"

@@ -15,15 +15,17 @@ from typing import Any
 from ..models.profile import ProfileStatus
 from .browser_launcher import get_free_port
 from .instagram_uploader import InstagramUploader
+from .publish_status import is_publish_uncertain
 from .spintax import format_video_metadata
 from .video_uniquifier import VideoUniquifier
 from .youtube_uploader import YouTubeUploader
 
+# Audit R3: "403" убран из списка — это блок/отказ в правах, а не сбой сети;
+# ретраить его 4 раза значит долбить платформу и рисковать аккаунтом.
 RETRYABLE_UPLOAD_ERRORS = (
     "timeout",
     "temporarily unavailable",
     "429",
-    "403",
     "rate limit",
     "network",
     "session disconnected",
@@ -47,12 +49,13 @@ SUPPORTED_UPLOAD_PLATFORMS = ("youtube_shorts", "instagram_reels")
 def normalize_upload_platform(platform: str | None) -> str:
     """Normalize an upload platform name to a supported value.
 
-    Case-insensitive exact match on the supported tokens; anything else
-    (unknown strings, whitespace-padded variants, None/empty) falls back
-    to ``youtube_shorts``.
+    Audit R3: сравнение больше не регистрозависимое — "Instagram_Reels" раньше
+    молча превращался в youtube_shorts, т.е. видео уезжало не на ту платформу.
     """
-    if isinstance(platform, str) and platform in SUPPORTED_UPLOAD_PLATFORMS:
-        return platform
+    if isinstance(platform, str):
+        candidate = platform.strip().lower()
+        if candidate in SUPPORTED_UPLOAD_PLATFORMS:
+            return candidate
     return "youtube_shorts"
 
 
@@ -104,6 +107,9 @@ class UploadQueueManager:
         self._cancel_requested = False
         self._batch_lock = asyncio.Lock()
         self._profile_locks: dict[str, asyncio.Lock] = {}
+        # Профили, браузеры которых подняла именно эта очередь (audit R3):
+        # cancel_all не должен убивать сессию, открытую пользователем вручную.
+        self._launched_here: set[str] = set()
 
     async def broadcast(self, event: str, data: dict[str, Any]):
         if self.ws_broadcast:
@@ -140,19 +146,26 @@ class UploadQueueManager:
                 j.progress_message = "Upload canceled by user"
                 canceled_ids.append(j.profile_id)
         # Sweep: a cancel may land between launch() and upload completion —
-        # take down those browsers so no Chrome process leaks.
+        # take down those browsers so no Chrome process leaks. Только те, что
+        # подняла очередь: чужую сессию пользователя не трогаем (audit R3).
         launcher = getattr(self, "browser_launcher", None)
         stop = getattr(launcher, "stop", None)
         if stop is not None:
             for pid in canceled_ids:
+                if pid not in self._launched_here:
+                    continue
                 try:
                     stop(pid)
                 except Exception:
                     pass
+                self._launched_here.discard(pid)
 
     @staticmethod
     def _is_retryable_error(err: str | None) -> bool:
         if not err:
+            return False
+        # Публикация уже нажата, но результат неизвестен: повтор = дубль поста.
+        if is_publish_uncertain(err):
             return False
         lowered = err.lower()
         # Captcha/challenge needs a human — retrying never helps.
@@ -287,6 +300,7 @@ class UploadQueueManager:
                     launched_here = False
                     if launch_ok:
                         launched_here = True
+                        self._launched_here.add(pid)
                     else:
                         job.status = "failed"
                         job.error = f"Browser launch failed: {launch_err}"
@@ -374,8 +388,11 @@ class UploadQueueManager:
                                 self.browser_launcher.stop(pid)
                             except Exception:
                                 pass
+                            self._launched_here.discard(pid)
                             launched_here = False
-                    if is_manual_action_error(upload_err):
+                    if is_publish_uncertain(upload_err):
+                        job.progress_message = f"{upload_err} (ретрай запрещён: публикация могла состояться)"
+                    elif is_manual_action_error(upload_err):
                         job.progress_message = f"{upload_err} (manual action required — no retry)"
                     prof.status = ProfileStatus.STOPPED
                     prof.pid = None
@@ -398,7 +415,10 @@ class UploadQueueManager:
                     else:
                         job.status = "failed"
                         job.error = upload_err
-                        job.progress_message = upload_err or "Upload failed"
+                        # Audit R3: сообщение о запрете ретрая не должно теряться
+                        # (раньше оно перезаписывалось текстом ошибки на этой строке).
+                        if not is_publish_uncertain(upload_err) and not is_manual_action_error(upload_err):
+                            job.progress_message = upload_err or "Upload failed"
                         await self.broadcast(
                             "autopost_job_update",
                             {
@@ -415,4 +435,17 @@ class UploadQueueManager:
 
         finally:
             self.is_running = False
+            # Audit R3: неожиданное исключение раньше оставляло job в статусе
+            # "uploading" и профиль RUNNING, а браузер — висеть. Закрываем явно.
+            for stuck in self.jobs.values():
+                if stuck.status in ("pending", "uniqueizing", "launching", "uploading"):
+                    stuck.status = "failed"
+                    stuck.error = stuck.error or "Batch aborted unexpectedly (см. лог сервера)"
+                    stuck.progress_message = stuck.error
+            for owned_pid in list(self._launched_here):
+                try:
+                    self.browser_launcher.stop(owned_pid)
+                except Exception:
+                    pass
+            self._launched_here.clear()
             await self.broadcast("autopost_batch_finished", {"results": self.get_jobs_status()})

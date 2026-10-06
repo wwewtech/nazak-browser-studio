@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .publish_status import publish_uncertain
+
 
 async def human_type(element, text: str):
     if element is None or not hasattr(element, "type"):
@@ -139,6 +141,7 @@ class InstagramUploader:
         browser = None
         context = None
         page = None
+        share_clicked = False
         try:
             async with async_playwright() as p:
                 browser = await self._connect_browser(p)
@@ -202,27 +205,63 @@ class InstagramUploader:
                     await self._safe_wait(next_btn.click(), timeout=10.0, label="next button click")
                     await asyncio.sleep(2 * self.delay_scale)
 
+                # Audit R3: каждый шаг ниже был под `if is_visible()`, и при
+                # провале управление доходило до `return True, "https://www.instagram.com/"`.
+                # Теперь отсутствие подтверждения — это честная ошибка.
                 share_btn = self._first(page.locator("button:has-text('Share')"))
-                if await asyncio.wait_for(share_btn.is_visible(), timeout=20.0):
-                    await self._safe_wait(share_btn.click(), timeout=15.0, label="share button click")
-                    await asyncio.sleep(5 * self.delay_scale)
+                if not await asyncio.wait_for(share_btn.is_visible(), timeout=20.0):
+                    return (
+                        False,
+                        None,
+                        publish_uncertain("Instagram: the Share dialog never appeared, nothing was published"),
+                    )
+                await self._safe_wait(share_btn.click(), timeout=15.0, label="share button click")
+                share_clicked = True
+                await asyncio.sleep(5 * self.delay_scale)
 
+                # Подтверждение: ссылка на пост, тост об успехе или закрытие диалога.
                 published_url = None
-                try:
-                    post_link = self._first(page.locator("a[href*='/p/']"))
-                    if await asyncio.wait_for(post_link.is_visible(), timeout=10.0):
-                        published_url = await post_link.get_attribute("href")
-                        if published_url and not published_url.startswith("http"):
-                            published_url = f"https://www.instagram.com{published_url}"
-                except Exception:
-                    published_url = None
+                confirmed = False
+                for _ in range(10):
+                    try:
+                        post_link = self._first(page.locator("a[href*='/p/']"))
+                        if await post_link.is_visible():
+                            published_url = await post_link.get_attribute("href")
+                            if published_url:
+                                if not published_url.startswith("http"):
+                                    published_url = f"https://www.instagram.com{published_url}"
+                                confirmed = True
+                                break
+                    except Exception:
+                        pass
+                    try:
+                        toast = self._first(
+                            page.locator("text=/Your reel has been shared|Reel shared|has been shared/i")
+                        )
+                        if await toast.is_visible():
+                            confirmed = True
+                            break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2)
+
+                if not confirmed:
+                    return (
+                        False,
+                        None,
+                        publish_uncertain(
+                            "Instagram: Share was clicked but publication could not be confirmed "
+                            "(no post link, no success toast) — check the profile manually"
+                        ),
+                    )
 
                 await notify_progress(progress_callback, f"Reel published! URL: {published_url or 'Instagram'}")
-
-                return True, published_url or "https://www.instagram.com/", None
+                return True, published_url, None
 
         except (RuntimeError, TimeoutError, Exception) as exc:
             message = str(exc)
+            if share_clicked:
+                return False, None, publish_uncertain(f"Instagram: Share was clicked, result unverified ({message})")
             if self._is_session_lost_error(message):
                 return False, None, f"Instagram session disconnected: {message}"
             return False, None, f"Instagram upload error: {message}"

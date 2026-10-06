@@ -40,7 +40,9 @@ def test_instagram_session_lost_error_detection(message, expected):
         ("challenge required", False),  # manual action — never retried
         ("verification required", False),  # manual action — never retried
         ("429 Too Many Requests", True),
-        ("403 forbidden", True),
+        # Audit R3: "403" убран из ретраибельных — это блок/отказ в правах,
+        # повтор только долбит платформу и рискует аккаунтом.
+        ("403 forbidden", False),
         ("rate limit reached", True),
         ("temporarily unavailable", True),
         ("network timeout", True),
@@ -64,7 +66,9 @@ def test_upload_queue_retryable_error_detection(error, expected):
         ("youtube_shorts", "youtube_shorts"),
         ("instagram_reels", "instagram_reels"),
         ("YOUTUBE_SHORTS", "youtube_shorts"),
-        ("INSTAGRAM_REELS", "youtube_shorts"),
+        # Audit R3: нормализация регистронезависима — "Instagram_Reels" больше
+        # не уезжает молча на YouTube.
+        ("INSTAGRAM_REELS", "instagram_reels"),
         ("youtube", "youtube_shorts"),
         ("instagram", "youtube_shorts"),
         ("reels", "youtube_shorts"),
@@ -72,9 +76,9 @@ def test_upload_queue_retryable_error_detection(error, expected):
         ("", "youtube_shorts"),
         (None, "youtube_shorts"),
         ("youtube_shorts ", "youtube_shorts"),
-        ("instagram_reels ", "youtube_shorts"),
+        ("instagram_reels ", "instagram_reels"),
         ("youtube_shorts\n", "youtube_shorts"),
-        ("instagram_reels\n", "youtube_shorts"),
+        ("instagram_reels\n", "instagram_reels"),
         ("mixed_platform", "youtube_shorts"),
     ],
 )
