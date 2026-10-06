@@ -5,6 +5,7 @@ Supports nested spintax like {Best|Top|Working {VPN|vpn}} and placeholders {tg},
 
 import random
 import re
+from typing import Any
 
 
 def parse_spintax(text: str) -> str:
@@ -37,9 +38,12 @@ def format_video_metadata(
     profile_id: str,
     tg_channel: str = "@your_vpn_bot",
     promo_code: str | None = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """
     Generates unique, spun title and description with dynamic placeholders.
+
+    Возвращает title/description (str) и tags (list[str]) — отсюда dict[str, Any]:
+    предыдущая аннотация dict[str, str] противоречила фактическому содержимому.
     """
     ctx = {
         "tg": tg_channel,

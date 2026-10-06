@@ -579,7 +579,9 @@ class ProfileManager:
                 if incoming is not None:
                     profile.google.notes = json.dumps(encrypt_notes(sanitize_notes_for_write(incoming, {})))
             return profile
-        profile.google = _merge_google(profile.google, stored.google)
+        merged_google = _merge_google(profile.google, stored.google)
+        if merged_google is not None:
+            profile.google = merged_google
         _sanitize_notes(profile, stored)
         profile.proxy = _merge_proxy(profile.proxy, stored.proxy, set(profile.proxy.model_fields_set))
         if profile.fingerprint is not None and stored.fingerprint is not None:

@@ -2,11 +2,14 @@
 Background process watchdog that tracks active Chrome instances and lifecycle state.
 """
 
+import logging
 import threading
 import time
 from collections.abc import Callable
 
 from ..models.profile import ProfileStatus
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessMonitor:
@@ -64,6 +67,7 @@ class ProcessMonitor:
                                     cb(p.id, ProfileStatus.STOPPED)
                                 except Exception:
                                     pass
-            except Exception:
-                pass
+            except Exception as exc:
+                # Audit R3: молчаливое «pass» скрывало поломку монитора целиком.
+                logger.debug("process monitor iteration failed: %s", exc)
             time.sleep(self.poll_interval)

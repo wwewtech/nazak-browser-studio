@@ -189,20 +189,10 @@ follow_imports = "silent"
 allow_redefinition = true
 check_untyped_defs = false
 disallow_untyped_defs = false
-disable_error_code = [
-    "no-redef",
-    "arg-type",
-    "dict-item",
-    "assignment",
-    "index",
-    "import-untyped",
-    "override",
-    "misc",
-    "attr-defined",
-    "call-arg",
-    "call-overload",
-    "valid-type",
-]
+# Audit R3: раньше здесь были отключены 12 категорий ошибок (arg-type, call-arg,
+# attr-defined, assignment, index, override, misc, ...), из-за чего «mypy зелёный»
+# ничего не гарантировал. Все категории включены, найденные ошибки исправлены.
+disable_error_code = []
 exclude = [
     "build/",
     "dist/",

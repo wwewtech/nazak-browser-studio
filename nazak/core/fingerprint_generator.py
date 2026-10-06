@@ -6,11 +6,12 @@ guaranteeing complete spoofing and isolation of the host PC characteristics.
 
 import random
 import uuid
+from typing import Any
 
 from ..models.profile import BatterySpoofConfig, FingerprintConfig, GeolocationSpoofConfig, MediaDeviceInfo
 
 # Realistic GPU combinations
-GPU_PRESETS = [
+GPU_PRESETS: list[dict[str, Any]] = [
     {
         "vendor": "Google Inc. (NVIDIA)",
         "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -143,7 +144,7 @@ GPU_PRESETS = [
 ]
 
 # Realistic Screen Resolutions with standard aspect ratios
-SCREEN_RESOLUTIONS = [
+SCREEN_RESOLUTIONS: list[dict[str, float]] = [
     {"width": 1920, "height": 1080, "avail_w": 1920, "avail_h": 1040, "dpr": 1.0},
     {"width": 2560, "height": 1440, "avail_w": 2560, "avail_h": 1400, "dpr": 1.25},
     {"width": 3840, "height": 2160, "avail_w": 3840, "avail_h": 2120, "dpr": 2.0},
@@ -276,23 +277,23 @@ def generate_random_fingerprint(
         brands=brands,
         # Linux kernels report their version string via Client Hints, not "10.0.0"
         platform_version="15.0.0" if os_type in ("mac", "macos") else ("6.8.0" if os_type == "linux" else "10.0.0"),
-        screen_width=screen["width"],
-        screen_height=screen["height"],
-        screen_avail_width=screen["avail_w"],
-        screen_avail_height=screen["avail_h"],
-        device_pixel_ratio=screen["dpr"],
+        screen_width=int(screen["width"]),
+        screen_height=int(screen["height"]),
+        screen_avail_width=int(screen["avail_w"]),
+        screen_avail_height=int(screen["avail_h"]),
+        device_pixel_ratio=float(screen["dpr"]),
         color_depth=24,
         pixel_depth=24,
-        device_memory=ram,
-        hardware_concurrency=cores,
+        device_memory=int(ram),
+        hardware_concurrency=int(cores),
         language=language,
         languages=langs_list,
         timezone=tz_name,
         timezone_offset=tz_offset,
-        webgl_vendor=gpu["vendor"],
-        webgl_renderer=gpu["renderer"],
-        webgl_unmasked_vendor=gpu["unmasked_vendor"],
-        webgl_unmasked_renderer=gpu["unmasked_renderer"],
+        webgl_vendor=str(gpu["vendor"]),
+        webgl_renderer=str(gpu["renderer"]),
+        webgl_unmasked_vendor=str(gpu["unmasked_vendor"]),
+        webgl_unmasked_renderer=str(gpu["unmasked_renderer"]),
         media_devices=media_devs,
         canvas_noise=True,
         canvas_noise_seed=random.randint(10000, 999999),
