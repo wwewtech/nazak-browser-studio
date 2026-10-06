@@ -2,6 +2,69 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## Unreleased — Round-3 Audit Remediation (agent-first hardening)
+
+Third audit pass, focused on the CLI/agent surface plus the local API perimeter. Full findings and evidence: [docs/AUDIT_ROUND3_FINDINGS.md](docs/AUDIT_ROUND3_FINDINGS.md). `ruff check`, `ruff format --check` and `mypy` (now with **no** suppressed error codes) are clean; 29 new regression tests in `tests/test_round3_fixes.py` + 5 in `tests/test_web_ui_injection_guards.py`.
+
+### Security — CLI / agent surface
+
+- **`profile get` masks secrets by default.** Прокси-пароль, `account_password` и `totp_secret` в `google.notes` больше не попадают в stdout/логи агента: вывод маскируется (`***`, `ab...yz`), открытый текст — только по явному `--reveal` (или `NAZAK_REVEAL=1`). Ранее `model_dump()` печатал всё как есть, а хелпер `mask_proxy_dict` был мёртвым кодом.
+- **`account totp` больше не врёт.** Команда вызывала `decrypt_notes(reveal=False)` (маска) и отдавала `{"success": true, "totp_code": "000000"}` с exit 0. Теперь секрет раскрывается через `reveal_notes()`, а `generate_totp_rfc6238()` бросает `ValueError` вместо фиктивного кода (обновлён и его тест).
+- **`@file` и `--out` перестали быть произвольным доступом к ФС.** `@path` с опечаткой — это ошибка ввода (`exit 2`), а не молчаливая подстановка строки `"@path"` в парсер; чтение ограничено 16 МБ, каталоги отклоняются. `--out` не перезаписывает существующий файл без `--force`/`--yes`.
+- **`account login --profile <id>` не логинится в чужой аккаунт.** Раньше совпадение искалось подстрокой по имени/email, а при промахе молча брался первый Google-профиль и публиковалось видео. Теперь — только точный id/email, иначе остановка без публикации.
+- **Живой TOTP-код больше не печатается.** Убраны `print(... {code} ...)` в `cli_auto_login_and_upload.py` и подстановка кода в прогресс `account_provisioner.automate_google_login` (в `--json` режиме этот stdout уходил в stderr — то есть в логи агента/CI).
+- **Легаси-поток логина больше не пишет фейковый MP4.** Вместо `b"DEMO_MP4_HEADER" + b"0"*1024` клип генерируется через `core.video_uniquifier.generate_demo_clip()` (тот же честный генератор, что и в API), и «PUBLISHED SUCCESSFULLY» печатается только когда ссылка на видео реально найдена.
+- **Пароли аккаунтов раскрываются для логина через `reveal_notes()`** (режимы dpapi/passphrase работают), а notes записываются обратно из исходного (зашифрованного) JSON, чтобы расшифрованный текст не попал на диск.
+
+### Fixed — честность статусов
+
+- **Instagram-аплоадер возвращает ошибку, если публикация не подтверждена.** Раньше шаги были под `if is_visible()`, и при провале возвращалось `True` с выдуманным `https://www.instagram.com/`. Теперь нужно подтверждение (ссылка на пост или тост об успехе), иначе `publish-uncertain`.
+- **Ретрай после клика «Publish»/«Share» запрещён** (`core/publish_status.py`): повторный прогон = дубль публикации. Также `403` убран из списка ретраибельных ошибок (это блок/отказ, а не сбой сети).
+- **Очередь не оставляет «зависших» job'ов и браузеров.** Неожиданное исключение в батче больше не оставляет `status="uploading"` и профиль `RUNNING`: job помечается failed, поднятые очередью браузеры закрываются. `cancel_all` не убивает сессии, которые очередь не открывала.
+- **`normalize_upload_platform` регистронезависим** (`"Instagram_Reels"` больше не уезжает на YouTube).
+- **Warmup:** неизвестное действие возвращает `False` (а не «успех»), `dwell`/`human_scroll`/`watch_youtube` клампятся по времени, навигация проверяет схему URL (`sanitize_launch_url`) и отказывает `file://`.
+
+### Security — API / развёртывание
+
+- **Сервер отказывается стартовать на не-loopback хосте без `NAZAK_API_TOKEN`** (`enforce_exposure_policy`, вызывается из `main.py` для GUI и web режимов). Локальный solo-сценарий (`127.0.0.1`) не меняется: токен не нужен. Docker/compose теперь передают `NAZAK_API_TOKEN` и документируют, что публикуемый порт виден на всех интерфейсах.
+- **`/docs`, `/redoc`, `/openapi.json` больше не обходят Host-проверку** (исключена только `/static`).
+- **CSRF-щит по `Sec-Fetch-Site: cross-site`** для HTTP и WebSocket: изменяющие состояние `GET`-эндпоинты Dolphin-паритета больше нельзя дёрнуть подгрузкой с чужого сайта без `Origin`.
+- **`Host: testserver` принимается только в тестах** (`NAZAK_ALLOW_TEST_HOST`, выставляется `tests/conftest.py`), а не в проде.
+- **Сравнение `X-API-Key` — `hmac.compare_digest`** вместо `==`.
+- **`POST /api/autopost/uniquify` и `POST /api/autopost/launch`** принимают только существующий обычный файл с медиа-расширением (`resolve_media_source`) — произвольный путь к системному файлу больше не уходит в ffmpeg.
+- **`rotate-proxy` пиннит соединение к проверенному IP** (`_PinnedHTTP(S)Connection` + `_rotation_target`): устранена DNS-гонка «сначала публичный адрес, потом приватный» (TOCTOU) при сохранённом фильтре публичных адресов и запрете редиректов.
+
+### Fixed — web / GUI
+
+- **DOM-XSS в диагностике закрыт и проверен в реальном браузере.** `health.ip/country/city` (значения приходят из гео-API по открытому HTTP через прокси пользователя) экранируются через `escapeHtml`; `p.id` в inline-обработчиках тоже экранирован; ссылка на видео рендерится только для `http(s)`-схемы. Проверка: новый live-тест `tests/live/test_dashboard_xss_live.py` гоняет настоящий Chromium против живого Web Studio, подменяет ответы `/api/profiles` и `/api/profiles/{id}/check` вредоносной нагрузкой (`</span><img src=x onerror=…>`) и падает, если скрипт исполнился. Дифференциальный контроль: тот же образ с откатанной на до-фиксовую строку `app.js` — тест **падает** (`country=1, city=1, ip=1`, инжектированный код вычитал 323 байта из `/api/security/secrets-mode`), на исправленном коде — **проходит**. Поля, которые были экранированы и раньше (`isp`, `error_message`), в контроле не срабатывают.
+- **GUI:** `isRunning()`-guard для `ProxyCheckWorker`/`CheckAllProxiesWorker` (повторный клик терял ссылку на живой `QThread`), ротация IP вынесена в `ProxyRotateWorker` (главный поток Qt больше не блокируется на 8 с), поле парольной фразы очищается после применения.
+
+### Fixed — зависимости, качество, честность обработки ошибок
+
+- **`requirements.txt` синхронизирован с `pyproject.toml`:** добавлены `psutil` и `cryptography` (код их импортирует), а также `pytest-timeout` — без него документированная команда `python -m pytest tests -q` падала с `unrecognized arguments: --timeout=30`.
+- **`mypy`: включены все ранее подавленные коды ошибок** (`disable_error_code = []` вместо 12 отключённых категорий, включая `arg-type`, `call-arg`, `attr-defined`, `assignment`, `index`) — найденные 16 ошибок исправлены, конфигурация снова зелёная.
+- **Неиспользуемый флаг `_HAS_CRYPTOGRAPHY` теперь работает:** режим `passphrase` без пакета `cryptography` даёт понятный `SecretsError`, а не `NameError` в недрах KDF.
+- **Fail-open шифрования секретов логируется как `ERROR`** (значение по-прежнему не блокирует запись, но больше не «тихое»).
+- **Парсер аккаунтов не калечит пароли:** email валидируется строже (разделитель внутри email больше не склеивает поля), а пароль, содержащий разделитель (`p@ss:w0rd`), восстанавливается, если в строке есть base32-сид 2FA.
+- **`process_monitor`** больше не глотает исключения молча (debug-лог вместо `pass`).
+- **`format_video_metadata`** аннотирован `dict[str, Any]` — прежняя `dict[str, str]` противоречила фактическому возврату с `tags: list[str]`.
+
+### Added
+
+- `nazak/core/publish_status.py` — общий контракт «публикация не подтверждена» для загрузчиков и очереди.
+- `core.video_uniquifier.generate_demo_clip()` — единый честный генератор демо-клипа для API и CLI.
+- Глобальный флаг `--reveal` + env `NAZAK_REVEAL`; `--force` для `cookie export`, `cookie bulk-export`, `profile bundle-export`.
+- `enforce_exposure_policy(host)` в `nazak/api/server.py`.
+- Тесты: `tests/test_round3_fixes.py` (29) и `tests/test_web_ui_injection_guards.py` (5).
+
+### Fixed — Docker-обвязка (проверено на реальном Docker 29.8.2)
+
+- **`Dockerfile` не собирался: база уехала в trixie.** `docker run --rm python:3.11-slim cat /etc/os-release` → `Debian GNU/Linux 13 (trixie)`, а в списке apt были имена из bookworm — `libgl1-mesa-glx`, `libglib2.0-0`, `libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libasound2` в trixie отсутствуют (подтверждено сервисом Debian madison и воспроизведено сборкой: `E: Package 'libgl1-mesa-glx' has no installation candidate`). База закреплена как `python:3.11-slim-trixie`, имена заменены на `libgl1` и `…t64`-варианты, неиспользуемый `curl` убран. После правки **`docker build` проходит (exit 0)**, `hadolint 2.15.1` → exit 0.
+- **Добавлен `.dockerignore`.** Без него `COPY . .` клал в слои образа локальные `data/profiles.json` (пароли и 2FA-сиды аккаунтов в режиме `plain`), cookie/session-файлы профилей и `.git`. Проверено в собранном образе: `ls -a /app` не содержит ни `data`, ни `.git`. Runtime-данные приходят через bind-mount `./data:/app/data`.
+- **`docker-compose.yml` больше не выставляет API в сеть.** Только loopback (`docker compose config` → `host_ip: 127.0.0.1`), `NAZAK_API_TOKEN` обязателен (`${NAZAK_API_TOKEN:?…}` — без переменной compose падает с понятным сообщением, exit 1), устаревший `version: '3.8'` убран, добавлен `.env.example`.
+- **Новая CI-джоба `docker.yml`** (при изменениях Docker-файлов и по `workflow_dispatch`): `docker compose config -q`, настоящий `docker build`, проверка отказа старта без токена, затем HTTP-контракт (`401` без ключа, `200` с ключом, `403` на чужой `Host`/`Origin`/`Sec-Fetch-Site: cross-site`). Проверена `actionlint 1.7.12` (exit 0).
+- **Проверено в реальном Docker:** сборка образа; зависимости внутри образа (`deps-ok 1.10.0 7.2.2 50.0.2` — nazak/psutil/cryptography); отказ старта без токена (exit 1 + текст про `NAZAK_API_TOKEN`); весь HTTP-контракт из контейнера; веб-дашборд `200`; `docker compose up -d --build` → `Up`, `127.0.0.1:8899->8899/tcp`, `401`/`200` через опубликованный порт, `docker compose down` без остатка. Итого 16/16 проверок контейнера.
+
 ## v1.10.0 — CLI Parity with GUI + AI-Agent Contract (2026-10-03)
 
 The terminal CLI now covers **everything the GUI can do**: 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`) with 1:1 parity to the Fluent views and the REST API. 631 tests pass (612 before, plus 19 new CLI tests); `ruff` and `ruff format` are clean.

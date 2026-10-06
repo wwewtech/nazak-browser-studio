@@ -12,6 +12,11 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QProgressBar, QSp
 
 from ..config import DATA_DIR
 
+try:  # audit R3: версия на сплэше была захардкожена ("v1.3.0") и отставала от пакета
+    from .. import __version__ as PACKAGE_VERSION
+except Exception:  # pragma: no cover - defensive
+    PACKAGE_VERSION = ""
+
 
 class NazakSplashScreen(QSplashScreen):
     """
@@ -118,7 +123,11 @@ class NazakSplashScreen(QSplashScreen):
         font_ver = QFont("JetBrains Mono", 8, QFont.Weight.Normal)
         p.setFont(font_ver)
         p.setPen(QColor(82, 82, 91))
-        p.drawText(QRectF(w - 75, h - 22, 60, 14), Qt.AlignmentFlag.AlignRight, "v1.3.0")
+        p.drawText(
+            QRectF(w - 95, h - 22, 80, 14),
+            Qt.AlignmentFlag.AlignRight,
+            f"v{PACKAGE_VERSION}" if PACKAGE_VERSION else "",
+        )
 
         # 6. Sleek Hairline Loading Track & Blue Glow Bar at the very bottom
         track_rect = QRectF(0, h - 4, w, 4)

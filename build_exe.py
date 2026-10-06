@@ -35,14 +35,16 @@ EXE_PATH = APP_DIR / "NazakBrowserStudio.exe"
 ISS_FILE = ROOT_DIR / "installer.iss"
 
 # Dynamically extract version from package
+# Audit R3: fallback обновлён вместе с версией пакета (был "1.9.1" при 1.10.0).
+_FALLBACK_VERSION = "1.10.0"
 try:
     import re
 
     _init_content = (ROOT_DIR / "nazak" / "__init__.py").read_text(encoding="utf-8")
     _v_match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', _init_content)
-    VERSION = _v_match.group(1) if _v_match else "1.9.1"
+    VERSION = _v_match.group(1) if _v_match else _FALLBACK_VERSION
 except Exception:
-    VERSION = "1.9.1"
+    VERSION = _FALLBACK_VERSION
 
 ZIP_NAME = f"NazakBrowserStudio-v{VERSION}-Windows-x64.zip"
 ZIP_PATH = DIST_DIR / ZIP_NAME

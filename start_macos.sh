@@ -66,7 +66,7 @@ echo ""
 echo -e "${BOLD}Select launch mode:${NC}"
 echo -e "  ${CYAN}[1]${NC} 🖥️  Launch Desktop Fluent GUI (Native window)"
 echo -e "  ${CYAN}[2]${NC} 🌐  Launch Web Studio Dashboard (http://127.0.0.1:8899)"
-echo -e "  ${CYAN}[3]${NC} 🧪  Run 271 automated tests"
+echo -e "  ${CYAN}[3]${NC} 🧪  Run the automated test suite"
 echo -e "  ${CYAN}[4]${NC} 🚀  CLI: Google Sign-in + Test Video Upload"
 echo -e "  ${CYAN}[5]${NC} 📦  Install/Update Chromium browser (Playwright)"
 echo -e "  ${CYAN}[0]${NC} 🚪  Exit"
@@ -84,7 +84,7 @@ case $choice in
         python -m nazak.main --mode web
         ;;
     3)
-        echo -e "${GREEN}[TESTS] Running 271 tests...${NC}"
+        echo -e "${GREEN}[TESTS] Running the automated test suite...${NC}"
         python -m pytest -p no:asyncio tests -v
         ;;
     4)

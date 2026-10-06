@@ -5,7 +5,7 @@
 > **ReDoc Alternative UI**: [`http://127.0.0.1:8899/redoc`](http://127.0.0.1:8899/redoc)  
 > **OpenAPI Specification JSON**: [`http://127.0.0.1:8899/openapi.json`](http://127.0.0.1:8899/openapi.json)  
 >
-> **Access policy (local-only API)**: every non-static request must carry a `Host` of `localhost` / `127.0.0.1` and, when present, an `Origin` on one of the configured local ports (`8899`, `3000`, plus the port passed with `--port`); anything else is answered with `403`. CORS reflects exactly those ports with credentials allowed - never an arbitrary port. `/ws/events` applies the same check to the WebSocket `Origin` header. Set the optional environment variable `NAZAK_API_TOKEN` to additionally require `X-API-Key: <token>` on `/api/*` and `/v1.0/*` calls (off by default; the local web UI does not send it).
+> **Access policy (local-only API)**: every non-static request must carry a `Host` of `localhost` / `127.0.0.1` and, when present, an `Origin` on one of the configured local ports (`8899`, `3000`, plus the port passed with `--port`); anything else is answered with `403`. Cross-site requests are additionally rejected when the browser marks them `Sec-Fetch-Site: cross-site` (this closes blind CSRF against the state-changing `GET` endpoints of the Dolphin-parity subset). CORS reflects exactly those ports with credentials allowed - never an arbitrary port. `/ws/events` applies the same check to the WebSocket `Origin` header. `/docs`, `/redoc` and `/openapi.json` sit behind the same `Host` check (only `/static` is exempt). Set the environment variable `NAZAK_API_TOKEN` to additionally require `X-API-Key: <token>` on `/api/*` and `/v1.0/*` calls (off by default for loopback; the local web UI does not send it). **Binding to a non-loopback host now requires the token**: `--host 0.0.0.0` without `NAZAK_API_TOKEN` refuses to start (`enforce_exposure_policy`), because any client can otherwise send `Host: 127.0.0.1` and pass the guard.
 >
 > **Prefer the terminal?** The CLI (`python -m nazak.cli ...`) covers every API group with 1:1 parity — see the [CLI reference](CLI_REFERENCE.md). With `--server http://127.0.0.1:8899` the same commands run through this API.
 
@@ -398,8 +398,8 @@ Launches the profile directly into the initial organic query step of the warmup 
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/autopost/status` | Queue progress and FFmpeg binary availability |
-| `POST` | `/api/autopost/uniquify` | Deep video uniquification with FFmpeg |
-| `POST` | `/api/autopost/launch` | Start upload queue using Bezier motorics. Requires a real `source_video_path` (400 if missing); pass `"demo": true` to generate a short ffmpeg test clip instead of a silent fake file |
+| `POST` | `/api/autopost/uniquify` | Deep video uniquification with FFmpeg. `source_video_path` must be an existing regular file with a media extension (`.mp4 .mov .mkv .webm .avi .m4v .mpg .mpeg .wmv .flv`), otherwise `400` |
+| `POST` | `/api/autopost/launch` | Start upload queue using Bezier motorics. `source_video_path` (same validation as above) wins; otherwise the server falls back to `<data>/videos/source.mp4`, and if that is absent it answers `400` unless `"demo": true` is passed, in which case a real ffmpeg test clip is generated (never a fake byte blob) |
 | `POST` | `/api/autopost/cancel` | Cancel queue and terminate active upload instances |
 | `POST` | `/api/autopost/preview-spintax` | Preview generated titles/descriptions from spintax template |
 

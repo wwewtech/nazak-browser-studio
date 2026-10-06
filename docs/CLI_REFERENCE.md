@@ -23,10 +23,13 @@ NazakBrowserStudio.exe list                           # legacy alias тоже р
 | exit-коды | `0` ok · `1` not found (и API 404 в `--server`) · `2` usage/validation (API 400/409/422) · `4` conflict/busy (API 5xx/транспорт) · `130` Ctrl+C |
 | ошибки | всегда `{success: false, error, code, hint?}` — `hint` содержит точную следующую команду |
 | `--yes / -y` | пропустить подтверждения. В неинтерактиве (`--json`, пайп, CI) без `--yes` деструктивная команда **не висит**, а сразу возвращает код 4 с `hint: "... --yes"` |
-| env-дубли | `NAZAK_JSON=1`, `NAZAK_YES=1`, `NAZAK_SERVER=url`, `NAZAK_API_TOKEN`, `NAZAK_PASSPHRASE`, `NAZAK_VERBOSE=1` — то же, что флаги |
+| env-дубли | `NAZAK_JSON=1`, `NAZAK_YES=1`, `NAZAK_REVEAL=1`, `NAZAK_SERVER=url`, `NAZAK_API_TOKEN`, `NAZAK_PASSPHRASE`, `NAZAK_VERBOSE=1` — то же, что флаги |
 | `--server URL` | выполнить через running GUI/web API (`http://127.0.0.1:8899`), `--api-key` или `$NAZAK_API_TOKEN` |
 | входные данные | аргумент, `@file`, `--file`, `--stdin`, pipe; прокси/аккаунты построчно |
-| секреты | маскируются (`***`, `ab...yz`); без `--reveal`-подобных флагов секреты не печатаются |
+| `@file` | несуществующий путь — ошибка ввода (`exit 2`), а не данные; каталоги и файлы > 16 МБ отклоняются |
+| `--out` | существующий файл не перезаписывается без `--force` (или `--yes`); каталог должен существовать |
+| секреты | по умолчанию маскируются (`***`, `ab...yz`): пароль прокси, `account_password`, `totp_secret` в `google.notes`. Открытый текст — только по явному `--reveal` (или `NAZAK_REVEAL=1`) |
+| `--reveal` | глобальный флаг: `profile get <id> --reveal --json`. В `system schema` он есть в `global_flags` |
 
 ## 2. Группы
 

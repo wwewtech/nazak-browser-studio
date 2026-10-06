@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-631%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-669%20collected-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -188,10 +188,11 @@ with sync_playwright() as p:
 
 ### 🔐 10. Secrets Storage — User-Selectable Encryption Mode
 - **User Choice Principle**: Credentials (passwords, TOTP seeds) storage mode is chosen exclusively by the user:
-  - `plain` — Readable plaintext (default, zero setup).
+  - `plain` — Readable plaintext (default, zero setup). `nazak account import` prints an explicit warning when this mode is active, because passwords and 2FA seeds then live unencrypted in `data/profiles.json`.
   - `dpapi` — Windows DPAPI user-scoped hardware-bound encryption.
   - `passphrase` — Fernet (AES-128-CBC + HMAC) with PBKDF2-HMAC-SHA256 (600,000 iterations). Passphrase is never stored on disk.
-- **Automatic Masking**: API and GUI endpoints always return masked tokens (`ab...yz`) to prevent accidental leaks.
+- **Automatic Masking**: API and GUI endpoints always return masked tokens (`ab...yz`) to prevent accidental leaks — and so does the CLI (`profile get`, `proxy test`): full plaintext only with the explicit global flag `--reveal` (or `NAZAK_REVEAL=1`).
+- **Local API perimeter**: the server only accepts requests whose `Host`/`Origin`/`Sec-Fetch-Site` say "local". Binding to a non-loopback host (`--host 0.0.0.0`, Docker) now **refuses to start without `NAZAK_API_TOKEN`**, because a client can always send `Host: 127.0.0.1`. The token is then passed as `X-API-Key` (CLI: `--api-key`).
 
 ---
 
@@ -221,26 +222,46 @@ python -m nazak.cli profile list --json
 python -m nazak.cli cdp start prof_01 --json
 ```
 
-> 📖 **Full CLI documentation:** [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) — 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`), machine-readable `system schema`, stable exit codes `0/1/2/4`.
+> 📖 **Full CLI documentation:** [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) — 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`), machine-readable `system schema`, stable exit codes `0/1/2/4`, secrets masked by default (`--reveal` to show them).
+
+---
+
+### 🐳 Docker / Compose (optional)
+
+The image runs the headless API + Web Studio (`--mode web`). Because a published port is reachable on every host interface, the server **requires `NAZAK_API_TOKEN`** whenever it binds a non-loopback host (inside a container it always does):
+
+```powershell
+# .env next to docker-compose.yml
+NAZAK_API_TOKEN=change-me-to-a-long-random-secret
+
+docker compose up -d --build      # publishes 127.0.0.1:8899:8899 only
+curl -H "X-API-Key: change-me-to-a-long-random-secret" http://127.0.0.1:8899/api/system/info
+```
+
+`docker compose up` fails fast with an explicit message if `NAZAK_API_TOKEN` is missing. To reach the API from another machine, change the port mapping to `"8899:8899"` **and** keep the token — that combination is the only supported exposed setup. Runtime profiles/cookies live in the bind-mounted `./data` (never baked into the image: `.dockerignore` excludes `data/` and `.git`). `.github/workflows/docker.yml` builds the image and checks the runtime contract on every change to the Docker files; the same scenario was verified locally against Docker 29.8.2 (`docker build` → 16/16 runtime checks → `docker compose up -d --build`).
+
+> 🪟 **Windows note**: Docker Desktop uses the WSL2 backend, so `wsl --install` (in an administrative PowerShell) plus a restart is required before the engine can start on a machine where WSL is absent.
 
 ---
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **631 automated tests**:
+The project is backed by a comprehensive regression and unit test suite comprising **669 collected tests** (666 selected; 3 `live` tests are deselected by default):
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 631 passed, 2 deselected =============================
+============================ 666 passed, 3 deselected =============================
 ```
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 
+Round-3 audit regressions: `tests/test_round3_fixes.py` (29 tests: secret masking with `--reveal`, honest `account totp`, `@file`/`--out` hardening, publish-uncertain retry policy, warmup clamps, API perimeter) and `tests/test_web_ui_injection_guards.py` (5 tests: HTML-injection guards in the web dashboard).
+
 - `test_cdp_injector.py` — CDP stealth injector: UA/Client-Hints rebuilt from the real running Chrome version, per-session timezone override, `Fetch.authRequired` proxy credential answering (regression: `handleAuthRequests` must be enabled or 407 challenges never fire), injector handle lifecycle.
-- `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`) and synchronizer master→worker replication; deselected by default in regular runs.
+- `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`), synchronizer master→worker replication, and a real-browser XSS check of the dashboard (`test_dashboard_xss_live.py` — drives Chromium against the live Web Studio, feeds attacker-controlled `health.ip/country/city` values, and fails if the injected script executes or reaches the local API); deselected by default in regular runs.
 - `test_advanced_stealth_and_seeder.py` — WebGPU hardware emulation, native function `makeNative`/`toString` Proxy cloaking, local font spoofing (`queryLocalFonts`), platform-aligned `speechSynthesis.getVoices`, `OffscreenCanvas` & `toBlob` canvas noise, `OfflineAudioContext` audio noise injection, sub-pixel `measureText` font measurement jitter, WebRTC private IP/candidate filtering, CDP timezone/UA overrides (`Emulation.setTimezoneOverride`, `setUserAgentOverride`), organic SQLite history seeder with unique visit timestamps and valid Chromium transition constants.
 - `test_v170_fixes_verification.py` — Manifest V3 extension syntax, asyncBlocking proxy authentication, W3C WebDriver property descriptor retention, sub-pixel DOM jitter, LCG canvas noise with `toDataURL` patch, DevToolsActivePort connection handshake, safe symlink deletion.
 - `test_deep_security_and_traversal.py` — 25 security tests: `validate_pid` path traversal defense, Zip-Slip vulnerability protection, CORS localhost regex restrictions, CLI credential masking.
@@ -252,7 +273,7 @@ New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_
 - `test_extension_generator_security.py` — hostile proxy credentials stay JSON-escaped in the generated extension (`background.js`).
 - `test_deep_storage_and_concurrency.py` — 25 concurrency & persistence tests: atomic `profiles.json` write via RLock & unique tmp files, batch save coalescing, process lifecycle monitor transitions.
 - `test_deep_fingerprint_and_stealth.py` — 25 fingerprint & stealth tests: `json.dumps` escaping in `stealth.js`, `MAIN` world content script execution context, Canvas, WebGL, WebRTC, Audio, Battery, Client Hints emulation.
-- `test_deep_api_and_scenarios.py` — 25 API & scenario integration tests: bidirectional Netscape cookie roundtrip fidelity, warmup scenario aliases, Dolphin{anty} Local API parity, asynchronous `httpx` synchronizer.
+- `test_deep_api_and_scenarios.py` — 28 API & scenario integration tests: bidirectional Netscape cookie roundtrip fidelity, warmup scenario aliases, Dolphin{anty} Local API parity, asynchronous `httpx` synchronizer.
 - `test_audit_regression.py` — regression tests covering security, validation, and storage fixes.
 - `test_local_automation_cdp_api.py` — Dolphin{anty} parity API and CDP port tests.
 - `test_cookie_bulk_manager.py` — batch cookie import, folder/zip handling, and Netscape parser tests.
