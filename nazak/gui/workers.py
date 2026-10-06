@@ -177,6 +177,33 @@ class AutopostBatchWorker(QThread):
         self.batch_finished_signal.emit(results)
 
 
+class ProxyRotateWorker(QThread):
+    """Триггер rotation_url вне главного потока (audit R3).
+
+    Раньше urlopen(timeout=8) вызывался прямо из обработчика кнопки, и GUI
+    замирал на время ответа прокси-провайдера.
+    """
+
+    finished_signal = Signal(str, int)  # profile_id, http_status
+    error_signal = Signal(str, str)  # profile_id, error message
+
+    def __init__(self, profile_id: str, rotation_url: str, timeout: float = 8.0):
+        super().__init__()
+        self.profile_id = profile_id
+        self.rotation_url = rotation_url
+        self.timeout = timeout
+
+    def run(self):
+        import urllib.request
+
+        try:
+            req = urllib.request.Request(self.rotation_url, headers={"User-Agent": "Nazak-Studio"})
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                self.finished_signal.emit(self.profile_id, int(getattr(resp, "status", 0) or 0))
+        except Exception as exc:
+            self.error_signal.emit(self.profile_id, str(exc))
+
+
 class WarmupScenarioWorker(QThread):
     """Runs a warmup scenario with real CDP page actions (audit fix P0-3/C1)."""
 

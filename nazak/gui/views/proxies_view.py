@@ -20,7 +20,7 @@ from qfluentwidgets import (
 from ...core.fingerprint_generator import generate_random_fingerprint
 from ...models.health import HealthStatus
 from ...models.profile import BrowserProfile, GoogleSettings, ProxyConfig
-from ..workers import CheckAllProxiesWorker
+from ..workers import CheckAllProxiesWorker, ProxyRotateWorker
 
 
 class ProxiesView(QWidget):
@@ -28,6 +28,8 @@ class ProxiesView(QWidget):
         super().__init__(parent)
         self.profile_manager = profile_manager
         self.browser_launcher = browser_launcher
+        self.worker = None  # audit R3: держим ссылку на живой QThread
+        self.rotate_worker = None  # audit R3: ротация IP не блокирует UI
         self.setObjectName("proxies_view")
         self.init_ui()
         self.refresh_table()
@@ -163,19 +165,33 @@ class ProxiesView(QWidget):
         prof = self.profile_manager.get_profile(profile_id)
         if not prof or not prof.proxy.rotation_url:
             return
-        import urllib.request
+        # Audit R3: сетевой запрос уходит в рабочий поток — главный поток Qt
+        # больше не замирает на 8 секунд.
+        if self.rotate_worker is not None and self.rotate_worker.isRunning():
+            InfoBar.warning(
+                "Rotation in progress", "Дождитесь ответа провайдера", parent=self, position=InfoBarPosition.TOP
+            )
+            return
+        InfoBar.info(
+            "Rotating IP", f"Sending rotation request for '{prof.name}'...", parent=self, position=InfoBarPosition.TOP
+        )
+        self.rotate_worker = ProxyRotateWorker(profile_id, prof.proxy.rotation_url)
+        self.rotate_worker.finished_signal.connect(self._on_rotate_done)
+        self.rotate_worker.error_signal.connect(self._on_rotate_error)
+        self.rotate_worker.start()
 
-        try:
-            req = urllib.request.Request(prof.proxy.rotation_url, headers={"User-Agent": "Nazak-Studio"})
-            with urllib.request.urlopen(req, timeout=8.0):
-                InfoBar.success(
-                    "IP changed",
-                    f"IP rotation request for '{prof.name}' sent successfully",
-                    parent=self,
-                    position=InfoBarPosition.TOP,
-                )
-        except Exception as e:
-            InfoBar.warning("Rotation error", f"Could not rotate IP: {e!s}", parent=self, position=InfoBarPosition.TOP)
+    def _on_rotate_done(self, profile_id: str, status: int):
+        prof = self.profile_manager.get_profile(profile_id)
+        name = prof.name if prof else profile_id
+        InfoBar.success(
+            "IP changed",
+            f"IP rotation request for '{name}' sent successfully (HTTP {status})",
+            parent=self,
+            position=InfoBarPosition.TOP,
+        )
+
+    def _on_rotate_error(self, profile_id: str, message: str):
+        InfoBar.warning("Rotation error", f"Could not rotate IP: {message}", parent=self, position=InfoBarPosition.TOP)
 
     def on_bulk_import(self):
         text = self.input_proxies.toPlainText().strip()
@@ -211,6 +227,16 @@ class ProxiesView(QWidget):
 
     def on_check_all(self):
         profs = self.profile_manager.list_profiles()
+        # Audit R3: без проверки isRunning() повторный клик терял последнюю
+        # ссылку на работающий QThread (для Qt это аварийное завершение).
+        if self.worker is not None and self.worker.isRunning():
+            InfoBar.warning(
+                "Already running",
+                "Дождитесь завершения текущей проверки",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+            return
         InfoBar.info("Diagnostics", f"Checking {len(profs)} proxies...", parent=self, position=InfoBarPosition.TOP)
 
         self.worker = CheckAllProxiesWorker(profs, self.profile_manager.profiles_dir)

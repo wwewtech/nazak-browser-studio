@@ -238,10 +238,10 @@ function renderProfiles() {
       gBadges = `<span class="health-badge ${hc.google.google_main ? "ok" : "fail"}">${hc.google.google_main ? "✓ Search" : "✕ Search"}</span><span class="health-badge ${hc.google.google_accounts ? "ok" : "fail"}">${hc.google.google_accounts ? "✓ Sign In" : "✕ Sign In"}</span><span class="health-badge ${hc.google.google_ads ? "ok" : "fail"}">${hc.google.google_ads ? "✓ Ads" : "✕ Ads"}</span><span class="health-badge ${hc.google.youtube ? "ok" : "fail"}">${hc.google.youtube ? "✓ YouTube" : "✕ YouTube"}</span>`;
     }
     return `
-      <div class="profile-card ${isRunning ? "running" : ""}" id="card-${p.id}">
+      <div class="profile-card ${isRunning ? "running" : ""}" id="card-${escapeHtml(p.id)}">
         <div class="card-header">
           <div class="profile-checkbox-row">
-            <input type="checkbox" class="profile-checkbox" ${isSelected ? "checked" : ""} onchange="toggleSelect('${p.id}', this.checked)">
+            <input type="checkbox" class="profile-checkbox" ${isSelected ? "checked" : ""} onchange="toggleSelect('${escapeHtml(p.id)}', this.checked)">
             <div class="profile-identity">
               <div class="profile-name-row">
                 <span class="profile-name">${escapeHtml(p.name)}</span>
@@ -266,27 +266,27 @@ function renderProfiles() {
         </div>
         <div class="card-actions">
           <div class="launch-group">
-            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopProfile('${p.id}')"><span>⏹ Stop</span></button>` : `<button class="btn btn-success btn-sm" onclick="launchProfile('${p.id}')"><span>🚀 Launch</span></button>`}
+            ${isRunning ? `<button class="btn btn-danger btn-sm" onclick="stopProfile('${escapeHtml(p.id)}')"><span>⏹ Stop</span></button>` : `<button class="btn btn-success btn-sm" onclick="launchProfile('${escapeHtml(p.id)}')"><span>🚀 Launch</span></button>`}
             <div class="dropdown">
-              <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('dropdown-${p.id}')"><span>⚡ Google ▾</span></button>
-              <div class="dropdown-menu" id="dropdown-${p.id}">
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://accounts.google.com/ServiceLogin')">🔑 Google Sign In (Auth)</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://ads.google.com')">📊 Google Ads Dashboard</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://studio.youtube.com')">🎬 YouTube Studio</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://www.google.com')">🔍 Google Search (Warmup)</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://whoer.net')">🛡 Whoer.net (IP Test)</div>
-                <div class="dropdown-item" onclick="launchProfile('${p.id}', 'https://browserleaks.com/ip')">🌐 BrowserLeaks IP</div>
+              <button class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown('dropdown-${escapeHtml(p.id)}')"><span>⚡ Google ▾</span></button>
+              <div class="dropdown-menu" id="dropdown-${escapeHtml(p.id)}">
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://accounts.google.com/ServiceLogin')">🔑 Google Sign In (Auth)</div>
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://ads.google.com')">📊 Google Ads Dashboard</div>
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://studio.youtube.com')">🎬 YouTube Studio</div>
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://www.google.com')">🔍 Google Search (Warmup)</div>
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://whoer.net')">🛡 Whoer.net (IP Test)</div>
+                <div class="dropdown-item" onclick="launchProfile('${escapeHtml(p.id)}', 'https://browserleaks.com/ip')">🌐 BrowserLeaks IP</div>
               </div>
             </div>
-            <button class="btn btn-warmup btn-sm" onclick="openWarmupModal('${p.id}')" title="Automatic warmup"><span>🔥 Warmup</span></button>
+            <button class="btn btn-warmup btn-sm" onclick="openWarmupModal('${escapeHtml(p.id)}')" title="Automatic warmup"><span>🔥 Warmup</span></button>
           </div>
           <div class="more-group">
-            <button class="btn btn-secondary btn-sm" onclick="openDiagModal('${p.id}')" title="Diagnostics"><span>🔍</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openCookieModal('${p.id}')" title="Cookies"><span>🍪</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${p.id}')" title="Settings"><span>⚙</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="cloneProfile('${p.id}')" title="Clone"><span>📋</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="clearCache('${p.id}')" title="Clear cache"><span>🧹</span></button>
-            <button class="btn btn-secondary btn-sm" onclick="deleteProfile('${p.id}')" title="Delete" style="color: var(--accent-rose);"><span>🗑</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openDiagModal('${escapeHtml(p.id)}')" title="Diagnostics"><span>🔍</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openCookieModal('${escapeHtml(p.id)}')" title="Cookies"><span>🍪</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="openEditProfileModal('${escapeHtml(p.id)}')" title="Settings"><span>⚙</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="cloneProfile('${escapeHtml(p.id)}')" title="Clone"><span>📋</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="clearCache('${escapeHtml(p.id)}')" title="Clear cache"><span>🧹</span></button>
+            <button class="btn btn-secondary btn-sm" onclick="deleteProfile('${escapeHtml(p.id)}')" title="Delete" style="color: var(--accent-rose);"><span>🗑</span></button>
           </div>
         </div>
       </div>
@@ -358,7 +358,7 @@ function renderDiagModalContent(prof, health, isLoading = false) {
   body.innerHTML = `
     <div style="display: flex; flex-direction: column; gap: 12px;">
       <div class="diag-step ${health.ping_ms !== null ? "success" : "fail"}"><span>[1] TCP Ping:</span><span style="font-weight: 700; color: ${health.ping_ms ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.ping_ms !== null ? `${health.ping_ms} ms` : "Timeout"}</span></div>
-      <div class="diag-step ${health.ip ? "success" : "fail"}"><span>[2] Public IP:</span><span style="font-weight: 700; color: ${health.ip ? "var(--accent-sky)" : "var(--accent-rose)"};">${health.ip ? `${health.ip} (${health.country || "N/A"}, ${health.city || ""})` : "IP error"}</span></div>
+      <div class="diag-step ${health.ip ? "success" : "fail"}"><span>[2] Public IP:</span><span style="font-weight: 700; color: ${health.ip ? "var(--accent-sky)" : "var(--accent-rose)"};">${health.ip ? `${escapeHtml(health.ip)} (${escapeHtml(health.country || "N/A")}, ${escapeHtml(health.city || "")})` : "IP error"}</span></div>
       ${health.isp ? `<div class="diag-step success"><span>[3] ISP / ASN:</span><span>${escapeHtml(health.isp)} (${escapeHtml(health.asn || "")})</span></div>` : ""}
       <div class="diag-step ${health.google && health.google.google_main ? "success" : "fail"}"><span>[4] Google Search:</span><span style="color: ${health.google && health.google.google_main ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_main ? `✓ Available (${health.google.latencies_ms?.google_main || "-"} ms)` : "✕ Error"}</span></div>
       <div class="diag-step ${health.google && health.google.google_accounts ? "success" : "fail"}"><span>[5] Google Auth / Login:</span><span style="color: ${health.google && health.google.google_accounts ? "var(--accent-emerald)" : "var(--accent-rose)"};">${health.google && health.google.google_accounts ? `✓ Available (${health.google.latencies_ms?.google_accounts || "-"} ms)` : "✕ Error"}</span></div>
@@ -721,7 +721,7 @@ function renderAutopostProfiles() {
     const proxyStr = p.proxy.raw ? (p.proxy.host ? `${p.proxy.host}:${p.proxy.port}` : "Direct") : "Direct";
     return `
       <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; padding: 4px 6px; background: var(--bg-surface); border-radius: 4px; border: 1px solid var(--border-subtle);">
-        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleAutopostProfile('${p.id}', this.checked)">
+        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleAutopostProfile('${escapeHtml(p.id)}', this.checked)">
         <span style="font-weight: 600; color: var(--text-primary);">${escapeHtml(p.name)}</span>
         <span style="color: var(--text-muted); font-size: 10px; margin-left: auto;">${escapeHtml(proxyStr)}</span>
       </label>
@@ -841,6 +841,7 @@ async function updateAutopostStatusView() {
       if (j.status === "uniqueizing") { statusColor = "var(--accent-sky)"; icon = "✨"; }
       if (j.status === "failed") { statusColor = "var(--accent-rose)"; icon = "✕"; }
       const platformName = (j.platform === "instagram_reels") ? "Reels" : "Shorts";
+      const safeVideoUrl = j.video_url && /^https?:\/\//i.test(j.video_url) ? j.video_url : null;
 
       return `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
@@ -850,7 +851,7 @@ async function updateAutopostStatusView() {
             ${j.title ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Title: ${escapeHtml(j.title)}</div>` : ''}
           </div>
           <div>
-            ${j.video_url ? `<a href="${escapeHtml(j.video_url)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</a>` : ''}
+            ${safeVideoUrl ? `<a href="${escapeHtml(safeVideoUrl)}" target="_blank" style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</a>` : (j.video_url ? `<span style="color: var(--accent-emerald); text-decoration: underline; font-size: 11px;">Open ${platformName} ↗</span>` : '')}
           </div>
         </div>
       `;

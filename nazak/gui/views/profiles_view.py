@@ -181,6 +181,7 @@ class ProfilesView(QWidget):
         super().__init__(parent)
         self.profile_manager = profile_manager
         self.browser_launcher = browser_launcher
+        self.check_worker = None  # audit R3: ссылка на живой QThread должна жить
         self.setObjectName("profiles_view")
         self.init_ui()
         self.refresh_profiles()
@@ -446,6 +447,17 @@ class ProfilesView(QWidget):
             return
 
         InfoBar.info("Checking...", f"Testing connectivity for {prof.name}", parent=self, position=InfoBarPosition.TOP)
+
+        # Audit R3: повторный клик перезаписывал ссылку на работающий QThread —
+        # Qt в этом случае аварийно завершает процесс.
+        if self.check_worker is not None and self.check_worker.isRunning():
+            InfoBar.warning(
+                "Already checking",
+                "Дождитесь завершения текущей проверки прокси",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+            return
 
         self.check_worker = ProxyCheckWorker(
             profile_id=profile_id, proxy_config=prof.proxy, profile_dir=self.profile_manager.profiles_dir / profile_id
