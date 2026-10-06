@@ -829,24 +829,26 @@ payload ограничен 4 КиБ; включён token-bucket (60 событ�
 вынесен в задачу, чтобы флуд со страницы не задерживал `Fetch.continueRequest` в цикле чтения
 CDP; счётчики `binding_events_accepted/rejected/throttled` доступны в статусе инжектора.
 
-### R3b-10/11. Security-заголовки и частичный CSP
+### R3b-10/11. Security-заголовки и CSP
 
 Ни `Content-Security-Policy`, ни `X-Content-Type-Options`, ни `Referrer-Policy`, ни
 `X-Frame-Options` не выставлялись нигде (`grep` по репозиторию — 0 совпадений); `/`
-отдавался голым `FileResponse`. Строгий CSP сейчас невозможен: в `index.html` 40, а в
+отдавался голым `FileResponse`. Строгий CSP тогда был невозможен: в `index.html` 40, а в
 генерируемой `app.js` разметке ещё 18 inline-обработчиков `on*`.
 
 **Исправлено:** middleware выставляет `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`,
 `Cross-Origin-Resource-Policy`, `Permissions-Policy` и CSP с `object-src 'none'`,
-`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`, `script-src 'self'
-'unsafe-inline'`; для `/api` и `/v1.0` добавлен `Cache-Control: no-store` (экспорт cookies
-не должен оседать в дисковом кэше). **Честная граница:** проверено в реальном браузере, что
-этот CSP НЕ останавливает сам XSS — версия дашборда без экранирования продолжает исполнять
-payload при включённом CSP (`country=1, city=1, ip=1`, 323 байта из
-`/api/security/secrets-mode`). Защиту держит экранирование (R3-05), CSP — второй слой
-против внешних скриптов, object/embed и встраивания. Строгий CSP требует перевода
-inline-обработчиков на `addEventListener` — отдельная задача, в этот раунд не входила.
+`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`; для `/api` и `/v1.0`
+добавлен `Cache-Control: no-store` (экспорт cookies не должен оседать в дисковом кэше).
+**Честная граница на тот момент:** проверено в реальном браузере, что CSP с
+`script-src 'self' 'unsafe-inline'` НЕ останавливает сам XSS (версия дашборда без
+экранирования продолжала исполнять payload — `country=1, city=1, ip=1`, 323 байта из
+`/api/security/secrets-mode`): защиту держало экранирование.
+
+**Закрыто в round-3c (см. §12):** обработчики переведены на `data-action` + делегирование,
+`script-src` стал строгим `'self'`, и инжектированный inline-обработчик больше не исполняется
+даже при сломанном экранировании.
 
 ### R3b-12. GUI-диалоги: подтверждение и честные результаты
 
@@ -916,16 +918,72 @@ DawnCache/Service Worker/CacheStorage без подтверждения и иг�
 
 - Исполнение R3b-09 в живом браузере: цепочку я прочитал и покрыл тестами на чистых
   функциях, но реальную пару «мастер + воркер» с вредоносной страницей не поднимал.
-- Фактическое содержимое релизного ZIP — **проверено на опубликованном релизе v1.11.0**: скачан
+- Поведение GUI-диалогов после правок (нет PyQt6/qfluentwidgets в окружении) и отрисовка
+  баннера в `generate_brand_assets.py` (нужны PyQt6 + Pillow).
+- Установщик `Setup.exe` (формат Inno Setup) не распаковывался: содержимое проверено по
+  релизному ZIP, а установщик собирается из того же каталога и имеет второй слой — `Excludes:`.
+
+---
+
+## 12. Round-3c: строгий CSP и баг Origin/WebSocket, найденный живым браузером
+
+### R3c-01 (Medium, исправлено и проверено) — CSP не защищал от XSS из-за inline-обработчиков
+
+`script-src` вынужденно содержал `'unsafe-inline'`, потому что вся разметка была построена
+на 58 атрибутах `on*` (40 в `index.html`, 18 в шаблонах `app.js`). Проверка в реальном
+браузере (дифференциальный контроль в `tests/live/test_dashboard_xss_live.py`) показала, что
+такой CSP XSS **не** останавливает: версия дашборда без экранирования исполняла payload
+(`country=1, city=1, ip=1`, 323 байта из `/api/security/secrets-mode`).
+
+**Исправлено:**
+- 58 inline-обработчиков переведены на `data-action="имя"` + параметры в `data-*`; один
+  делегированный слушатель (`click`/`change`/`input`) вызывает функцию из `DELEGATED_ACTIONS`
+  (42 действия). Параметры читаются **только** из `data-*`-атрибутов, неизвестное действие
+  логируется, а не исполняется.
+- `CSP_POLICY` в `server.py`: `script-src 'self'` — без `'unsafe-inline'` и `'unsafe-eval'`.
+  `style-src` сохраняет `'unsafe-inline'` (≈62 inline `style=`, CSS-инъекция не даёт исполнения
+  кода) — остаток задокументирован в коде и в API-справочнике.
+- Тесты: `tests/test_csp_strict_and_delegation.py` (11 статических проверок: ни одного `on*=`,
+  паритет `data-action` ↔ реестр, отсутствие inline `<script>`/`eval`/`javascript:`,
+  строгость `script-src`) и живой `tests/live/test_dashboard_ui_smoke_live.py` — 11 сценариев
+  кликов по дашборду с требованием нуля page/console-ошибок плюс дифференциальный контроль:
+  инжектированный inline-обработчик исполняется на обычной странице и **не** исполняется на
+  дашборде. `node --check app.js` — синтаксис валиден.
+
+### R3c-02 (Medium, исправлено и проверено) — Origin-проверка ломала дашборд на нестандартном порту
+
+`_is_local_origin()` сверял Origin со списком портов `_ALLOWED_PORTS = {8899, 3000}`,
+который пополнялся только вызовом `configure_local_access(args.port)` из `main.py`.
+Следствия:
+- Запуск приложения иначе, чем через `main.py` (голый `uvicorn nazak.api.server:app`,
+  gunicorn, встраивание, тесты) → порт не зарегистрирован → **каждый** запрос с заголовком
+  `Origin` получал 403. WebSocket-рукопожатие Origin отправляет всегда, поэтому live-обновления
+  (health, статусы профилей, прогресс аплоада) не работали вовсе.
+- Юнит-тесты на `TestClient` этого не видели: он не отправляет `Origin`. Нашёл живой браузерный
+  тест: `WebSocket connection to 'ws://127.0.0.1:46399/ws/events' failed: ... 403`.
+
+**Исправлено:** `_origin_matches_request(origin, host)` — loopback-Origin принимается, если он
+либо в CORS-whitelist (`:3000` — осознанный кейс локального фронтенда, плюс порт, зарегистрированный
+`configure_local_access`), либо **совпадает с `Host` самого запроса** (same-origin на любом порту).
+По-прежнему отклоняются: чужой Origin, `null`, подделка суффиксом (`127.0.0.1.evil.com`),
+локальная страница с незарегистрированного и не совпадающего порта. Проверено
+`tests/test_api_origin_and_ws.py` (19 тестов, включая настоящее WebSocket-рукопожатие на
+случайном порту: same-origin → `pong`, чужой Origin и другой порт → отказ) и живым браузером
+(ноль console-ошибок в UI smoke).
+
+### Что проверено в round-3c
+
+- Все живые тесты в образе (`3 passed, 2 skipped`): XSS-контроль, UI smoke под строгим CSP,
+  дифференциальный CSP-контроль.
+- Полный прогон: `747 passed`, 7 падений — те же env-зависимые (нет `qfluentwidgets`/`playwright`
+  в этом окружении), новых регрессий нет.
+- `ruff check`/`format`, `mypy` (Linux и Windows), `node --check` — чисто.
+- **Релизный артефакт v1.11.0** (проверялся в этом же раунде): скачан
   `NazakBrowserStudio-v1.11.0-Windows-x64.zip` (152.34 МБ, 4357 записей), SHA256 совпал с
   опубликованным `SHA256SUMS.txt`, записей с runtime-данными (`profiles.json`, `profiles/`,
   `logs/`, `extensions/`, `videos/`, `screenshots/`) — **0**, под `data/` только `assets/`;
   правки дашборда внутри артефакта на месте (0 ссылок на Google Fonts, системные шрифты,
-  `escapeHtml(e.message)`, `rel="noopener noreferrer"`). Сам `Setup.exe` (формат Inno Setup)
-  не распаковывался: он собирается из того же каталога, что и ZIP, а в `installer.iss` добавлен
-  второй слой — `Excludes:`.
-- Поведение GUI-диалогов после правок (нет PyQt6/qfluentwidgets в окружении) и отрисовка
-  баннера в `generate_brand_assets.py` (нужны PyQt6 + Pillow).
+  `escapeHtml(e.message)`, `rel="noopener noreferrer"`).
 - Строгий CSP без `'unsafe-inline'` — не реализован, см. R3b-10/11.
 
 ### Верификация второго прохода

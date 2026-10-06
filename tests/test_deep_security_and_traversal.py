@@ -52,7 +52,11 @@ def test_cors_allows_only_configured_local_ports():
         assert resp.headers.get("access-control-allow-origin") == allowed
 
     for denied in ["http://localhost:8080", "http://127.0.0.1:5173", "http://localhost", "http://localhost:9999"]:
-        resp = client.get("/api/system/info", headers={"Origin": denied})
+        # Host указываем явно: у TestClient по умолчанию «testserver» без порта,
+        # а это (по семантике same-origin) тот же порт 80, что и у
+        # «http://localhost». Реальный сервер слушает 8899, поэтому и запрос
+        # должен приходить на 8899 — тогда Origin с портом 80 отбивается.
+        resp = client.get("/api/system/info", headers={"Origin": denied, "host": "127.0.0.1:8899"})
         assert resp.headers.get("access-control-allow-origin") != denied, f"CORS allowed {denied}"
         assert resp.status_code == 403, f"unexpected status {resp.status_code} for {denied}"
 

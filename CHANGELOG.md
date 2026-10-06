@@ -19,6 +19,42 @@ Chromium for the dashboard XSS (with a differential control), and on the publish
 itself: the released ZIP's SHA256 matches the published `SHA256SUMS.txt` and contains **no** runtime
 `data/` (0 of 4357 entries — only `data/assets`).
 
+### Security — strict CSP for the dashboard (round-3c)
+
+The CSP shipped in v1.11.0 had to keep `script-src 'unsafe-inline'` because the dashboard was
+built from 58 inline `on*` attributes, and a real-browser check proved that such a policy does
+**not** stop the dashboard XSS. That refactor is now done:
+
+- **All 58 inline handlers replaced by `data-action` + one delegated listener**
+  (`DELEGATED_ACTIONS` in `nazak/web/app.js`, 42 distinct actions). `click`, `change` and `input`
+  bubble to a single document-level dispatcher; parameters travel in `data-*` attributes and are
+  read only from there; unknown actions are reported, not executed. `index.html` no longer contains
+  a single `on*=` attribute, and `node --check` validates the bundle.
+- **`script-src` is now strictly `'self'`** — no `'unsafe-inline'`, no `'unsafe-eval'`. The policy
+  keeps `object-src 'none'`, `base-uri 'none'`, `form-action 'self'` and `frame-ancestors 'none'`.
+  `style-src` still allows inline styles (≈62 inline `style=` attributes remain; CSS injection is
+  not script execution) — that remainder is documented in `server.py` and in the API reference.
+- **Verified in real Chromium** (`tests/live/test_dashboard_ui_smoke_live.py`): a full click-through
+  of the dashboard (11 modals/dropdowns/checkbox/search/filter flows) produces zero page errors and
+  zero console errors, and a differential control proves the point of the refactor — an inline
+  handler injected straight into the DOM executes on a plain page but **not** on the dashboard,
+  so a forgotten escaping no longer means script execution.
+
+### Fixed — dashboard WebSocket / Origin on custom ports (round-3c)
+
+The new browser test also caught a real perimeter bug: the Origin check compared the request
+against a fixed port list `{8899, 3000}` that was only populated by `configure_local_access()`
+from `main.py`. Serving the app any other way (`uvicorn nazak.api.server:app`, gunicorn,
+embedding, tests) left the port unregistered, and since a **WebSocket handshake always sends
+`Origin`**, the dashboard's live updates were rejected with 403 — as were all its `Origin`-bearing
+POSTs. Unit tests on `TestClient` never saw it because `TestClient` sends no `Origin`.
+
+`_origin_matches_request()` now accepts a loopback Origin that is either in the CORS whitelist
+(the deliberate dev-server case) **or** matches the request's own `Host` (same-origin on any port).
+Foreign origins, `null`, suffix-spoofed hosts (`127.0.0.1.evil.com`) and a local page on an
+unlisted, non-matching port are still refused. Covered by `tests/test_api_origin_and_ws.py`
+(19 tests, including a real WebSocket handshake on a random port).
+
 ### Security — second audit pass (round-3b)
 
 Second pass covered the areas the first one had not read: the dashboard HTML/fonts, the whole

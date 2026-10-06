@@ -314,6 +314,48 @@ def _is_local_origin(origin: str | None) -> bool:
     return port in _ALLOWED_PORTS
 
 
+def _host_port(value: str | None) -> int | None:
+    """Порт из Host/Origin-хоста (``127.0.0.1:8899``, ``[::1]:8899``) или None."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    candidate = raw.rpartition("]:")[2] if raw.startswith("[") else raw.rpartition(":")[2]
+    return int(candidate) if candidate.isdigit() else None
+
+
+def _origin_matches_request(origin: str | None, host_header: str | None) -> bool:
+    """Origin принимается, если он loopback **и** либо в CORS-whitelist, либо same-origin.
+
+    Audit R3-round2b: раньше здесь использовался только список портов
+    ``_ALLOWED_PORTS = {8899, 3000}``, пополняемый вызовом
+    ``configure_local_access()`` из ``main.py``. Из-за этого дашборд на любом
+    другом порту (``--port 9000``, запуск голым ASGI-сервером, встраивание)
+    получал 403 на каждый запрос с заголовком Origin, а WebSocket-рукопожатие
+    Origin отправляет ВСЕГДА — то есть live-обновления не работали вовсе. Это
+    нашёл живой браузерный тест; юнит-тесты на TestClient его не видели, потому
+    что Origin не отправляют.
+
+    Логика: сначала прежний whitelist (осознанный CORS-кейс — локальный
+    фронтенд/dev-сервер на порту 3000 или на порту, зарегистрированном
+    ``configure_local_access``), затем строгая проверка «Origin совпадает с Host
+    запроса» (same-origin на любом порту). Чужой Origin (evil.com), ``null``,
+    DNS-rebinding (Host отбивается отдельной проверкой) и локальная страница с
+    незарегистрированного и не совпадающего порта по-прежнему режутся.
+    """
+    if not origin:
+        return True
+    if _is_local_origin(origin):
+        return True
+    match = re.match(r"^(https?)://([^/]+)$", origin.rstrip("/"))
+    if not match or match.group(1) not in _LOCAL_SCHEMES:
+        return False
+    if _host_name(match.group(2)) not in _LOCAL_HOSTS:
+        return False
+    origin_port = _host_port(match.group(2)) or (443 if match.group(1) == "https" else 80)
+    request_port = _host_port(host_header) or 80
+    return origin_port == request_port
+
+
 def _is_api_token_valid(request_headers) -> bool:
     expected = os.environ.get(_API_TOKEN_ENV)
     if not expected:
@@ -325,12 +367,30 @@ def _is_api_token_valid(request_headers) -> bool:
 
 # Audit R3-round2: security-заголовки. Дашборд может запускать браузеры и
 # выгружать cookies, поэтому любой инжектированный в него разметкой скрипт
-# опасен. script-src вынужденно содержит 'unsafe-inline': UI построен на 58
-# inline-обработчиках (см. docs/AUDIT_ROUND3_FINDINGS.md), но даже такой CSP
-# запрещает внешние скрипты, object/embed, смену base URI и встраивание в
-# iframe, а nosniff/no-referrer закрывают MIME-сниффинг и утечку Referer.
-# Полный отказ от 'unsafe-inline' требует перевода обработчиков на
-# addEventListener (отдельная задача).
+# опасен.
+#
+# script-src СТРОГИЙ ('self'): 58 inline-обработчиков on* переведены на
+# data-action + делегирование в app.js (DELEGATED_ACTIONS), инлайновых <script>
+# в index.html нет, eval/new Function не используются. Проверено в реальном
+# браузере: с этим CSP инжектированный onerror= не исполняется даже если
+# значение поля забыли экранировать (differential-контроль в live-тесте).
+#
+# style-src пока с 'unsafe-inline' — это осознанный остаток: в разметке ~27
+# статических и ~35 шаблонных inline style= (динамические размеры/цвета).
+# CSS-инъекция не даёт исполнения скрипта, но полный отказ потребует вынести
+# все inline-стили в классы (отдельная задача).
+CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self'; "
+    "connect-src 'self' ws: wss:; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -338,18 +398,7 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), camera=(), microphone=(), usb=(), serial=()",
-    "Content-Security-Policy": (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; "
-        "font-src 'self'; "
-        "connect-src 'self' ws: wss:; "
-        "object-src 'none'; "
-        "base-uri 'none'; "
-        "form-action 'self'; "
-        "frame-ancestors 'none'"
-    ),
+    "Content-Security-Policy": CSP_POLICY,
 }
 # Ответы API не должны оседать в дисковом кэше браузера (экспорт cookies и т.п.).
 _NO_STORE_PREFIXES = ("/api", "/v1.0")
@@ -380,7 +429,7 @@ async def local_only_guard(request, call_next):
             path,
         )
     origin = request.headers.get("origin")
-    if origin and not _is_local_origin(origin):
+    if not _origin_matches_request(origin, request.headers.get("host")):
         return _apply_security_headers(
             JSONResponse(
                 status_code=403,
@@ -1713,7 +1762,7 @@ async def websocket_endpoint(websocket: WebSocket):
     sec_fetch_site = (websocket.headers.get("sec-fetch-site") or "").strip().lower()
     if (
         not _is_local_host(websocket.headers.get("host"))
-        or (websocket.headers.get("origin") and not _is_local_origin(websocket.headers.get("origin")))
+        or not _origin_matches_request(websocket.headers.get("origin"), websocket.headers.get("host"))
         or sec_fetch_site == "cross-site"
         or not _is_api_token_valid(websocket.headers)
     ):

@@ -58,12 +58,19 @@ numbers or multi-megabyte inputs (a raw `Infinity` used to produce a 500 while s
 error itself), and it does not include the request URL.
 
 Responses carry `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
-`X-Frame-Options: DENY`, COOP/CORP, `Permissions-Policy` and a CSP (`object-src 'none'`,
-`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`). `/api` and `/v1.0` responses
-are `Cache-Control: no-store`. The CSP still needs `script-src 'unsafe-inline'` for the dashboard's
-inline handlers, so it is a defence-in-depth layer, not a replacement for escaping:
-[/docs/AUDIT_ROUND3_FINDINGS.md §11](AUDIT_ROUND3_FINDINGS.md) documents a verified real-browser run
-where the CSP alone did **not** stop the dashboard XSS.
+`X-Frame-Options: DENY`, COOP/CORP, `Permissions-Policy` and a CSP with a **strict
+`script-src 'self'`** (`object-src 'none'`, `base-uri 'none'`, `form-action 'self'`,
+`frame-ancestors 'none'`). The dashboard has no inline handlers and no inline `<script>`, so
+`'unsafe-inline'` is not needed for scripts; only `style-src` still allows inline styles
+(≈62 inline `style=` attributes remain — CSS injection does not execute script).
+`/api` and `/v1.0` responses are `Cache-Control: no-store`.
+
+**Origin rule.** A loopback `Origin` is accepted when it is either the documented dev-server port
+(`:3000`, plus whatever `configure_local_access()` registered) or **same-origin with the request's
+own `Host`** — the latter makes the dashboard work on any `--port`, including the WebSocket
+handshake, which always carries `Origin`. Foreign origins, `null`, `127.0.0.1.evil.com`-style
+suffix spoofs and a local page on an unlisted, non-matching port are refused with 403.
+Verified end-to-end in a real browser and by `tests/test_api_origin_and_ws.py`.
 
 ---
 
