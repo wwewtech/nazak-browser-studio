@@ -45,6 +45,20 @@ from ...core.secrets_store import (
 from ...models.profile import BrowserProfile, ProfileStatus
 
 
+def _safe_totp(secret: str) -> str:
+    """Код для таблицы; невалидный/пустой секрет — это «—», а не падение.
+
+    Audit R3: `generate_totp_rfc6238` больше не возвращает фиктивный "000000",
+    а бросает ValueError — GUI обязан это пережить.
+    """
+    if not secret:
+        return "—"
+    try:
+        return generate_totp_rfc6238(secret)
+    except Exception:
+        return "—"
+
+
 class AccountsView(QWidget):
     def __init__(self, profile_manager, browser_launcher, parent=None):
         super().__init__(parent)
@@ -352,7 +366,7 @@ class AccountsView(QWidget):
                 totp_raw = ""
             email = notes.get("account_email", prof.google.target_account_email or prof.name)
             totp_sec = notes.get("totp_secret", "")
-            current_totp = generate_totp_rfc6238(totp_raw) if totp_raw else "—"
+            current_totp = _safe_totp(totp_raw)
             mode = "Browser" if notes.get("posting_mode") == "browser_stealth" else "OAuth API"
 
             item_email = QTableWidgetItem(f"{email} • {prof.name}")
@@ -395,7 +409,7 @@ class AccountsView(QWidget):
             if sec_item:
                 # Raw secret lives in UserRole; visible cell shows masked value.
                 raw = sec_item.data(Qt.ItemDataRole.UserRole) or ""
-                code = generate_totp_rfc6238(raw) if raw else "—"
+                code = _safe_totp(raw)
                 code_item = self.table.item(row, 3)
                 if code_item:
                     code_item.setText(code)

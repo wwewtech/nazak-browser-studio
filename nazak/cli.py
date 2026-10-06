@@ -32,7 +32,14 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 from nazak.cli_cmds import automation, autopost_accounts, cookies_proxies, profiles, system_secrets_cdp
-from nazak.cli_cmds.common import EXIT_OK, EXIT_USAGE, GlobalOptions, build_global_options, console
+from nazak.cli_cmds.common import (
+    EXIT_OK,
+    EXIT_USAGE,
+    GlobalOptions,
+    UsageError,
+    build_global_options,
+    console,
+)
 from nazak.config import EXTENSIONS_DIR, PROFILES_DIR, find_chrome_executable
 
 GROUPS_HELP = """[bold yellow]Nazak Browser Studio — CLI (паритет с GUI)[/bold yellow]
@@ -55,11 +62,13 @@ GROUPS_HELP = """[bold yellow]Nazak Browser Studio — CLI (паритет с GU
 
 [bold]Глобальные флаги (для людей и ИИ-агентов):[/bold]
   [cyan]--json[/cyan] machine-readable вывод  [cyan]--yes[/cyan] без подтверждений
+  [cyan]--reveal[/cyan] показать секреты открытым текстом (по умолчанию маскируются)
   [cyan]--server URL[/cyan] выполнить через running API  [cyan]--api-key KEY[/cyan] ($NAZAK_API_TOKEN)
   Примеры:
     profile list --json | proxy check prof_01 | scenario list
     autopost launch --profiles prof_01,prof_02 --video clip.mp4 --wait
     account import --file accounts.txt --group "Retriv Gmail" --mode browser_stealth
+    profile get prof_01 --reveal --json   # пароли/2FA только по явному запросу
 """
 
 
@@ -71,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--json", action="store_true", help="Machine-readable JSON вывод")
     ap.add_argument("--yes", "-y", action="store_true", help="Не спрашивать подтверждений")
+    ap.add_argument(
+        "--reveal",
+        action="store_true",
+        help="Раскрыть секреты (пароли прокси/аккаунтов, TOTP). По умолчанию вывод маскируется",
+    )
     ap.add_argument("--server", default=None, help="Base URL running API, напр. http://127.0.0.1:8899")
     ap.add_argument("--api-key", default=None, help="X-API-Key (или env NAZAK_API_TOKEN)")
     ap.add_argument("--verbose", "-v", action="store_true")
@@ -160,7 +174,7 @@ def _hoist_global_flags(argv: list[str]) -> list[str]:
     take_value = {"--server", "--api-key"}
     while i < len(argv):
         tok = argv[i]
-        if tok in ("--json", "--yes", "-y", "--verbose", "-v"):
+        if tok in ("--json", "--yes", "-y", "--verbose", "-v", "--reveal"):
             hoisted.append(tok)
         elif tok in take_value:
             hoisted.append(tok)
@@ -210,6 +224,11 @@ def run_cli() -> int:
         return 130
     except BrokenPipeError:
         return EXIT_OK
+    except UsageError as exc:
+        # Ошибка ввода/пути: чистый exit 2 без traceback.
+        from nazak.cli_cmds.common import emit_error
+
+        return emit_error(str(exc), opt, EXIT_USAGE, hint="Проверьте аргументы: system schema --json")
     except Exception as exc:  # транспорт/API: чистый JSON вместо traceback
         from nazak.cli_cmds.common import EXIT_CONFLICT, ApiError, api_error_code, emit_error
 

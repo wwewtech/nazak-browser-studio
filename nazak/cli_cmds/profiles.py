@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from rich.table import Table
 
@@ -19,9 +18,11 @@ from .common import (
     emit_success,
     get_managers,
     parse_ids,
+    profile_for_output,
     read_input_text,
     require_confirm,
     resolve_ids,
+    resolve_out_path,
     server_request,
 )
 
@@ -117,6 +118,7 @@ def register(sp) -> None:
     s = sub.add_parser("bundle-export", help="Экспорт .nazak бандла")
     s.add_argument("profile_id")
     s.add_argument("--out", default=None, help="Путь сохранения")
+    s.add_argument("--force", action="store_true", help="Перезаписать существующий --out")
     s.set_defaults(func=cmd_bundle_export)
 
     s = sub.add_parser("bundle-import", help="Импорт .nazak бандла")
@@ -194,11 +196,14 @@ def cmd_get(args, opt: GlobalOptions) -> int:
     p = pm.get_profile(args.profile_id)
     if not p:
         return emit_error(f"Профиль '{args.profile_id}' не найден", opt, EXIT_NOT_FOUND)
-    d = p.model_dump()
+    # Audit R3: секреты маскируются по умолчанию, открытый текст — только --reveal.
+    d = profile_for_output(p, reveal=opt.reveal)
     d["live_running"] = bl.is_profile_running(p.id)
     cdp = bl.get_cdp_info(p.id) if d["live_running"] else None
     if cdp:
         d["cdp"] = cdp
+    if not opt.reveal:
+        d["secrets_hint"] = "Секреты замаскированы. Открытый текст: --reveal (или NAZAK_REVEAL=1)"
     emit({"success": True, "profile": d}, opt)
     return EXIT_OK
 
@@ -491,7 +496,7 @@ def cmd_bundle_export(args, opt: GlobalOptions) -> int:
         )
         return _via_server(opt, "GET", f"/api/profiles/{args.profile_id}/bundle/export")
     pm, _ = get_managers()
-    out = Path(args.out) if args.out else None
+    out = resolve_out_path(args.out, opt, force=getattr(args, "force", False)) if args.out else None
     path = pm.export_profile_bundle(args.profile_id, output_path=out)
     if not path:
         return emit_error("Не удалось создать бандл (профиль не найден?)", opt, EXIT_NOT_FOUND)

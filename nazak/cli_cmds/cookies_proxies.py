@@ -11,6 +11,7 @@ from .common import (
     EXIT_NOT_FOUND,
     EXIT_OK,
     GlobalOptions,
+    UsageError,
     console,
     emit,
     emit_error,
@@ -19,6 +20,7 @@ from .common import (
     parse_ids,
     read_input_text,
     resolve_ids,
+    resolve_out_path,
     server_request,
 )
 
@@ -38,6 +40,7 @@ def register(sp) -> None:
     s.add_argument("profile_id")
     s.add_argument("--format", default="json", choices=["json", "netscape"])
     s.add_argument("--out", default=None, help="Сохранить в файл")
+    s.add_argument("--force", action="store_true", help="Перезаписать существующий --out")
     s.set_defaults(func=cmd_cookie_export)
 
     s = csub.add_parser("bulk-import", help="Мультипрофильный импорт (делимитеры ===/JSON-map/ZIP-папка)")
@@ -53,6 +56,7 @@ def register(sp) -> None:
     s.add_argument("--all", action="store_true")
     s.add_argument("--format", default="json", choices=["json", "zip"])
     s.add_argument("--out", default=None, help="Файл для zip/json")
+    s.add_argument("--force", action="store_true", help="Перезаписать существующий --out")
     s.set_defaults(func=cmd_cookie_bulk_export)
 
     px = sp.add_parser("proxy", help="Прокси: проверки, тест строки, ротация IP")
@@ -116,10 +120,10 @@ def cmd_cookie_export(args, opt: GlobalOptions) -> int:
     else:
         payload = {"success": True, "format": "json", "cookies": cookies, "cookies_count": len(cookies)}
     if args.out:
-        Path(args.out).write_text(
-            payload.get("content", json.dumps(cookies, ensure_ascii=False, indent=2)), encoding="utf-8"
-        )
-        return emit_success(f"Сохранено в {args.out} ({len(cookies)} шт.)", opt, {"cookies_count": len(cookies)})
+        out_path = resolve_out_path(args.out, opt, force=getattr(args, "force", False))
+        default_body = json.dumps(cookies, ensure_ascii=False, indent=2)
+        out_path.write_text(str(payload.get("content") or default_body), encoding="utf-8")
+        return emit_success(f"Сохранено в {out_path} ({len(cookies)} шт.)", opt, {"cookies_count": len(cookies)})
     emit(payload, opt)
     return EXIT_OK
 
@@ -164,19 +168,39 @@ def cmd_cookie_bulk_export(args, opt: GlobalOptions) -> int:
     if args.format == "zip":
         from nazak.core.cookie_manager import create_cookies_zip_archive
 
-        out = Path(args.out) if args.out else Path("nazak_cookies.zip")
+        out = (
+            resolve_out_path(args.out, opt, force=getattr(args, "force", False))
+            if args.out
+            else Path("nazak_cookies.zip")
+        )
+        if out.exists() and not (getattr(args, "force", False) or opt.yes):
+            raise UsageError(f"Файл уже существует: {out}. Добавьте --force (или --yes), чтобы перезаписать")
         out.write_bytes(create_cookies_zip_archive(data, format_type="json"))
         return emit_success(f"ZIP сохранён: {out} ({len(data)} профилей)", opt, {"profiles_count": len(data)})
     if args.out:
-        Path(args.out).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return emit_success(f"Сохранено в {args.out}", opt, {"profiles_count": len(data)})
+        out_path = resolve_out_path(args.out, opt, force=getattr(args, "force", False))
+        out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return emit_success(f"Сохранено в {out_path}", opt, {"profiles_count": len(data)})
     emit({"success": True, "cookies": data, "profiles_count": len(data)}, opt)
     return EXIT_OK
 
 
-def _print_health(profile_name: str, res, opt: GlobalOptions) -> None:
+def _proxy_label(raw: str) -> str:
+    """Прокси для вывода: без пароля (audit R3 — `proxy test host:port:user:pass` печатал пароль)."""
+    from nazak.models.proxy import ProxyConfig
+
+    try:
+        return ProxyConfig.parse(raw).to_display_string()
+    except Exception:
+        return "<unparsed proxy>"
+
+
+def _print_health(profile_name: str, res, opt: GlobalOptions, *, proxy_label: str | None = None) -> None:
     if opt.as_json:
-        emit({"success": True, "profile": profile_name, "health": res.model_dump()}, opt)
+        payload = {"success": True, "profile": profile_name, "health": res.model_dump()}
+        if proxy_label:
+            payload["proxy"] = proxy_label
+        emit(payload, opt)
         return
     console.print(f"[bold]Диагностика {profile_name}:[/bold]")
     console.print(f" • Статус: {res.status.value.upper()}")
@@ -243,7 +267,8 @@ def cmd_proxy_test(args, opt: GlobalOptions) -> int:
 
     proxy = ProxyConfig.parse(raw)
     res = asyncio.run(check_proxy_health(proxy, profile_dir=None))
-    _print_health(raw, res, opt)
+    # Audit R3: в вывод уходит только безопасная форма (user:***@host:port).
+    _print_health(_proxy_label(raw), res, opt, proxy_label=_proxy_label(raw))
     return EXIT_OK
 
 

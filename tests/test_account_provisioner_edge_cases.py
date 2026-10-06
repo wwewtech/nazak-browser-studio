@@ -62,11 +62,16 @@ def test_totp_rfc6238_padding_variations():
         assert code.isdigit()
 
 
-def test_totp_rfc6238_invalid_characters_graceful_fallback():
-    """Invalid characters (e.g. 1, 8, 9 in Base32 or symbols) fallback cleanly to 000000 or valid code."""
-    code = generate_totp_rfc6238("!!!INVALID_NON_BASE32_KEY_1234567890!#@$")
-    assert isinstance(code, str)
-    assert len(code) == 6
+def test_totp_rfc6238_invalid_characters_raise_instead_of_fake_code():
+    """Audit R3: невалидный секрет — это исключение, а не фиктивный "000000".
+
+    Тихий фальшивый код хуже явной ошибки: `account totp` отдавал
+    {"success": true, "totp_code": "000000"} и exit 0.
+    """
+    with pytest.raises(ValueError):
+        generate_totp_rfc6238("!!!INVALID_NON_BASE32_KEY_1234567890!#@$")
+    with pytest.raises(ValueError):
+        generate_totp_rfc6238("")
 
 
 def test_totp_rfc6238_custom_interval():

@@ -31,6 +31,7 @@ class GlobalOptions:
     server: str | None = None
     api_key: str | None = None
     verbose: bool = False
+    reveal: bool = False
 
 
 def _env_flag(name: str) -> bool:
@@ -44,6 +45,14 @@ class ApiError(Exception):
         super().__init__(f"API {status}: {detail}")
         self.status = status
         self.detail = detail
+
+
+class UsageError(Exception):
+    """Ошибка ввода/пути (exit code 2): битый @file, перезапись без --force и т.п.
+
+    Отдельный тип нужен, чтобы CLI отличал «агент ошибся в аргументе» от
+    «сломалось окружение» (тот случай остаётся EXIT_CONFLICT).
+    """
 
 
 def api_error_code(status: int) -> int:
@@ -62,6 +71,7 @@ def build_global_options(args) -> GlobalOptions:
         server=getattr(args, "server", None) or os.environ.get("NAZAK_SERVER") or None,
         api_key=getattr(args, "api_key", None) or os.environ.get("NAZAK_API_TOKEN"),
         verbose=bool(getattr(args, "verbose", False)) or _env_flag("NAZAK_VERBOSE"),
+        reveal=bool(getattr(args, "reveal", False)) or _env_flag("NAZAK_REVEAL"),
     )
 
 
@@ -139,17 +149,41 @@ def require_confirm(prompt: str, opt: GlobalOptions, retry_hint: str) -> tuple[b
     return False, EXIT_OK
 
 
+_MAX_INPUT_BYTES = 16 * 1024 * 1024
+
+
+def _read_text_file(path: Path, *, what: str) -> str:
+    """Читает входной файл с явными ошибками вместо тихой подстановки пути."""
+    if not path.exists():
+        raise UsageError(f"{what} не найден: {path}")
+    if path.is_dir():
+        raise UsageError(f"{what} указывает на каталог, а не на файл: {path}")
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise UsageError(f"{what} недоступен: {path} ({exc})") from exc
+    if size > _MAX_INPUT_BYTES:
+        raise UsageError(f"{what} слишком большой: {path} ({size} байт > {_MAX_INPUT_BYTES})")
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise UsageError(f"{what} не читается: {path} ({exc})") from exc
+
+
 def read_input_text(explicit: str | None = None, file: str | None = None, stdin_flag: bool = False) -> str:
-    """Priority: explicit arg > --file > --stdin > NAZAK_* env handled by caller."""
+    """Priority: explicit arg > --file > --stdin > NAZAK_* env handled by caller.
+
+    Audit R3: ``@path`` с опечаткой раньше молча возвращался как *данные*
+    (строка "@path" уезжала в парсер прокси/cookie). Теперь это явная ошибка
+    ввода, а размер файла ограничен, чтобы агент не втянул гигабайт в память.
+    """
     if explicit:
         # allow @path syntax
         if explicit.startswith("@"):
-            p = Path(explicit[1:])
-            if p.exists():
-                return p.read_text(encoding="utf-8")
+            return _read_text_file(Path(explicit[1:]).expanduser(), what="Файл из @path")
         return explicit
     if file:
-        return Path(file).read_text(encoding="utf-8")
+        return _read_text_file(Path(file).expanduser(), what="Файл --file")
     if stdin_flag or (not sys.stdin.isatty()):
         try:
             data = sys.stdin.read()
@@ -158,6 +192,25 @@ def read_input_text(explicit: str | None = None, file: str | None = None, stdin_
         except Exception:
             pass
     return ""
+
+
+def resolve_out_path(raw: str, opt: GlobalOptions, *, force: bool = False) -> Path:
+    """Куда писать --out: без молчаливой перезаписи чужого файла.
+
+    Агент, подставивший не тот путь, не должен затирать существующий файл:
+    для перезаписи нужен явный --force (или --yes).
+    """
+    if not raw:
+        raise UsageError("Пустой путь для --out")
+    path = Path(raw).expanduser()
+    if path.is_dir():
+        raise UsageError(f"--out указывает на каталог: {path}")
+    if path.exists() and not (force or opt.yes):
+        raise UsageError(f"Файл уже существует: {path}. Добавьте --force (или --yes), чтобы перезаписать")
+    parent = path.parent if str(path.parent) else Path(".")
+    if not parent.exists():
+        raise UsageError(f"Каталог для --out не существует: {parent}")
+    return path
 
 
 def parse_ids(csv: str | list[str] | None, allow_all: bool = False) -> list[str]:
@@ -239,3 +292,46 @@ def mask_proxy_dict(d: dict) -> dict:
     if out.get("rotation_url"):
         out["rotation_url"] = "***"
     return out
+
+
+def _strip_helper_keys(notes: dict) -> dict:
+    """Убирает служебные ключи (`_totp_raw`), оставляя метку режима."""
+    return {k: v for k, v in notes.items() if not k.startswith("_") or k == "_secrets_mode"}
+
+
+def mask_notes_json(notes_raw: object, *, reveal: bool = False) -> str | None:
+    """notes-JSON профиля с замаскированными (или раскрытыми) секретами.
+
+    Возвращает None, если notes — не JSON-объект (свободный текст не трогаем).
+    """
+    if not isinstance(notes_raw, str) or not notes_raw.lstrip().startswith("{"):
+        return None
+    try:
+        notes = json.loads(notes_raw)
+    except Exception:
+        return None
+    if not isinstance(notes, dict):
+        return None
+    from nazak.core.secrets_store import decrypt_notes, reveal_notes
+
+    opened = reveal_notes(notes) if reveal else decrypt_notes(notes)
+    return json.dumps(_strip_helper_keys(opened), ensure_ascii=False)
+
+
+def profile_for_output(profile, *, reveal: bool = False) -> dict:
+    """Полный профиль для CLI-вывода с закрытыми секретами по умолчанию.
+
+    Audit R3: `profile get` печатал пароль прокси и google.notes с
+    account_password/totp_secret в открытом виде — в stdout, в логи агента и
+    в транскрипты. Раскрытие теперь только по явному --reveal.
+    """
+    data = profile.model_dump()
+    proxy = data.get("proxy")
+    if isinstance(proxy, dict) and not reveal:
+        data["proxy"] = mask_proxy_dict(proxy)
+    google = data.get("google")
+    if isinstance(google, dict):
+        masked = mask_notes_json(google.get("notes"), reveal=reveal)
+        if masked is not None:
+            google["notes"] = masked
+    return data

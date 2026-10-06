@@ -34,15 +34,21 @@ async def run_live_flow():
     pm = ProfileManager(PROFILES_FILE, PROFILES_DIR)
     prov = AccountProvisioner(pm, PROFILES_DIR)
 
-    target_email = os.environ.get("GOOGLE_EMAIL", "")
+    target_email = os.environ.get("GOOGLE_EMAIL", "").strip()
     profiles = []
     if target_email:
-        profiles = [
-            p
-            for p in pm.list_profiles()
-            if (target_email in p.name)
-            or (p.google and p.google.target_account_email and target_email in p.google.target_account_email)
-        ]
+        # Audit R3: раньше совпадение искалось подстрокой по name/email, а при
+        # промахе поток молча брал ПЕРВЫЙ попавшийся Google-профиль и публиковал
+        # видео от его имени. Теперь — только точный id или точный email.
+        all_profiles = pm.list_profiles()
+        profiles = [p for p in all_profiles if p.id == target_email]
+        if not profiles:
+            profiles = [
+                p for p in all_profiles if p.google and (p.google.target_account_email or "").strip() == target_email
+            ]
+        if not profiles:
+            print(f"❌ Профиль/аккаунт '{target_email}' не найден (точный id или email). Остановлено без публикации.")
+            return False
     if not profiles:
         existing = pm.list_profiles()
         google_profs = [p for p in existing if p.google and (p.google.notes or p.google.target_account_email)]
@@ -65,12 +71,24 @@ async def run_live_flow():
         return
 
     target_prof = profiles[-1]
-    notes = {}
+    raw_notes = {}
     if target_prof.google and target_prof.google.notes:
         try:
-            notes = json.loads(target_prof.google.notes)
+            raw_notes = json.loads(target_prof.google.notes)
         except Exception:
-            notes = {}
+            raw_notes = {}
+
+    # Audit R3: секреты раскрываются через secrets_store (dpapi/passphrase тоже
+    # работают), а не читаются как есть — иначе в поле пароля уезжал конверт.
+    # raw_notes остаётся «как на диске» и используется для записи обратно,
+    # чтобы расшифрованный текст не попал в profiles.json.
+    try:
+        from nazak.core.secrets_store import reveal_notes
+
+        notes = reveal_notes(dict(raw_notes))
+    except Exception as exc:
+        print(f"⚠ Не удалось расшифровать секреты профиля ({exc}); используется режим plain/—")
+        notes = dict(raw_notes)
 
     email = (
         notes.get("account_email")
@@ -78,7 +96,7 @@ async def run_live_flow():
         or (target_prof.google.target_account_email if target_prof.google else "")
     )
     password = notes.get("account_password") or os.environ.get("GOOGLE_PASSWORD", "")
-    totp_secret = notes.get("totp_secret") or os.environ.get("GOOGLE_TOTP_SECRET", "")
+    totp_secret = notes.get("_totp_raw") or notes.get("totp_secret") or os.environ.get("GOOGLE_TOTP_SECRET", "")
     recovery = notes.get("recovery_email") or os.environ.get("GOOGLE_RECOVERY_EMAIL", "")
 
     masked_pw = ("*" * len(password)) if password else "NOT SET"
@@ -184,7 +202,9 @@ async def run_live_flow():
                 try:
                     if await totp_input.is_visible(timeout=8000):
                         code = generate_totp_rfc6238(totp_secret)
-                        print(f"🛡️ Step 4: 2FA prompt detected! Generating current TOTP code: {code}...")
+                        # Audit R3: живой одноразовый код больше не печатается —
+                        # stdout/stderr этого скрипта уходит в логи агента и CI.
+                        print("🛡️ Step 4: 2FA prompt detected! Entering the current TOTP code (hidden)...")
                         await totp_input.click()
                         for ch in code:
                             await totp_input.type(ch, delay=50)
@@ -261,8 +281,14 @@ async def run_live_flow():
             if not video_file.exists():
                 video_file = DATA_DIR / "videos" / "source.mp4"
             if not video_file.exists():
-                video_file.parent.mkdir(parents=True, exist_ok=True)
-                video_file.write_bytes(b"DEMO_MP4_HEADER" + b"0" * 1024)
+                # Audit R3: раньше здесь писались мусорные байты
+                # b"DEMO_MP4_HEADER" + b"0"*1024 и уходили на YouTube.
+                from nazak.core.video_uniquifier import generate_demo_clip
+
+                ok_clip, clip_err = generate_demo_clip(video_file)
+                if not ok_clip:
+                    print(f"❌ Нет исходного видео и не удалось сгенерировать клип: {clip_err}")
+                    return False
             print(f"🎬 Step 7: Uploading Shorts video ({video_file.name})...")
 
             # Try center 'Upload videos' button first, or fallback to Create menu
@@ -334,25 +360,37 @@ async def run_live_flow():
             await asyncio.sleep(6)
             await page.screenshot(path=str(SCREENSHOTS_DIR / "11_publish_completed.png"))
 
-            # Extract Video Link
+            # Extract Video Link (poll: ссылка появляется с задержкой)
+            # Audit R3: раньше «PUBLISHED SUCCESSFULLY» печаталось безусловно,
+            # даже если публикация не состоялась.
             video_url = None
-            try:
-                url_elem = page.locator("a.ytcp-video-info, a.ytcp-video-metadata-info").first
-                if await url_elem.is_visible():
-                    video_url = await url_elem.get_attribute("href")
-            except Exception:
-                pass
+            for _ in range(10):
+                try:
+                    url_elem = page.locator("a.ytcp-video-info, a.ytcp-video-metadata-info").first
+                    if await url_elem.is_visible():
+                        video_url = await url_elem.get_attribute("href")
+                        if video_url:
+                            break
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
 
-            print(f"🎉 PUBLISHED SUCCESSFULLY! Link: {video_url or 'https://youtube.com/shorts'}")
-
-            notes["auth_status"] = "authenticated"
-            notes["last_upload_time"] = time.time()
-            target_prof.google.notes = json.dumps(notes)
+            # notes пишем из raw_notes: расшифрованный текст не должен попасть на диск
+            raw_notes["auth_status"] = "authenticated"
+            raw_notes["last_upload_time"] = time.time()
+            if video_url:
+                raw_notes["last_video_url"] = video_url
+            target_prof.google.notes = json.dumps(raw_notes)
             pm.save_profiles()
 
             await context.close()
+            if not video_url:
+                print("⚠ Публикация НЕ подтверждена: ссылка на видео не найдена. Проверьте YouTube Studio вручную.")
+                print("=========================================================")
+                return False
+            print(f"🎉 PUBLISHED! Link: {video_url}")
             print("=========================================================")
-            print("🎉 ALL STEPS COMPLETED WITH 100% SUCCESS!")
+            print("🎉 ALL STEPS COMPLETED")
             print("=========================================================")
             return True
 

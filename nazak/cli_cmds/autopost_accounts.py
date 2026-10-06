@@ -17,6 +17,7 @@ from .common import (
     emit,
     emit_error,
     emit_success,
+    err_console,
     get_managers,
     parse_ids,
     read_input_text,
@@ -307,8 +308,24 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
     ids = [p.id for p in profiles]
     if not profiles:
         return emit_error("Не распознано ни одного аккаунта (формат login:pass:2fa:recovery)", opt)
+    # Audit R3: режим plain пишет пароли и 2FA-сиды в profiles.json открытым текстом.
+    # Это осознанный выбор пользователя, но агент/оператор должен видеть это сразу.
+    warning = None
+    try:
+        from nazak.core.secrets_store import get_current_mode
+
+        if get_current_mode() == "plain":
+            warning = (
+                "Пароли и TOTP-сиды сохранены ОТКРЫТЫМ ТЕКСТОМ (режим plain). "
+                "Защитить: nazak secrets set --mode dpapi (Windows) или --mode passphrase"
+            )
+    except Exception:
+        pass
+    extra = {"created_count": len(ids), "profile_ids": ids, "group": args.group}
+    if warning:
+        extra["warning"] = warning
     if opt.as_json:
-        emit({"success": True, "created_count": len(ids), "profile_ids": ids, "group": args.group}, opt)
+        emit({"success": True, **extra}, opt)
     else:
         t = Table(title=f"Imported {len(ids)}")
         t.add_column("Profile ID")
@@ -316,6 +333,8 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
         for p in profiles:
             t.add_row(p.id, p.name)
         console.print(t)
+        if warning:
+            err_console.print(f"[bold yellow]⚠ {warning}[/bold yellow]")
     return EXIT_OK
 
 
@@ -377,22 +396,25 @@ def cmd_account_list(args, opt: GlobalOptions) -> int:
 
 def cmd_account_totp(args, opt: GlobalOptions) -> int:
     from nazak.core.account_provisioner import generate_totp_rfc6238
-    from nazak.core.secrets_store import decrypt_notes
+    from nazak.core.secrets_store import SecretsDecryptError, reveal_notes
 
     pm, _ = get_managers()
     p = pm.get_profile(args.profile_id)
     if not p:
         return emit_error("Профиль не найден", opt, EXIT_NOT_FOUND)
     notes = _extract_account_notes(p)
+    # Audit R3: раньше вызывался decrypt_notes() без reveal=True, т.е. в генератор
+    # уходила маска вида "JBS...PKXP", и команда отдавала code="000000" с
+    # success=true и exit 0. Теперь секрет раскрывается, а ошибка — это ошибка.
     try:
-        revealed = decrypt_notes(notes)
-    except Exception:
-        revealed = notes
-    secret = revealed.get("totp_secret", "")
-    if not secret or secret.startswith("<encrypted"):
+        revealed = reveal_notes(notes)
+    except SecretsDecryptError as exc:
+        return emit_error(f"TOTP-секрет недоступен: {exc}", opt, EXIT_CONFLICT)
+    secret = revealed.get("_totp_raw") or revealed.get("totp_secret") or ""
+    if not secret or str(secret).startswith("<encrypted"):
         return emit_error("TOTP-секрет отсутствует или закрыт passphrase (secrets set)", opt, EXIT_CONFLICT)
     try:
-        code = generate_totp_rfc6238(secret)
+        code = generate_totp_rfc6238(str(secret))
     except Exception as e:
         return emit_error(f"Невалидный TOTP-секрет: {e}", opt)
     emit({"success": True, "profile_id": p.id, "totp_code": code}, opt)

@@ -46,6 +46,49 @@ def find_ffmpeg() -> str | None:
     return None
 
 
+def generate_demo_clip(path: Path, duration_sec: int = 5) -> tuple[bool, str | None]:
+    """Создаёт НАСТОЯЩИЙ короткий клип через ffmpeg (audit R3).
+
+    Раньше легаси-поток логина писал ``b"DEMO_MP4_HEADER" + b"0" * 1024`` —
+    мусорные байты, которые затем уходили на YouTube. Один и тот же честный
+    генератор используется и API (`/api/autopost/launch?demo=true`), и CLI.
+    """
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg is not installed: install ffmpeg or provide a real source video"
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    res = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=size=1080x1920:rate=30:duration={int(duration_sec)}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={int(duration_sec)}",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
+        out.unlink(missing_ok=True)
+        return False, f"demo clip generation failed: {(res.stderr or '')[-200:]}"
+    return True, None
+
+
 class VideoUniquifier:
     """
     Handles processing and uniqueizing MP4 videos per target profile.
