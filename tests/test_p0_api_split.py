@@ -83,26 +83,29 @@ EXPECTED_EXPORTS = (
 def test_p0_all_api_paths_still_mounted():
     """Every pre-split endpoint is still mounted on the app.
 
-    The schema (`app.openapi()["paths"]`) is the contract clients actually see,
-    so it is the primary source of truth here; the router objects are checked
-    too, with a diagnostic message that reports the real state if it ever
-    diverges (a bare `app.routes` comparison failed once on Linux CI while the
-    endpoints kept serving, and a silent failure tells us nothing).
+    The OpenAPI schema is the contract clients actually see, so it is the
+    primary source of truth; the app's route objects are checked as well. The
+    failure message reports the real state (route count, object identity, route
+    classes and a sample), because a bare "routes lost" list said nothing about
+    what had actually happened when this diverged in CI.
     """
     schema_paths = set(app.openapi()["paths"])
+    route_paths = {getattr(r, "path", "") for r in app.routes}
     missing = [p for p in EXPECTED_PATHS if p not in schema_paths]
-    assert not missing, (
-        f"routes lost in split: {missing}\n"
-        f"openapi paths: {len(schema_paths)}\n"
-        f"app.routes: {len(app.routes)} "
-        f"(type={type(app.routes).__name__}, same object as server.app={app is server.app})\n"
-        f"first routes: {[getattr(r, 'path', None) for r in list(app.routes)[:8]]}"
+    not_mounted = sorted(schema_paths - route_paths)
+
+    diagnostics = (
+        f"\n  openapi paths       : {len(schema_paths)}"
+        f"\n  app.routes          : {len(app.routes)} ({type(app.routes).__name__})"
+        f"\n  route path sample   : {[getattr(r, 'path', None) for r in list(app.routes)[:6]]}"
+        f"\n  route classes       : {sorted({type(r).__name__ for r in app.routes})}"
+        f"\n  app is server.app   : {app is server.app}"
+        f"\n  router identity     : {app.router is server.app.router}"
+        f"\n  routes-without-path : {sum(1 for r in app.routes if not getattr(r, 'path', None))}"
     )
 
-    # The router list must agree with the schema (belt and braces).
-    mounted = {getattr(r, "path", "") for r in app.routes}
-    not_in_routers = [p for p in schema_paths if p not in mounted]
-    assert not not_in_routers, f"paths advertised by the schema but not mounted on app.routes: {not_in_routers}"
+    assert not missing, f"routes lost in split: {missing}{diagnostics}"
+    assert not not_mounted, f"schema paths not present on app.routes: {not_mounted}{diagnostics}"
 
 
 def test_p0_server_exports_preserved():
