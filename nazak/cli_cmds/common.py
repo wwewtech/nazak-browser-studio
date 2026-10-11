@@ -39,7 +39,7 @@ def _env_flag(name: str) -> bool:
 
 
 class ApiError(Exception):
-    """Проброс HTTP-ошибки API (server-режим) с исходным статусом."""
+    """Re-raises an API HTTP error (server mode) preserving the original status."""
 
     def __init__(self, status: int, detail: str):
         super().__init__(f"API {status}: {detail}")
@@ -48,15 +48,15 @@ class ApiError(Exception):
 
 
 class UsageError(Exception):
-    """Ошибка ввода/пути (exit code 2): битый @file, перезапись без --force и т.п.
+    """Input/path error (exit code 2): malformed @file, overwrite without --force, etc.
 
-    Отдельный тип нужен, чтобы CLI отличал «агент ошибся в аргументе» от
-    «сломалось окружение» (тот случай остаётся EXIT_CONFLICT).
+    A dedicated type is needed so the CLI can tell "the agent passed a bad argument"
+    apart from "the environment broke" (the latter stays EXIT_CONFLICT).
     """
 
 
 def api_error_code(status: int) -> int:
-    """Маппинг HTTP-статуса API в CLI exit-код: 404->1, 400/409/422->2, остальное->4."""
+    """Maps an API HTTP status to a CLI exit code: 404->1, 400/409/422->2, anything else->4."""
     if status == 404:
         return EXIT_NOT_FOUND
     if status in (400, 409, 422):
@@ -87,7 +87,7 @@ def emit(data: Any, opt: GlobalOptions) -> None:
 
 
 def emit_error(message: str, opt: GlobalOptions, code: int = EXIT_USAGE, hint: str | None = None) -> int:
-    """Ошибка + точная подсказка следующего шага (hint) — агент не гадает, что делать."""
+    """Error plus an exact next-step hint — the agent does not have to guess what to do."""
     if opt.as_json:
         payload: dict[str, Any] = {"success": False, "error": message, "code": code}
         if hint:
@@ -114,7 +114,7 @@ def emit_success(message: str, opt: GlobalOptions, extra: dict | None = None) ->
 
 
 def is_interactive() -> bool:
-    """False под пайпом/в CI/у агентов — там спрашивать бесполезно, надо сразу говорить что делать."""
+    """False under a pipe/in CI/for agents — asking there is pointless; just state what to do."""
     try:
         return sys.stdin.isatty()
     except Exception:
@@ -125,7 +125,7 @@ def confirm(prompt: str, opt: GlobalOptions) -> bool:
     if opt.yes:
         return True
     if not is_interactive():
-        # Не висим на input() в неинтерактиве: caller вернёт ошибку с hint про --yes.
+        # Do not hang on input() in non-interactive mode: the caller returns an error with a --yes hint.
         return False
     try:
         ans = input(f"{prompt} [y/N]: ").strip().lower()
@@ -135,10 +135,10 @@ def confirm(prompt: str, opt: GlobalOptions) -> bool:
 
 
 def require_confirm(prompt: str, opt: GlobalOptions, retry_hint: str) -> tuple[bool, int | None]:
-    """confirm() + готовый код возврата для неинтерактивного отказа.
+    """confirm() plus a ready-made return code for a non-interactive refusal.
 
-    Возвращает (ok, exit_code): при ok=True код None (продолжать),
-    при отказе в интерактиве — (False, 0) «Отменено», в неинтерактиве — (False, 4) с hint.
+    Returns (ok, exit_code): with ok=True the code is None (continue),
+    on refusal in interactive mode — (False, 0) "Cancelled", in non-interactive mode — (False, 4) with a hint.
     """
     if confirm(prompt, opt):
         return True, None
@@ -153,7 +153,7 @@ _MAX_INPUT_BYTES = 16 * 1024 * 1024
 
 
 def _read_text_file(path: Path, *, what: str) -> str:
-    """Читает входной файл с явными ошибками вместо тихой подстановки пути."""
+    """Reads an input file with explicit errors instead of silently substituting the path."""
     if not path.exists():
         raise UsageError(f"{what} не найден: {path}")
     if path.is_dir():
@@ -173,9 +173,9 @@ def _read_text_file(path: Path, *, what: str) -> str:
 def read_input_text(explicit: str | None = None, file: str | None = None, stdin_flag: bool = False) -> str:
     """Priority: explicit arg > --file > --stdin > NAZAK_* env handled by caller.
 
-    Audit R3: ``@path`` с опечаткой раньше молча возвращался как *данные*
-    (строка "@path" уезжала в парсер прокси/cookie). Теперь это явная ошибка
-    ввода, а размер файла ограничен, чтобы агент не втянул гигабайт в память.
+    Audit R3: a typo'd ``@path`` used to be silently returned as *data*
+    (the "@path" string was handed to the proxy/cookie parser). Now it is an explicit
+    input error, and the file size is capped so an agent cannot pull a gigabyte into memory.
     """
     if explicit:
         # allow @path syntax
@@ -195,10 +195,10 @@ def read_input_text(explicit: str | None = None, file: str | None = None, stdin_
 
 
 def resolve_out_path(raw: str, opt: GlobalOptions, *, force: bool = False) -> Path:
-    """Куда писать --out: без молчаливой перезаписи чужого файла.
+    """Where to write --out: never silently overwrite someone else's file.
 
-    Агент, подставивший не тот путь, не должен затирать существующий файл:
-    для перезаписи нужен явный --force (или --yes).
+    An agent that substituted the wrong path must not clobber an existing file:
+    overwriting requires an explicit --force (or --yes).
     """
     if not raw:
         raise UsageError("Пустой путь для --out")
@@ -233,10 +233,12 @@ def get_managers():
     """Lazy singleton (ProfileManager, BrowserLauncher)."""
     global _managers
     if _managers is None:
-        from nazak.config import EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE
+        from nazak.config import EXTENSIONS_DIR, PROFILES_DIR, PROFILES_FILE, ensure_data_dirs
         from nazak.core.browser_launcher import BrowserLauncher
         from nazak.core.profile_manager import ProfileManager
 
+        # P1: explicit entry point — importing config no longer creates the tree.
+        ensure_data_dirs()
         pm = ProfileManager(PROFILES_FILE, PROFILES_DIR)
         bl = BrowserLauncher(PROFILES_DIR, EXTENSIONS_DIR)
         _managers = (pm, bl)
@@ -295,14 +297,14 @@ def mask_proxy_dict(d: dict) -> dict:
 
 
 def _strip_helper_keys(notes: dict) -> dict:
-    """Убирает служебные ключи (`_totp_raw`), оставляя метку режима."""
+    """Drops helper keys (`_totp_raw`) while keeping the mode marker."""
     return {k: v for k, v in notes.items() if not k.startswith("_") or k == "_secrets_mode"}
 
 
 def mask_notes_json(notes_raw: object, *, reveal: bool = False) -> str | None:
-    """notes-JSON профиля с замаскированными (или раскрытыми) секретами.
+    """Profile notes JSON with masked (or revealed) secrets.
 
-    Возвращает None, если notes — не JSON-объект (свободный текст не трогаем).
+    Returns None if notes is not a JSON object (free-form text is left untouched).
     """
     if not isinstance(notes_raw, str) or not notes_raw.lstrip().startswith("{"):
         return None
@@ -319,11 +321,11 @@ def mask_notes_json(notes_raw: object, *, reveal: bool = False) -> str | None:
 
 
 def profile_for_output(profile, *, reveal: bool = False) -> dict:
-    """Полный профиль для CLI-вывода с закрытыми секретами по умолчанию.
+    """Full profile for CLI output with secrets masked by default.
 
-    Audit R3: `profile get` печатал пароль прокси и google.notes с
-    account_password/totp_secret в открытом виде — в stdout, в логи агента и
-    в транскрипты. Раскрытие теперь только по явному --reveal.
+    Audit R3: `profile get` printed the proxy password and google.notes with
+    account_password/totp_secret in the clear — to stdout, agent logs and
+    transcripts. Revealing now happens only on an explicit --reveal.
     """
     data = profile.model_dump()
     proxy = data.get("proxy")

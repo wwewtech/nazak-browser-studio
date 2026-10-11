@@ -34,8 +34,27 @@ PROFILES_FILE = DATA_DIR / "profiles.json"
 EXTENSIONS_DIR = DATA_DIR / "extensions"
 LOGS_DIR = DATA_DIR / "logs"
 
-for p in (DATA_DIR, PROFILES_DIR, EXTENSIONS_DIR, LOGS_DIR):
-    p.mkdir(parents=True, exist_ok=True)
+# P1: importing this module must not touch the filesystem. Directory creation is
+# explicit and idempotent, triggered by the real entry points (main(), the API
+# composition root, CLI helpers) instead of import side effects — so `import
+# nazak.config` in a test or a tool cannot mutate a user's data folder.
+_data_dirs_ready = False
+
+
+def ensure_data_dirs() -> Path:
+    """Create the runtime data tree once; returns ``DATA_DIR``.
+
+    Safe to call from any entry point and from multiple threads/processes:
+    ``mkdir(parents=True, exist_ok=True)`` is idempotent, and the fast path is
+    guarded by a module-level flag so repeated calls are cheap.
+    """
+    global _data_dirs_ready
+    if not _data_dirs_ready:
+        for p in (DATA_DIR, PROFILES_DIR, EXTENSIONS_DIR, LOGS_DIR):
+            p.mkdir(parents=True, exist_ok=True)
+        _data_dirs_ready = True
+    return DATA_DIR
+
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8899

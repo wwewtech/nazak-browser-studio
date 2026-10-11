@@ -20,34 +20,83 @@ if current_dir not in sys.path:
 
 from nazak.api.server import app as fastapi_app, configure_local_access, enforce_exposure_policy
 from nazak.cli import run_cli
-from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR
+from nazak.config import DEFAULT_HOST, DEFAULT_PORT, LOGS_DIR, ensure_data_dirs
 
 
-# Robust SafeStream redirection for pure windowed GUI without console
-class SafeStream:
-    def __init__(self, log_path: Path):
+# Robust stream redirection for the pure windowed GUI (no console attached).
+#
+# P1: this used to be a bare `open(path, "a")` per write() call with no rotation,
+# so a long-running GUI grew data/logs/stdout.log without bound (and opened a file
+# handle on every stderr write). Writes now go through a size-rotated handler.
+class _RotatingStream:
+    """File-like stdout/stderr replacement that rotates its log file."""
+
+    def __init__(self, log_path: Path, max_bytes: int = 5 * 1024 * 1024, backup_count: int = 3):
         self.log_path = log_path
+        self._max_bytes = max_bytes
+        self._backup_count = backup_count
+        self._handler = None
+
+    @property
+    def encoding(self) -> str:
+        return "utf-8"
+
+    def _ensure_handler(self):
+        if self._handler is None:
+            from logging.handlers import RotatingFileHandler
+
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            # NOTE: delay=False on purpose. With delay=True the handler does not
+            # reopen the file after doRollover(), so the primary log would not
+            # exist until the next write. Creation is still lazy relative to
+            # import: this method only runs on the first write().
+            self._handler = RotatingFileHandler(
+                str(self.log_path),
+                maxBytes=self._max_bytes,
+                backupCount=self._backup_count,
+                encoding="utf-8",
+            )
+        return self._handler
 
     def write(self, s):
         if not s:
             return
         try:
-            with open(self.log_path, "a", encoding="utf-8") as f:
-                f.write(s)
+            handler = self._ensure_handler()
+            handler.acquire()
+            try:
+                handler.stream.write(s)
+                handler.stream.flush()
+                if self._max_bytes > 0 and handler.stream.tell() >= self._max_bytes:
+                    handler.doRollover()
+            finally:
+                handler.release()
         except Exception:
+            # A logging failure must never take the GUI down.
             pass
 
     def flush(self):
-        pass
+        try:
+            if self._handler is not None and self._handler.stream is not None:
+                self._handler.stream.flush()
+        except Exception:
+            pass
+
+    def isatty(self) -> bool:
+        return False
 
 
 if sys.stdout is None:
-    sys.stdout = SafeStream(LOGS_DIR / "stdout.log")
+    sys.stdout = _RotatingStream(LOGS_DIR / "stdout.log")
 if sys.stderr is None:
-    sys.stderr = SafeStream(LOGS_DIR / "stderr.log")
+    sys.stderr = _RotatingStream(LOGS_DIR / "stderr.log")
 
 
 def main():
+    # P1: the data tree is created here (an explicit entry point) instead of at
+    # import time, so importing config/main never mutates the filesystem.
+    ensure_data_dirs()
+
     parser = argparse.ArgumentParser(description="Nazak Browser Studio - Windows 11 Multi-Profile Anti-Detect Browser")
     parser.add_argument(
         "--mode",
@@ -95,8 +144,8 @@ def main():
     # Trust whatever port we are about to bind (local-only origin policy).
     configure_local_access(args.port)
 
-    # Audit R3: не-loopback bind без NAZAK_API_TOKEN больше не запускается —
-    # иначе любой клиент проходит guard, просто прислав Host: 127.0.0.1.
+    # Audit R3: a non-loopback bind without NAZAK_API_TOKEN no longer starts —
+    # otherwise any client passes the guard simply by sending Host: 127.0.0.1.
     enforce_exposure_policy(args.host)
 
     if args.mode == "gui":

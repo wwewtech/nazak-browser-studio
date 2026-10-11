@@ -11,7 +11,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from ..api.server import app as fastapi_app, browser_launcher, profile_manager
-from ..config import DATA_DIR, DEFAULT_HOST, DEFAULT_PORT
+from ..config import DATA_DIR, DEFAULT_HOST, DEFAULT_PORT, ensure_data_dirs
 from .app_window import NazakFluentMainWindow
 from .splash import NazakSplashScreen
 
@@ -40,6 +40,9 @@ class ServerThread(threading.Thread):
 
 
 def launch_gui(host=DEFAULT_HOST, port=DEFAULT_PORT):
+    # P1: explicit entry point — make sure the runtime data tree exists.
+    ensure_data_dirs()
+
     # Set Windows 10/11 Taskbar App ID so icon displays properly
     if sys.platform == "win32":
         try:

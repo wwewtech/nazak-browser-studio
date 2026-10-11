@@ -1,4 +1,4 @@
-"""`nazak system/secrets/cdp ...` — паритет SettingsView + Dolphin API + system/info."""
+"""`nazak system/secrets/cdp ...` — parity with SettingsView + Dolphin API + system/info."""
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ def cmd_system_info(args, opt: GlobalOptions) -> int:
 
 
 def cmd_system_doctor(args, opt: GlobalOptions) -> int:
-    """Preflight для агентов: первый шаг перед любой серией команд."""
+    """Preflight for agents: the first step before any series of commands."""
     import sys as _sys
 
     from nazak.config import PROFILES_DIR, PROFILES_FILE
@@ -113,7 +113,19 @@ def cmd_system_doctor(args, opt: GlobalOptions) -> int:
     try:
         pm, _bl = get_managers()
         n = len(pm.list_profiles())
-        _add("profiles_db", True, f"{n} профилей в {PROFILES_FILE.name}")
+        backend = getattr(getattr(pm, "_backend", None), "backend_name", "?")
+        try:
+            from nazak.core.profiles.store_sqlite import sqlite_path_for
+
+            db_path = sqlite_path_for(PROFILES_FILE)
+            store_detail = (
+                f"backend={backend}, profiles.db={'yes' if db_path.exists() else 'no'}"
+                if backend == "sqlite"
+                else f"backend={backend}, {PROFILES_FILE.name}"
+            )
+        except Exception:
+            store_detail = f"backend={backend}, {PROFILES_FILE.name}"
+        _add("profiles_db", True, f"{n} профилей ({store_detail})")
     except Exception as exc:
         _add("profiles_db", False, str(exc)[:160])
 
@@ -186,7 +198,7 @@ def cmd_system_version(args, opt: GlobalOptions) -> int:
 
 
 def cmd_system_schema(args, opt: GlobalOptions) -> int:
-    """Интроспекция argparse-парсера: точная схема всех групп/команд/аргументов."""
+    """Introspection of the argparse parser: an exact schema of all groups/commands/arguments."""
     import argparse as _argparse
 
     from nazak.cli import build_parser
@@ -232,7 +244,15 @@ def cmd_system_schema(args, opt: GlobalOptions) -> int:
             "success": True,
             "schema_version": 1,
             "global_flags": ["--json", "--yes", "--server", "--api-key", "--verbose"],
-            "env": ["NAZAK_JSON", "NAZAK_YES", "NAZAK_SERVER", "NAZAK_API_TOKEN", "NAZAK_PASSPHRASE"],
+            "env": [
+                "NAZAK_JSON",
+                "NAZAK_YES",
+                "NAZAK_SERVER",
+                "NAZAK_API_TOKEN",
+                "NAZAK_PASSPHRASE",
+                "NAZAK_DATA_DIR",
+                "NAZAK_PROFILE_STORE",
+            ],
             "exit_codes": {"0": "ok", "1": "not found", "2": "usage/validation", "4": "conflict/busy"},
             "groups": list(merged.values()),
         },
