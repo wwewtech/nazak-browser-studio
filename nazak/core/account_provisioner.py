@@ -21,9 +21,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import pyotp
+    import pyotp  # type: ignore[import-not-found,import-untyped]
 except ImportError:
-    pyotp = None
+    pyotp = None  # type: ignore[assignment,no-redef]
 
 from ..models.profile import BrowserProfile, GoogleSettings, ProfileStatus
 from ..models.proxy import ProxyConfig, ProxyType
@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 def generate_totp_rfc6238(secret: str, interval: int = 30, digits: int = 6) -> str:
     """Pure Python RFC 6238 TOTP generator (pyotp when available, manual otherwise).
 
-    Audit R3: раньше при невалидном/замаскированном секрете возвращалось
-    ``"000000"`` — команда `account totp` отдавала этот код с ``success: true``
-    и exit 0, то есть агент не мог отличить рабочий код от сломанного.
-    Теперь неверный секрет — это исключение ``ValueError``.
+    Audit R3: previously an invalid/masked secret returned
+    ``"000000"`` — the `account totp` command handed back that code with ``success: true``
+    and exit 0, so an agent could not tell a working code from a broken one.
+    Now an invalid secret raises ``ValueError``.
     """
     if not secret or not str(secret).strip():
         raise ValueError("TOTP secret is empty")
@@ -52,7 +52,7 @@ def generate_totp_rfc6238(secret: str, interval: int = 30, digits: int = 6) -> s
             cleaned = secret.replace(" ", "").strip().upper()
             return pyotp.TOTP(cleaned, interval=interval, digits=digits).now()
         except Exception:
-            pass  # pyotp строже ручной реализации — пробуем её
+            pass  # pyotp is stricter than the manual implementation — fall back to ours
 
     cleaned = secret.replace(" ", "").strip().upper()
     try:
@@ -88,9 +88,9 @@ def parse_account_string(raw_line: str) -> dict[str, str] | None:
     login@gmail.com:password:2fa_secret:recovery@mail.com
     Handles multi-delimiter lines, marketing banners, order headers, and extra metadata.
 
-    Audit R3: разделитель выбирается по *валидному* email в первом поле (а не по
-    простому наличию "@"), а пароль, содержащий разделитель (``p@ss:w0rd``),
-    больше не обрезается, если в строке есть base32-сид 2FA.
+    Audit R3: the delimiter is picked from a *valid* email in the first field (not merely
+    from the presence of "@"), and a password containing the delimiter (``p@ss:w0rd``)
+    is no longer truncated when the line carries a base32 2FA seed.
     """
     line = raw_line.strip()
     if not line or line.startswith("#") or line.startswith("=") or line.startswith("-") or line.startswith("↓"):
@@ -111,7 +111,7 @@ def parse_account_string(raw_line: str) -> dict[str, str] | None:
                 chosen_delimiter = d
                 break
     if not parts:
-        # Fallback: прежнее мягкое правило, если строгий email не распознан.
+        # Fallback: the previous lenient rule when a strict email is not recognized.
         for d in delimiters:
             if d in line:
                 candidate_parts = [p.strip() for p in line.split(d)]
@@ -127,8 +127,8 @@ def parse_account_string(raw_line: str) -> dict[str, str] | None:
     password = parts[1]
     totp_secret = parts[2] if len(parts) > 2 else ""
 
-    # Пароль с разделителем: если последнее поле — base32-сид, значит пароль
-    # «разорвало» на части; склеиваем их обратно тем же разделителем.
+    # Password with the delimiter: if the last field is a base32 seed, the password
+    # was "torn apart"; we glue the parts back together with the same delimiter.
     if chosen_delimiter and len(parts) > 3 and _looks_like_totp(parts[-1]):
         password = chosen_delimiter.join(parts[1:-1])
         totp_secret = parts[-1]
@@ -621,7 +621,7 @@ class AccountProvisioner:
                         await browser.close()
                         return False, f"TOTP secret is invalid: {exc}"
                     if progress_callback:
-                        # Audit R3: живой одноразовый код не уходит в прогресс/UI/логи.
+                        # Audit R3: the live one-time code never reaches progress/UI/logs.
                         await progress_callback("Generating and entering the current 2FA code (hidden)...")
 
                     await totp_input.click()

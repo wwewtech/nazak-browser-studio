@@ -1,164 +1,73 @@
 """
-Profile Manager: Persistence, Deep 10-Profile Auto-Provisioning, Total Disk Isolation & Cookie Tools.
+Profile Manager facade (P0 refactor): same public API as the old 1195-line
+core/profile_manager.py, now delegating to the nazak.core.profiles package
+(store backends, service, bundles, files, presets, merge).
+
+Compat notes (load-bearing for the 725-test suite):
+- ``profiles`` stays a plain mutable dict attribute; ``_save_lock`` an RLock.
+- module-level ``MAX_MASS_GENERATE_COUNT`` / ``MAX_BUNDLE_*`` / ``_BUNDLE_CHUNK``
+  / ``_MASK`` / ``_PROXY_SECRET_FIELDS`` are re-exported AND kept live:
+  tests do ``monkeypatch.setattr(pm_mod, "MAX_BUNDLE_TOTAL_BYTES", ...)`` and
+  expect the bundle import to honour it.
+- private helpers ``_load_notes_dict`` / ``_raw_from_proxy`` / ``_merge_*`` /
+  ``_sanitize_notes`` keep their names.
+- on-disk ``profiles.json`` format is unchanged (bare list).
 """
 
-import json
 import logging
-import os
-import random
-import re
-import shutil
 import threading
-import time
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ..config import PROFILES_DIR, PROFILES_FILE
-from ..models.profile import (
-    BatterySpoofConfig,
-    BrowserProfile,
-    FingerprintConfig,
-    GeolocationSpoofConfig,
-    GoogleSettings,
-    MediaDeviceInfo,
-    ProfileStatus,
+from ..models.profile import BrowserProfile
+from . import profiles as _pkg
+from .profiles import (
+    BUNDLE_CHUNK as _BUNDLE_CHUNK,
+    MASK as _MASK,
+    MAX_BUNDLE_ENTRIES as _MAX_BUNDLE_ENTRIES,
+    MAX_BUNDLE_ENTRY_BYTES as _MAX_BUNDLE_ENTRY_BYTES,
+    MAX_BUNDLE_TOTAL_BYTES as _MAX_BUNDLE_TOTAL_BYTES,
+    MAX_MASS_GENERATE_COUNT as _MAX_MASS_GENERATE_COUNT,
+    PROXY_SECRET_FIELDS as _PROXY_SECRET_FIELDS,
+    ProfileService,
+    backend_for,
+    validate_id,
 )
-from ..models.proxy import ProxyConfig, ProxyType
-from .secrets_store import (
-    encrypt_notes,
-    protect_proxy_fields,
-    sanitize_notes_for_write,
-    unprotect_proxy_fields,
+from .profiles.merge import (
+    load_notes_dict as _load_notes_dict,
+    merge_fingerprint as _merge_fingerprint,
+    merge_google as _merge_google,
+    merge_proxy as _merge_proxy,
+    raw_from_proxy as _raw_from_proxy,
+    sanitize_notes as _sanitize_notes,
 )
+
+__all__ = [
+    "MAX_BUNDLE_ENTRIES",
+    "MAX_BUNDLE_ENTRY_BYTES",
+    "MAX_BUNDLE_TOTAL_BYTES",
+    "MAX_MASS_GENERATE_COUNT",
+    "_BUNDLE_CHUNK",
+    "_MASK",
+    "_PROXY_SECRET_FIELDS",
+    "ProfileManager",
+    "_load_notes_dict",
+    "_merge_fingerprint",
+    "_merge_google",
+    "_merge_proxy",
+    "_raw_from_proxy",
+    "_sanitize_notes",
+]
 
 logger = logging.getLogger(__name__)
 
-_MASK = "***"
-_PROXY_SECRET_FIELDS = ("password", "raw", "rotation_url")
-
-# Audit R3-round2: границы пакетных операций и импорта бандлов.
-# mass-generate: тот же диапазон, что у CLI (`--count 1..200`).
-MAX_MASS_GENERATE_COUNT = 200
-# Импорт .nazak — это zip от пользователя/из интернета: без лимитов
-# 100-килобайтный архив разворачивался в 100+ МиБ на диске.
-MAX_BUNDLE_ENTRIES = 20_000
-MAX_BUNDLE_ENTRY_BYTES = 512 * 1024 * 1024
-MAX_BUNDLE_TOTAL_BYTES = 1024 * 1024 * 1024
-_BUNDLE_CHUNK = 1024 * 1024
-
-
-def _load_notes_dict(raw: Any) -> dict | None:
-    """Parse a notes value into a dict; returns None for free-text notes."""
-    if isinstance(raw, dict):
-        return dict(raw)
-    if isinstance(raw, str) and raw.lstrip().startswith("{"):
-        try:
-            data = json.loads(raw)
-        except Exception:
-            return None
-        return data if isinstance(data, dict) else None
-    return None
-
-
-def _raw_from_proxy(proxy: ProxyConfig) -> str | None:
-    """Rebuild the human-readable proxy string from structured fields."""
-    if proxy.is_direct():
-        return proxy.raw
-    proto = proxy.type.value
-    if proxy.has_auth():
-        return f"{proto}://{proxy.username}:{proxy.password}@{proxy.host}:{proxy.port}"
-    return f"{proto}://{proxy.host}:{proxy.port}"
-
-
-def _merge_proxy(incoming: ProxyConfig, stored: ProxyConfig, fields_set: set[str]) -> ProxyConfig:
-    """Field-set aware proxy update (audit D2-P0-3 / D2-P1-4).
-
-    A client that echoes the masked API copy must never wipe the credentials,
-    and a partial body must never drop the structured host/port/auth that the
-    launcher needs (the web modal only sends ``raw`` + ``type``).
-    """
-    merged = stored.model_copy(deep=True)
-
-    if "raw" in fields_set:
-        raw = (incoming.raw or "").strip()
-        if not raw or raw.lower() in ("direct", "none", "null"):
-            return ProxyConfig(type=ProxyType.DIRECT, raw=raw or None)
-        if _MASK in raw:
-            # Display copy: adopt typed host/port changes, keep stored secrets.
-            parsed = ProxyConfig.parse(raw)
-            merged.host = parsed.host if parsed.host is not None else stored.host
-            merged.port = parsed.port if parsed.port is not None else stored.port
-            merged.username = parsed.username if parsed.username not in (None, "", _MASK) else stored.username
-            merged.password = stored.password if parsed.password in (None, "", _MASK) else parsed.password
-            merged.type = parsed.type
-            merged.rotation_url = stored.rotation_url if parsed.rotation_url is None else parsed.rotation_url
-            merged.raw = _raw_from_proxy(merged)
-        else:
-            parsed = ProxyConfig.parse(raw)
-            if parsed.rotation_url is None and "rotation_url" not in fields_set:
-                parsed.rotation_url = stored.rotation_url
-            merged = parsed
-
-    for field in fields_set - {"raw"}:
-        if field not in ProxyConfig.model_fields:
-            continue
-        value = getattr(incoming, field, None)
-        if value == _MASK:
-            value = getattr(stored, field, None)
-        setattr(merged, field, value)
-
-    if "raw" not in fields_set and fields_set & {"host", "port", "username", "password"}:
-        merged.raw = _raw_from_proxy(merged)
-    if "active" not in fields_set and "raw" in fields_set:
-        merged.active = stored.active
-    return merged
-
-
-def _sanitize_notes(new_profile: BrowserProfile, stored_profile: BrowserProfile | None) -> None:
-    """Persist notes without ever writing a display mask over a secret (D2-P0-2)."""
-    if not new_profile.google:
-        return
-    incoming = _load_notes_dict(new_profile.google.notes)
-    if incoming is None:
-        return
-    stored = None
-    if stored_profile is not None and stored_profile.google:
-        stored = _load_notes_dict(stored_profile.google.notes)
-    cleaned = sanitize_notes_for_write(incoming, stored or {})
-    new_profile.google.notes = json.dumps(encrypt_notes(cleaned))
-
-
-def _merge_fingerprint(incoming: FingerprintConfig, stored: FingerprintConfig) -> FingerprintConfig:
-    """Field-set aware fingerprint update (audit D2-P1-4).
-
-    The web modal sends only the fields it renders; a wholesale replacement
-    would silently reset every other device property (seeds, media devices,
-    unmasked WebGL strings, shield toggles) back to the model defaults.
-    """
-    merged = stored.model_copy(deep=True)
-    for field in incoming.model_fields_set:
-        if field in FingerprintConfig.model_fields:
-            setattr(merged, field, getattr(incoming, field))
-    return merged
-
-
-def _merge_google(incoming: GoogleSettings | None, stored: GoogleSettings | None) -> GoogleSettings | None:
-    """Field-set aware google-settings update (audit D2-P1-4).
-
-    A partial body (or a dialog that only touched one field) must not blank
-    ``notes`` / ``tags`` back to the model defaults.
-    """
-    if stored is None:
-        return incoming
-    if incoming is None:
-        return stored.model_copy(deep=True)
-    merged = stored.model_copy(deep=True)
-    for field in incoming.model_fields_set:
-        if field in GoogleSettings.model_fields:
-            setattr(merged, field, getattr(incoming, field))
-    return merged
+# Re-exported bounds (live: bundle code reads them via module getattr).
+MAX_MASS_GENERATE_COUNT = _MAX_MASS_GENERATE_COUNT
+MAX_BUNDLE_ENTRIES = _MAX_BUNDLE_ENTRIES
+MAX_BUNDLE_ENTRY_BYTES = _MAX_BUNDLE_ENTRY_BYTES
+MAX_BUNDLE_TOTAL_BYTES = _MAX_BUNDLE_TOTAL_BYTES
+_BUNDLE_CHUNK = _BUNDLE_CHUNK
 
 
 class ProfileManager:
@@ -171,725 +80,108 @@ class ProfileManager:
         self.profiles_dir = profiles_dir
         self.profiles: dict[str, BrowserProfile] = {}
         self._save_lock = threading.RLock()
+        self._backend = backend_for(profiles_file, profiles_dir)
+        self._service = ProfileService(self._backend, profiles_dir)
+        # Service owns the dict; keep the same object identity both ways.
+        self._service.profiles = self.profiles
         self.load_profiles()
 
+    # -- internal plumbing -------------------------------------------
+    def _sync_from_service(self) -> None:
+        if self._service.profiles is not self.profiles:
+            self.profiles.clear()
+            self.profiles.update(self._service.profiles)
+            self._service.profiles = self.profiles
+
+    def _sync_to_service(self) -> None:
+        self._service.profiles = self.profiles
+
+    # -- compat --------------------------------------------------------
     def _validate_id(self, profile_id: str):
-        if not profile_id or not isinstance(profile_id, str):
-            raise ValueError("Invalid profile ID: must be a non-empty string")
-        p = Path(profile_id)
-        if (
-            p.name != profile_id
-            or p.is_absolute()
-            or profile_id in ("", ".", "..")
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ":" in profile_id
-        ):
-            raise ValueError(f"Invalid profile ID: path traversal detected ({profile_id})")
-        if not re.match(r"^[a-zA-Z0-9_\-]+$", profile_id):
-            raise ValueError(f"Invalid profile ID: unsafe characters ({profile_id})")
+        validate_id(profile_id)
 
     def _generate_default_10_profiles(self) -> list[BrowserProfile]:
-        """
-        Creates 10 deeply distinct, ultra-realistic browser profiles with complete system isolation.
-        """
-        presets: list[dict[str, Any]] = [
-            {
-                "name": "01 - Google Ads USA (High-Tier Desktop RTX 4090)",
-                "group": "Google Ads",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 2560,
-                "height": 1440,
-                "ram": 64,
-                "cores": 24,
-                "lang": "en-US,en;q=0.9",
-                "langs": ["en-US", "en"],
-                "tz": "America/New_York",
-                "tz_off": 300,
-                "gpu_v": "Google Inc. (NVIDIA)",
-                "gpu_r": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "NVIDIA Corporation",
-                "gpu_ur": "NVIDIA GeForce RTX 4090",
-                "target": "google_login",
-                "tags": ["Google Ads", "USA", "Tier 1", "Flagship"],
-                "notes": "Primary Google Ads Flagship Desktop.",
-            },
-            {
-                "name": "02 - Google Ads USA (Ryzen 7 Laptop)",
-                "group": "Google Ads",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1920,
-                "height": 1080,
-                "ram": 32,
-                "cores": 16,
-                "lang": "en-US,en;q=0.9",
-                "langs": ["en-US", "en"],
-                "tz": "America/Los_Angeles",
-                "tz_off": 480,
-                "gpu_v": "Google Inc. (AMD)",
-                "gpu_r": "ANGLE (AMD, AMD Radeon 780M Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "Advanced Micro Devices, Inc.",
-                "gpu_ur": "AMD Radeon 780M Graphics",
-                "target": "google_ads",
-                "tags": ["Google Ads", "USA", "Laptop"],
-                "notes": "Targeted ad spend manager.",
-            },
-            {
-                "name": "03 - Google Ads UK (Ryzen 9 4K Workstation)",
-                "group": "Google Ads",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 3840,
-                "height": 2160,
-                "ram": 32,
-                "cores": 32,
-                "lang": "en-GB,en;q=0.9",
-                "langs": ["en-GB", "en"],
-                "tz": "Europe/London",
-                "tz_off": 0,
-                "gpu_v": "Google Inc. (AMD)",
-                "gpu_r": "ANGLE (AMD, AMD Radeon RX 7900 XTX Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "Advanced Micro Devices, Inc.",
-                "gpu_ur": "AMD Radeon RX 7900 XTX",
-                "target": "google_ads",
-                "tags": ["Google Ads", "UK", "Tier 1", "4K"],
-                "notes": "UK campaigns and billing master.",
-            },
-            {
-                "name": "04 - Google Ads Germany (Core i7 RTX 4070 Ti)",
-                "group": "Google Ads",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1920,
-                "height": 1080,
-                "ram": 32,
-                "cores": 16,
-                "lang": "de-DE,de;q=0.9,en;q=0.8",
-                "langs": ["de-DE", "de", "en"],
-                "tz": "Europe/Berlin",
-                "tz_off": -60,
-                "gpu_v": "Google Inc. (NVIDIA)",
-                "gpu_r": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "NVIDIA Corporation",
-                "gpu_ur": "NVIDIA GeForce RTX 4070 Ti",
-                "target": "google_login",
-                "tags": ["Google Ads", "DE", "Europe"],
-                "notes": "DACH region ad campaigns.",
-            },
-            {
-                "name": "05 - Google Warmup (Office PC Intel UHD 770)",
-                "group": "Warmup",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1536,
-                "height": 864,
-                "ram": 16,
-                "cores": 12,
-                "lang": "en-US,en;q=0.9",
-                "langs": ["en-US", "en"],
-                "tz": "America/Chicago",
-                "tz_off": 360,
-                "gpu_v": "Google Inc. (Intel)",
-                "gpu_r": "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "Intel Inc.",
-                "gpu_ur": "Intel(R) UHD Graphics 770",
-                "target": "google_search",
-                "tags": ["Warmup", "Organic", "Farming"],
-                "notes": "Search history & cookie accumulation.",
-            },
-            {
-                "name": "06 - Google Warmup (Ultrabook Intel Arc)",
-                "group": "Warmup",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1920,
-                "height": 1200,
-                "ram": 16,
-                "cores": 16,
-                "lang": "en-CA,en;q=0.9",
-                "langs": ["en-CA", "en"],
-                "tz": "America/Toronto",
-                "tz_off": 300,
-                "gpu_v": "Google Inc. (Intel)",
-                "gpu_r": "ANGLE (Intel, Intel(R) Arc(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "Intel Inc.",
-                "gpu_ur": "Intel(R) Arc(TM) Graphics",
-                "target": "google_search",
-                "tags": ["Warmup", "Organic", "Farming"],
-                "notes": "Search history & trust score building.",
-            },
-            {
-                "name": "07 - YouTube Studio (MacBook Pro M3 Max)",
-                "group": "YouTube",
-                "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "MacIntel",
-                "width": 3024,
-                "height": 1964,
-                "ram": 64,
-                "cores": 16,
-                "lang": "en-US,en;q=0.9",
-                "langs": ["en-US", "en"],
-                "tz": "America/Chicago",
-                "tz_off": 360,
-                "gpu_v": "Google Inc. (Apple)",
-                "gpu_r": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Version 15.0)",
-                "gpu_uv": "Apple Inc.",
-                "gpu_ur": "Apple M3 Max GPU",
-                "target": "youtube_studio",
-                "tags": ["YouTube", "Studio", "MacBook"],
-                "notes": "YouTube channel management master.",
-            },
-            {
-                "name": "08 - YouTube Studio (Mac Studio M2 Pro)",
-                "group": "YouTube",
-                "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "MacIntel",
-                "width": 2560,
-                "height": 1600,
-                "ram": 32,
-                "cores": 12,
-                "lang": "en-AU,en;q=0.9",
-                "langs": ["en-AU", "en"],
-                "tz": "Australia/Sydney",
-                "tz_off": -600,
-                "gpu_v": "Google Inc. (Apple)",
-                "gpu_r": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Version 14.5)",
-                "gpu_uv": "Apple Inc.",
-                "gpu_ur": "Apple M2 Pro GPU",
-                "target": "youtube_studio",
-                "tags": ["YouTube", "Studio", "Creator"],
-                "notes": "Secondary creator channel.",
-            },
-            {
-                "name": "09 - Organic Search Traffic (Gaming Rig RTX 3080)",
-                "group": "Organic",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1920,
-                "height": 1080,
-                "ram": 32,
-                "cores": 16,
-                "lang": "fr-FR,fr;q=0.9,en;q=0.8",
-                "langs": ["fr-FR", "fr", "en"],
-                "tz": "Europe/Paris",
-                "tz_off": -60,
-                "gpu_v": "Google Inc. (NVIDIA)",
-                "gpu_r": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "NVIDIA Corporation",
-                "gpu_ur": "NVIDIA GeForce RTX 3080",
-                "target": "google_search",
-                "tags": ["Organic", "Search", "SEO"],
-                "notes": "Organic traffic & CTR automation.",
-            },
-            {
-                "name": "10 - Arbitrage & Backup Node (Compact PC)",
-                "group": "Arbitrage",
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                "platform": "Win32",
-                "width": 1366,
-                "height": 768,
-                "ram": 8,
-                "cores": 8,
-                "lang": "en-US,en;q=0.9",
-                "langs": ["en-US", "en"],
-                "tz": "America/New_York",
-                "tz_off": 300,
-                "gpu_v": "Google Inc. (Intel)",
-                "gpu_r": "ANGLE (Intel, Intel(R) UHD Graphics 730 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                "gpu_uv": "Intel Inc.",
-                "gpu_ur": "Intel(R) UHD Graphics 730",
-                "target": "google_login",
-                "tags": ["Arbitrage", "Backup", "Multi-Acc"],
-                "notes": "Backup node for quick launch.",
-            },
-        ]
-
-        result = []
-        for idx, item in enumerate(presets, start=1):
-            pid = f"prof_{idx:02d}"
-
-            # Unique persistent media devices for each profile
-            devs = [
-                MediaDeviceInfo(
-                    kind="audioinput",
-                    label=f"Microphone (Realtek Audio HD {idx})",
-                    device_id=uuid.uuid4().hex,
-                    group_id=uuid.uuid4().hex,
-                ),
-                MediaDeviceInfo(
-                    kind="audiooutput",
-                    label=f"Speakers (Realtek Audio HD {idx})",
-                    device_id=uuid.uuid4().hex,
-                    group_id=uuid.uuid4().hex,
-                ),
-                MediaDeviceInfo(
-                    kind="videoinput",
-                    label=f"Integrated HD Camera {idx}",
-                    device_id=uuid.uuid4().hex,
-                    group_id=uuid.uuid4().hex,
-                ),
-            ]
-
-            fp = FingerprintConfig(
-                user_agent=str(item["ua"]),
-                platform=str(item["platform"]),
-                screen_width=int(item["width"]),
-                screen_height=int(item["height"]),
-                screen_avail_width=int(item["width"]),
-                screen_avail_height=int(item["height"]) - 40,
-                color_depth=24,
-                pixel_depth=24,
-                device_pixel_ratio=1.0 if int(item["width"]) <= 2560 else 2.0,
-                device_memory=int(item["ram"]),
-                hardware_concurrency=int(item["cores"]),
-                language=str(item["lang"]),
-                languages=list(item["langs"]),
-                timezone=str(item["tz"]),
-                timezone_offset=int(item["tz_off"]),
-                webgl_vendor=str(item["gpu_v"]),
-                webgl_renderer=str(item["gpu_r"]),
-                webgl_unmasked_vendor=str(item["gpu_uv"]),
-                webgl_unmasked_renderer=str(item["gpu_ur"]),
-                media_devices=devs,
-                canvas_noise=True,
-                canvas_noise_seed=100000 + idx * 7777,
-                audio_noise=True,
-                audio_noise_seed=0.000001 * idx,
-                client_rects_noise=True,
-                battery=BatterySpoofConfig(
-                    charging=True,
-                    level=0.98 if "Laptop" in str(item["name"]) or "MacBook" in str(item["name"]) else 1.0,
-                ),
-                geolocation=GeolocationSpoofConfig(enabled=True),
-                webrtc_policy="disable_non_proxied_udp",
-                block_port_scanning=True,
-            )
-
-            google = GoogleSettings(auto_open_page=item["target"], tags=item["tags"], notes=item["notes"])
-
-            prof = BrowserProfile(
-                id=pid,
-                name=item["name"],
-                group=item["group"],
-                proxy=ProxyConfig(type=ProxyType.DIRECT, raw="direct"),
-                fingerprint=fp,
-                google=google,
-                status=ProfileStatus.STOPPED,
-            )
-            result.append(prof)
-        return result
-
-    def load_profiles(self):
-        """Loads profiles from JSON or initializes 10 default profiles with robust recovery."""
-        if not self.profiles_file.exists():
-            default_profiles = self._generate_default_10_profiles()
-            self.profiles = {p.id: p for p in default_profiles}
-            self.save_profiles()
-            return
-
-        try:
-            with open(self.profiles_file, encoding="utf-8") as f:
-                data = json.load(f)
-
-            if not isinstance(data, list):
-                raise ValueError("profiles.json root must be a list")
-
-            loaded = {}
-            for item in data:
-                try:
-                    if isinstance(item, dict):
-                        if isinstance(item.get("proxy"), dict):
-                            item["proxy"] = unprotect_proxy_fields(item["proxy"])
-                        prof = BrowserProfile(**item)
-                        prof.status = ProfileStatus.STOPPED
-                        prof.pid = None
-                        loaded[prof.id] = prof
-                except Exception:
-                    continue
-
-            if loaded:
-                self.profiles = loaded
-            else:
-                default_profiles = self._generate_default_10_profiles()
-                self.profiles = {p.id: p for p in default_profiles}
-                self.save_profiles()
-
-        except Exception:
-            # Backup corrupted file to prevent data loss
-            try:
-                bak_file = self.profiles_file.with_name(f"profiles.corrupt.{int(time.time())}.bak")
-                shutil.copy2(self.profiles_file, bak_file)
-            except Exception:
-                pass
-
-            default_profiles = self._generate_default_10_profiles()
-            self.profiles = {p.id: p for p in default_profiles}
-            self.save_profiles()
-
-    def save_profiles(self):
-        """Atomically saves profiles to JSON file with Windows retry resilience and thread safety."""
-        with self._save_lock:
-            self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
-            tmp_file = self.profiles_file.with_name(f"{self.profiles_file.name}.{uuid.uuid4().hex}.tmp")
-            try:
-                data = []
-                for p in self.profiles.values():
-                    item = p.model_dump()
-                    # Proxy credentials are protected at rest in every mode
-                    # except the user-selected `plain` (audit D2-P0-3).
-                    item["proxy"] = protect_proxy_fields(item.get("proxy") or {})
-                    data.append(item)
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-
-                for attempt in range(5):
-                    try:
-                        tmp_file.replace(self.profiles_file)
-                        break
-                    except (PermissionError, OSError):
-                        time.sleep(0.05 * (attempt + 1))
-                        if attempt == 4:
-                            shutil.copy2(tmp_file, self.profiles_file)
-                            try:
-                                tmp_file.unlink(missing_ok=True)
-                            except Exception:
-                                pass
-            finally:
-                if tmp_file.exists():
-                    try:
-                        tmp_file.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
-    def list_profiles(self) -> list[BrowserProfile]:
-        with self._save_lock:
-            return list(self.profiles.values())
-
-    def get_profile(self, profile_id: str) -> BrowserProfile | None:
-        try:
-            self._validate_id(profile_id)
-        except ValueError:
-            return None
-        with self._save_lock:
-            return self.profiles.get(profile_id)
+        return _pkg.generate_default_10_profiles()
 
     def _prepare_for_write(self, profile: BrowserProfile, stored: BrowserProfile | None) -> BrowserProfile:
-        """Normalize a client-supplied profile before it replaces anything on disk.
+        return self._service._prepare_for_write(profile, stored)
 
-        Notes: helper keys stripped, display masks / placeholders never overwrite
-        a stored secret, new plaintext values encrypted in the active mode.
-        Proxy: field-set aware merge so echoed masks and partial bodies cannot
-        drop credentials or the structured host/port the launcher needs.
-        """
-        if stored is None:
-            if profile.google and profile.google.notes:
-                incoming = _load_notes_dict(profile.google.notes)
-                if incoming is not None:
-                    profile.google.notes = json.dumps(encrypt_notes(sanitize_notes_for_write(incoming, {})))
-            return profile
-        merged_google = _merge_google(profile.google, stored.google)
-        if merged_google is not None:
-            profile.google = merged_google
-        _sanitize_notes(profile, stored)
-        profile.proxy = _merge_proxy(profile.proxy, stored.proxy, set(profile.proxy.model_fields_set))
-        if profile.fingerprint is not None and stored.fingerprint is not None:
-            profile.fingerprint = _merge_fingerprint(profile.fingerprint, stored.fingerprint)
-        return profile
+    # -- persistence ---------------------------------------------------
+    def load_profiles(self):
+        with self._save_lock:
+            self._sync_to_service()
+            self._service.load(self._generate_default_10_profiles)
+            self._sync_from_service()
+
+    def save_profiles(self):
+        with self._save_lock:
+            self._sync_to_service()
+            self._service.save()
+
+    # -- CRUD ----------------------------------------------------------
+    def list_profiles(self) -> list[BrowserProfile]:
+        with self._save_lock:
+            self._sync_to_service()
+            # Return live list view semantics (copy of values, same objects).
+            return self._service.list_all()
+
+    def get_profile(self, profile_id: str) -> BrowserProfile | None:
+        with self._save_lock:
+            self._sync_to_service()
+            return self._service.get(profile_id)
 
     def create_profile(self, profile: BrowserProfile) -> BrowserProfile:
         with self._save_lock:
-            if not profile.id:
-                profile.id = f"prof_{uuid.uuid4().hex[:8]}"
-            else:
-                self._validate_id(profile.id)
-                if profile.id in self.profiles:
-                    raise ValueError(f"Profile with id '{profile.id}' already exists")
-            profile = self._prepare_for_write(profile, None)
-            self.profiles[profile.id] = profile
-            self.save_profiles()
-            return profile
+            self._sync_to_service()
+            out = self._service.create(profile)
+            self._sync_from_service()
+            return out
 
     def update_profile(self, profile: BrowserProfile) -> BrowserProfile | None:
-        self._validate_id(profile.id)
         with self._save_lock:
-            stored = self.profiles.get(profile.id)
-            if stored is None:
-                return None
-            profile = self._prepare_for_write(profile, stored)
-            profile.updated_at = datetime.now(timezone.utc).isoformat()
-            self.profiles[profile.id] = profile
-            self.save_profiles()
-            return profile
+            self._sync_to_service()
+            out = self._service.update(profile)
+            self._sync_from_service()
+            return out
 
     def reencrypt_all_profile_secrets(self) -> int:
-        """Re-write every profile's notes in the currently active secrets mode.
-
-        Used after the user switches their storage mode (their decision, their
-        data). Profiles whose secrets cannot be decrypted (e.g. missing
-        passphrase) are skipped and left untouched.
-        """
-        import json as _json
-
-        from .secrets_store import encrypt_notes as _encrypt, reveal_notes
-
-        count = 0
         with self._save_lock:
-            for profile in self.profiles.values():
-                notes_raw = profile.google.notes if profile.google else ""
-                if not notes_raw:
-                    continue
-                try:
-                    notes = _json.loads(notes_raw)
-                except Exception:
-                    continue
-                # Reveal full plaintext first: decrypt_notes(reveal=False) would
-                # hand us *masked* values and re-encrypting those would destroy
-                # the credentials. reveal_notes raises SecretsDecryptError when
-                # the passphrase/DPAPI material is unavailable — such profiles
-                # are skipped untouched.
-                try:
-                    plain = reveal_notes(notes)
-                except Exception:
-                    continue
-                # Skip profiles whose envelopes could not be opened (placeholder).
-                if any(
-                    isinstance(v, str) and v.startswith("<encrypted") for k, v in plain.items() if not k.startswith("_")
-                ):
-                    continue
-                # Encrypt from the revealed values; helper keys (_*) are
-                # stripped by encrypt_notes before persisting.
-                try:
-                    new_notes = _encrypt({k: v for k, v in plain.items() if not k.startswith("_")})
-                except Exception:
-                    continue
-                profile.google.notes = _json.dumps(new_notes)
-                count += 1
-            if count:
-                self.save_profiles()
-        return count
+            self._sync_to_service()
+            out = self._service.reencrypt_all_secrets()
+            self._sync_from_service()
+            return out
 
     def delete_profile(self, profile_id: str, delete_data: bool = True) -> bool:
-        self._validate_id(profile_id)
         with self._save_lock:
-            if profile_id not in self.profiles:
-                return False
-            self.profiles.pop(profile_id, None)
-            self.save_profiles()
-
-            if delete_data:
-                raw_path = self.profiles_dir / profile_id
-                if raw_path.is_symlink():
-                    try:
-                        raw_path.unlink()
-                    except Exception as exc:
-                        logger.warning("Failed to unlink symlink profile dir %s: %s", raw_path, exc)
-                    return True
-
-                data_path = raw_path.resolve()
-                if (
-                    data_path.is_relative_to(self.profiles_dir.resolve())
-                    and data_path != self.profiles_dir.resolve()
-                    and data_path.exists()
-                ):
-                    try:
-                        shutil.rmtree(data_path)
-                    except Exception as exc:
-                        logger.warning(
-                            "Error deleting profile directory %s: %s; retrying with ignore_errors", data_path, exc
-                        )
-                        shutil.rmtree(data_path, ignore_errors=True)
-            return True
+            self._sync_to_service()
+            out = self._service.delete(profile_id, delete_data=delete_data)
+            self._sync_from_service()
+            return out
 
     def clone_profile(self, source_id: str, new_name: str | None = None) -> BrowserProfile | None:
-        source = self.get_profile(source_id)
-        if not source:
-            return None
-        cloned_data = source.model_dump()
-        new_id = f"prof_{uuid.uuid4().hex[:8]}"
-        cloned_data["id"] = new_id
-        cloned_data["name"] = new_name or f"{source.name} (Copy)"
-        cloned_data["status"] = ProfileStatus.STOPPED
-        cloned_data["pid"] = None
-        cloned_data["last_launched_at"] = None
-        cloned_data["total_runtime_seconds"] = 0
-        cloned_data["last_health_check"] = None
-        cloned_data["created_at"] = datetime.now(timezone.utc).isoformat()
-        cloned_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        with self._save_lock:
+            self._sync_to_service()
+            out = self._service.clone(source_id, new_name)
+            self._sync_from_service()
+            return out
 
-        # A clone must be a different *device*, not the same hardware with fresh
-        # noise seeds (audit D2-P2-1): regenerate the device-identifying fields
-        # and keep only what is tied to the operator's locale / shield choices.
-        if "fingerprint" in cloned_data and isinstance(cloned_data["fingerprint"], dict):
-            src_fp = source.fingerprint
-            platform = src_fp.platform or "Win32"
-            if platform == "MacIntel":
-                os_type = "mac"
-            elif platform.lower().startswith("linux"):
-                os_type = "linux"
-            else:
-                os_type = "windows"
-
-            from .fingerprint_generator import generate_random_fingerprint
-
-            fresh = generate_random_fingerprint(os_type=os_type)
-            for _ in range(8):
-                if fresh.user_agent != src_fp.user_agent:
-                    break
-                fresh = generate_random_fingerprint(os_type=os_type)
-            fp = fresh.model_dump()
-            for field in (
-                "timezone",
-                "timezone_offset",
-                "language",
-                "languages",
-                "canvas_noise",
-                "audio_noise",
-                "client_rects_noise",
-                "block_port_scanning",
-                "block_sensors",
-                "webrtc_policy",
-                "battery",
-                "geolocation",
-            ):
-                fp[field] = (
-                    getattr(src_fp, field).model_dump()
-                    if field in ("battery", "geolocation")
-                    else getattr(src_fp, field)
-                )
-            cloned_data["fingerprint"] = fp
-
-            # Regenerate hardware seeds and UUIDs to ensure zero linkage with source profile
-            orig_canvas = src_fp.canvas_noise_seed
-            orig_audio = src_fp.audio_noise_seed
-
-            canvas_seed = random.randint(10000, 999999)
-            while orig_canvas is not None and canvas_seed == orig_canvas:
-                canvas_seed = random.randint(10000, 999999)
-            fp["canvas_noise_seed"] = canvas_seed
-
-            audio_seed = round(random.uniform(0.0000005, 0.000005), 8)
-            while orig_audio is not None and audio_seed == orig_audio:
-                audio_seed = round(random.uniform(0.0000005, 0.000005), 8)
-            fp["audio_noise_seed"] = audio_seed
-
-            if "media_devices" in fp and isinstance(fp["media_devices"], list):
-                for dev in fp["media_devices"]:
-                    if isinstance(dev, dict):
-                        dev["device_id"] = uuid.uuid4().hex
-                        dev["group_id"] = uuid.uuid4().hex
-
-        cloned_profile = BrowserProfile(**cloned_data)
-        self.profiles[new_id] = cloned_profile
-        self.save_profiles()
-        return cloned_profile
-
+    # -- disk helpers --------------------------------------------------
     def seed_profile_history(self, profile_id: str, entries_count: int = 25) -> int:
-        """Seeds authentic browsing history into the profile's Chromium user data directory."""
-        self._validate_id(profile_id)
-        prof = self.get_profile(profile_id)
-        if not prof:
-            return 0
-        user_data_path = self.profiles_dir / profile_id
-        user_data_path.mkdir(parents=True, exist_ok=True)
-        from .history_seeder import seed_chrome_history
-
-        return seed_chrome_history(user_data_path, entries_count=entries_count)
+        return self._service.seed_history(profile_id, entries_count=entries_count)
 
     def get_profile_disk_size_bytes(self, profile_id: str) -> int:
-        try:
-            self._validate_id(profile_id)
-        except ValueError:
-            return 0
-        path = (self.profiles_dir / profile_id).resolve()
-        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
-            return 0
-        total = 0
-        try:
-            entries = list(os.scandir(path))
-        except Exception:
-            return 0
-        for entry in entries:
-            try:
-                if entry.is_file():
-                    total += entry.stat().st_size
-                elif entry.is_dir():
-                    for root, _, files in os.walk(entry.path):
-                        for f in files:
-                            try:
-                                total += os.path.getsize(os.path.join(root, f))
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-        return total
+        return self._service.disk_size(profile_id)
 
     def clear_profile_cache(self, profile_id: str) -> bool:
-        self._validate_id(profile_id)
-        path = (self.profiles_dir / profile_id).resolve()
-        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
-            return True
-        cache_dirs = ["Cache", "Code Cache", "GPUCache", "DawnCache", "Service Worker/CacheStorage"]
-        for cdir in cache_dirs:
-            target = path / "Default" / cdir
-            if target.exists():
-                shutil.rmtree(target, ignore_errors=True)
-            top_target = path / cdir
-            if top_target.exists():
-                shutil.rmtree(top_target, ignore_errors=True)
-        return True
+        return self._service.clear_cache(profile_id)
 
     def save_profile_cookies(self, profile_id: str, cookies: list[dict[str, Any]]) -> bool:
-        """Persists imported cookies to both JSON and Netscape formats in profile directory."""
-        self._validate_id(profile_id)
-        if profile_id not in self.profiles:
-            return False
-        path = (self.profiles_dir / profile_id).resolve()
-        if not path.is_relative_to(self.profiles_dir.resolve()) or path == self.profiles_dir.resolve():
-            return False
-        path.mkdir(parents=True, exist_ok=True)
-        default_dir = path / "Default"
-        default_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            # Save JSON cookies
-            json_str = json.dumps(cookies, indent=2, ensure_ascii=False)
-            (path / "cookies.json").write_text(json_str, encoding="utf-8")
-            (default_dir / "cookies.json").write_text(json_str, encoding="utf-8")
-
-            # Save Netscape cookies
-            from .cookie_manager import cookies_to_netscape
-
-            netscape_str = cookies_to_netscape(cookies)
-            (path / "cookies.txt").write_text(netscape_str, encoding="utf-8")
-            (default_dir / "cookies.txt").write_text(netscape_str, encoding="utf-8")
-            return True
-        except Exception:
-            return False
+        with self._save_lock:
+            self._sync_to_service()
+            return self._service.save_cookies(profile_id, cookies)
 
     def load_profile_cookies(self, profile_id: str) -> list[dict[str, Any]]:
-        """Loads saved cookies from JSON or Netscape formats in profile directory."""
-        self._validate_id(profile_id)
-        path = (self.profiles_dir / profile_id).resolve()
-        if not path.is_relative_to(self.profiles_dir.resolve()) or not path.exists():
-            return []
-        json_file = path / "cookies.json"
-        if json_file.exists():
-            try:
-                return json.loads(json_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-
-        txt_file = path / "cookies.txt"
-        if txt_file.exists():
-            try:
-                from .cookie_manager import parse_netscape_cookies
-
-                return parse_netscape_cookies(txt_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return []
+        return self._service.load_cookies(profile_id)
 
     def batch_import_cookies(
         self,
@@ -897,90 +189,16 @@ class ProfileManager:
         auto_create_missing: bool = False,
         group: str = "Imported Cookies",
     ) -> dict[str, Any]:
-        """
-        Batch imports cookies across multiple profiles.
-        Matches by profile ID, exact profile Name, or case-insensitive substring.
-        If no matching profile is found and auto_create_missing is True, creates a new isolated profile.
-        """
-        matched_count = 0
-        created_count = 0
-        failed_count = 0
-        imported_profile_ids: list[str] = []
-
-        all_profiles = list(self.profiles.values())
-        id_map = {p.id: p for p in all_profiles}
-        name_map = {p.name.strip().lower(): p for p in all_profiles}
-
-        from .fingerprint_generator import generate_random_fingerprint
-
-        for key, cookies in cookie_map.items():
-            if not cookies:
-                continue
-
-            target_profile: BrowserProfile | None = None
-            key_clean = key.strip()
-            key_lower = key_clean.lower()
-
-            # 1. Direct ID match
-            if key_clean in id_map:
-                target_profile = id_map[key_clean]
-            # 2. Exact Name match
-            elif key_lower in name_map:
-                target_profile = name_map[key_lower]
-            # 3. Substring Name match
-            else:
-                for p in all_profiles:
-                    if key_lower in p.name.lower() or p.id.lower() in key_lower:
-                        target_profile = p
-                        break
-
-            # 4. Auto-create if not matched
-            if not target_profile and auto_create_missing:
-                fp = generate_random_fingerprint(os_type="windows")
-                p_name = key_clean if key_clean != "default" else f"Cookie Profile {len(self.profiles) + 1:02d}"
-                new_prof = BrowserProfile(
-                    name=p_name,
-                    group=group,
-                    proxy=ProxyConfig(type=ProxyType.DIRECT, raw="direct"),
-                    fingerprint=fp,
-                    google=GoogleSettings(auto_open_page="google_login", tags=["Cookie Import", group]),
-                )
-                target_profile = self.create_profile(new_prof)
-                id_map[target_profile.id] = target_profile
-                name_map[target_profile.name.strip().lower()] = target_profile
-                created_count += 1
-            elif target_profile:
-                matched_count += 1
-
-            if target_profile:
-                saved = self.save_profile_cookies(target_profile.id, cookies)
-                if saved:
-                    imported_profile_ids.append(target_profile.id)
-                else:
-                    failed_count += 1
-            else:
-                failed_count += 1
-
-        return {
-            "matched": matched_count,
-            "created": created_count,
-            "failed": failed_count,
-            "profile_ids": imported_profile_ids,
-        }
+        with self._save_lock:
+            self._sync_to_service()
+            out = self._service.batch_import_cookies(cookie_map, auto_create_missing, group)
+            self._sync_from_service()
+            return out
 
     def export_all_cookies(self, profile_ids: list[str] | None = None) -> dict[str, list[dict[str, Any]]]:
-        """Exports loaded cookies for specified or all profiles indexed by profile ID."""
-        target_ids = profile_ids or list(self.profiles.keys())
-        out = {}
-        for pid in target_ids:
-            try:
-                self._validate_id(pid)
-            except ValueError:
-                continue
-            cookies = self.load_profile_cookies(pid)
-            if cookies:
-                out[pid] = cookies
-        return out
+        with self._save_lock:
+            self._sync_to_service()
+            return self._service.export_cookies(profile_ids)
 
     def mass_generate_profiles(
         self,
@@ -992,204 +210,31 @@ class ProfileManager:
         auto_open_page: str = "google_login",
         notes: str | None = None,
     ) -> list[BrowserProfile]:
-        """
-        Mass generates N fully isolated, high-tier browser profiles with distinct hardware fingerprints
-        and proxy round-robin allocation.
-        """
-        from .fingerprint_generator import generate_random_fingerprint
+        import nazak.core.profiles.constants as _constants
 
-        # Audit R3-round2: границы и здесь (защита в глубину к Field(ge/le) в API).
-        # Раньше запрос с count=10**5 валил сервер: каждый профиль перезаписывает
-        # весь profiles.json, т.е. стоимость квадратична по числу профилей.
-        count = max(1, min(int(count), MAX_MASS_GENERATE_COUNT))
-
-        created_profiles: list[BrowserProfile] = []
-        proxies_parsed = [ProxyConfig.parse(p) for p in (proxy_list or []) if p and p.strip()]
-
-        os_types = ["windows"]
-        if os_mix == "mac":
-            os_types = ["mac"]
-        elif os_mix == "linux":
-            os_types = ["linux"]
-        elif os_mix == "all":
-            os_types = ["windows", "mac", "linux"]
-
-        base_index = len(self.profiles) + 1
-        for i in range(count):
-            chosen_os = os_types[i % len(os_types)]
-            fp = generate_random_fingerprint(os_type=chosen_os)
-
-            proxy_conf = ProxyConfig(type=ProxyType.DIRECT, raw="direct")
-            if proxies_parsed:
-                proxy_conf = proxies_parsed[i % len(proxies_parsed)]
-
-            proxy_label = f" ({proxy_conf.host})" if proxy_conf.host else " (Direct)"
-            name = f"Profile {base_index + i:02d}{proxy_label}"
-
-            profile_tags = list(tags) if tags else ["Mass Generated", group]
-            g_settings = GoogleSettings(
-                auto_open_page=auto_open_page, tags=profile_tags, notes=notes or f"Generated in batch of {count}"
+        count = max(1, min(int(count), _constants.MAX_MASS_GENERATE_COUNT))
+        with self._save_lock:
+            self._sync_to_service()
+            out = self._service.mass_generate(
+                count=count,
+                group=group,
+                proxy_list=proxy_list,
+                os_mix=os_mix,
+                tags=tags,
+                auto_open_page=auto_open_page,
+                notes=notes,
             )
-
-            prof = BrowserProfile(name=name, group=group, proxy=proxy_conf, fingerprint=fp, google=g_settings)
-
-            saved = self.create_profile(prof)
-            created_profiles.append(saved)
-
-        return created_profiles
+            self._sync_from_service()
+            return out
 
     def export_profile_bundle(self, profile_id: str, output_path: Path | None = None) -> Path | None:
-        """
-        Exports a complete portable .nazak / zip bundle containing profile metadata,
-        fingerprint, cookies, and local session files.
-        """
-        try:
-            self._validate_id(profile_id)
-        except ValueError:
-            return None
-        prof = self.get_profile(profile_id)
-        if not prof:
-            return None
-
-        import zipfile
-
-        out_file = output_path or (self.profiles_dir / f"{profile_id}_bundle.nazak")
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-
-        prof_dir = (self.profiles_dir / profile_id).resolve()
-        if not prof_dir.is_relative_to(self.profiles_dir.resolve()):
-            return None
-
-        with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 1. Profile metadata JSON (proxy credentials protected at rest,
-            #    exactly as they are stored in profiles.json)
-            bundle_meta = prof.model_dump()
-            bundle_meta["proxy"] = protect_proxy_fields(bundle_meta.get("proxy") or {})
-            zf.writestr("profile.json", json.dumps(bundle_meta, indent=2, ensure_ascii=False))
-
-            # 2. Profile cookies
-            cookies = self.load_profile_cookies(profile_id)
-            if cookies:
-                zf.writestr("cookies.json", json.dumps(cookies, indent=2, ensure_ascii=False))
-
-            # 3. Include local session files if exist (Default/Network, Default/Local Storage, Default/IndexedDB)
-            if prof_dir.exists():
-                for root, _, files in os.walk(prof_dir):
-                    for f in files:
-                        full_f = Path(root) / f
-                        rel_path = full_f.relative_to(prof_dir)
-                        # Skip huge caches, locks, and logs
-                        if any(
-                            c in str(rel_path)
-                            for c in ["Cache", "Code Cache", "DawnCache", "GPUCache", "Singleton", "lock"]
-                        ):
-                            continue
-                        try:
-                            zf.write(full_f, arcname=f"data/{rel_path}")
-                        except Exception:
-                            pass
-
-        return out_file
+        with self._save_lock:
+            self._sync_to_service()
+            return self._service.export_bundle(profile_id, output_path)
 
     def import_profile_bundle(self, bundle_path: Path, new_name: str | None = None) -> BrowserProfile | None:
-        """
-        Imports and restores a portable .nazak / zip bundle into the workspace with zip-slip protection.
-        """
-        if not bundle_path.exists():
-            return None
-
-        import zipfile
-
-        try:
-            with zipfile.ZipFile(bundle_path, "r") as zf:
-                infos = zf.infolist()
-                # Audit R3-round2: zip-бомба. ZipInfo.file_size берётся из
-                # central directory и может быть подделан вниз, поэтому реальный
-                # объём считается потоково при распаковке.
-                if len(infos) > MAX_BUNDLE_ENTRIES:
-                    logger.warning("Bundle import refused: %d entries > %d", len(infos), MAX_BUNDLE_ENTRIES)
-                    return None
-                declared_total = sum(max(0, info.file_size) for info in infos)
-                if declared_total > MAX_BUNDLE_TOTAL_BYTES:
-                    logger.warning(
-                        "Bundle import refused: declared %d bytes > %d",
-                        declared_total,
-                        MAX_BUNDLE_TOTAL_BYTES,
-                    )
-                    return None
-                names = zf.namelist()
-                if "profile.json" not in names:
-                    return None
-
-                prof_data = json.loads(zf.read("profile.json").decode("utf-8"))
-                if isinstance(prof_data.get("proxy"), dict):
-                    prof_data["proxy"] = unprotect_proxy_fields(prof_data["proxy"])
-                new_id = f"prof_{uuid.uuid4().hex[:8]}"
-                prof_data["id"] = new_id
-                if new_name:
-                    prof_data["name"] = new_name
-                else:
-                    prof_data["name"] = f"{prof_data.get('name', 'Imported Profile')} (Imported)"
-
-                prof_data["status"] = ProfileStatus.STOPPED
-                prof_data["pid"] = None
-                prof_data["last_launched_at"] = None
-                prof_data["total_runtime_seconds"] = 0
-                prof_data["last_health_check"] = None
-                prof_data["created_at"] = datetime.now(timezone.utc).isoformat()
-                prof_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-
-                # Restore session files safely
-                target_dir = (self.profiles_dir / new_id).resolve()
-                target_dir.mkdir(parents=True, exist_ok=True)
-                extracted_total = 0
-
-                for name in zf.namelist():
-                    if name.startswith("data/"):
-                        rel_sub = name[len("data/") :]
-                        if not rel_sub:
-                            continue
-                        rel_path = Path(rel_sub)
-                        # Protect against zip-slip: block absolute paths, drives, and '..' segments
-                        if rel_path.is_absolute() or rel_path.drive or ".." in rel_path.parts:
-                            continue
-                        target_file = (target_dir / rel_path).resolve()
-                        if not target_file.is_relative_to(target_dir):
-                            continue
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        # Потоковая распаковка с реальным учётом объёма.
-                        written = 0
-                        with zf.open(name) as src, target_file.open("wb") as dst:
-                            while True:
-                                chunk = src.read(_BUNDLE_CHUNK)
-                                if not chunk:
-                                    break
-                                written += len(chunk)
-                                if written > MAX_BUNDLE_ENTRY_BYTES:
-                                    raise ValueError(f"bundle entry {name!r} exceeds {MAX_BUNDLE_ENTRY_BYTES} bytes")
-                                extracted_total += len(chunk)
-                                if extracted_total > MAX_BUNDLE_TOTAL_BYTES:
-                                    raise ValueError(f"bundle expands beyond {MAX_BUNDLE_TOTAL_BYTES} bytes")
-                                dst.write(chunk)
-
-                # Restore cookies
-                if "cookies.json" in zf.namelist():
-                    cookie_blob = zf.read("cookies.json")
-                    if len(cookie_blob) > MAX_BUNDLE_ENTRY_BYTES:
-                        raise ValueError("cookies.json in bundle is too large")
-                    cookies = json.loads(cookie_blob.decode("utf-8"))
-                    from .cookie_manager import cookies_to_netscape
-
-                    (target_dir / "cookies.json").write_text(json.dumps(cookies, indent=2), encoding="utf-8")
-                    (target_dir / "cookies.txt").write_text(cookies_to_netscape(cookies), encoding="utf-8")
-
-                restored_profile = BrowserProfile(**prof_data)
-                self.profiles[new_id] = restored_profile
-                self.save_profiles()
-                return restored_profile
-        except Exception as exc:
-            # Не оставляем полураспакованный каталог после отказа по лимитам.
-            logger.warning("Bundle import failed: %s", exc)
-            if "target_dir" in locals():
-                shutil.rmtree(target_dir, ignore_errors=True)
-            return None
+        with self._save_lock:
+            self._sync_to_service()
+            out = self._service.import_bundle(bundle_path, new_name)
+            self._sync_from_service()
+            return out
