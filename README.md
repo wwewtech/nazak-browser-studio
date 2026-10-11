@@ -16,14 +16,14 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-772%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-789%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.11.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.12.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -196,6 +196,25 @@ with sync_playwright() as p:
 
 ---
 
+## 🗂 Project Layout (v1.12.0)
+
+The v1.12.0 release decomposed the two monoliths and gave the GUI one task runner.
+Compatibility is preserved: every old import path and `patch()` target still works.
+
+| Area | Where it lives now |
+|---|---|
+| REST API | `nazak/api/server.py` is a thin composition root; endpoints live in `nazak/api/routers/` (system, profiles, automation, proxies, cookies, warmup, synchronizer, autopost), request bodies in `nazak/api/schemas.py`, the Host/Origin/token/CSP perimeter in `nazak/api/security.py`, the WebSocket hub in `nazak/api/realtime.py`, lazy singletons in `nazak/api/deps.py` |
+| Profiles & storage | `nazak/core/profile_manager.py` is a facade over `nazak/core/profiles/` (`store_json` / `store_sqlite`, `service`, `bundles`, `files`, `merge`, `constants`, `presets`) |
+| Desktop UI | `nazak/gui/task_bridge.py` (one `QThread`, busy-guard, `cancel()`, headless inline mode) + `nazak/gui/tasks.py` (Qt-free tasks); `nazak/gui/workers.py` keeps the original worker classes and signal names |
+| Configuration | `nazak/config.py` — paths only; `ensure_data_dirs()` provisions `data/` and is called by the real entry points, not at import time |
+
+Full map, storage-backend details and the operations/hardening notes:
+[API reference § Code Map](docs/API_REFERENCE.md#-code-map--where-each-api-area-lives-p0-layout) ·
+[§ Storage Backends](docs/API_REFERENCE.md#-profile-storage-backends--json-default--sqlite-opt-in) ·
+[§ Operations & Hardening](docs/API_REFERENCE.md#-operations--hardening-p1).
+
+---
+
 ## 🚀 Quick Start
 
 ### 🪟 Windows: Pre-Built Binary (Recommended)
@@ -254,31 +273,34 @@ Profile storage is selectable in the container too: `NAZAK_PROFILE_STORE=json` (
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **772 collected tests** (767 selected; 5 `live` tests are deselected by default):
+The project is backed by a comprehensive regression and unit test suite comprising **794 collected tests** (789 selected; 5 `live` tests are deselected by default):
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-=========================== 772 passed, 5 deselected ============================
+=========================== 789 passed, 5 deselected ============================
 ```
 
 The suite is green with all dependencies installed (`PyQt6`/`qfluentwidgets`,
 `playwright`, `ffmpeg`). CI runs the full matrix (Windows + Ubuntu × Python
-3.10–3.13) against both profile storage backends (`NAZAK_PROFILE_STORE=json`
-and `sqlite`) — see [CHANGELOG](CHANGELOG.md) (P0 section) and
-[API reference § Storage Backends](docs/API_REFERENCE.md#-profile-storage-backends--json-default--sqlite-opt-in).
+3.10–3.13) with a coverage floor of 65 %, then re-runs the backend-agnostic
+API/store suites with `NAZAK_PROFILE_STORE=sqlite` — see [CHANGELOG](CHANGELOG.md)
+and [API reference § Storage Backends](docs/API_REFERENCE.md#-profile-storage-backends--json-default--sqlite-opt-in).
 
-New in this round: `tests/test_p0_api_split.py` (routes/exports/handler
-identity after the API monolith split), `tests/test_p0_sqlite_store.py`
-(SQLite roundtrip, JSON→SQLite migration, single-row upserts, corrupt-JSON
-survival, bare-list format), `tests/test_p0_task_bridge.py` (TaskBridge
-inline sync/async, busy-guard, cancel, error, progress).
+New in v1.12.0: `tests/test_p0_api_split.py` (routes/exports/handler identity
+after the API monolith split), `tests/test_p0_sqlite_store.py` (SQLite
+roundtrip, JSON→SQLite migration, single-row upserts, corrupt-JSON survival,
+bare-list format), `tests/test_p0_task_bridge.py` (TaskBridge inline sync/async,
+busy-guard, cancel, error, progress) and `tests/test_p1_platform_hardening.py`
+(import purity, log rotation, dependency drift, container and CI contracts,
+version consistency across the release artefacts, documentation links and
+English-only docs).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 
-Round-3 audit regressions: `tests/test_round3_fixes.py` (29 tests: secret masking with `--reveal`, honest `account totp`, `@file`/`--out` hardening, publish-uncertain retry policy, warmup clamps, API perimeter), `tests/test_web_ui_injection_guards.py` (5 tests: HTML-injection guards) and the second-pass suites `tests/test_round3b_api_bounds.py` (12), `tests/test_round3b_stealth_and_sync.py` (16), `tests/test_round3b_storage_and_packaging.py` (9), `tests/test_round3b_cli_background.py` (4), `tests/test_web_assets_hardening.py` (7) and `tests/test_gui_and_tools_hardening.py` (8).
+Round-3 audit regressions: `tests/test_round3_api_fixes.py`, `tests/test_round3_cli_fixes.py` and `tests/test_round3_publish_fixes.py` (29 tests together: secret masking with `--reveal`, honest `account totp`, `@file`/`--out` hardening, publish-uncertain retry policy, warmup clamps, API perimeter), `tests/test_web_ui_injection_guards.py` (5 tests: HTML-injection guards) and the second-pass suites `tests/test_round3b_api_bounds.py` (12), `tests/test_round3b_stealth_and_sync.py` (16), `tests/test_round3b_storage_and_packaging.py` (9), `tests/test_round3b_cli_background.py` (4), `tests/test_web_assets_hardening.py` (7) and `tests/test_gui_and_tools_hardening.py` (8).
 
 - `test_cdp_injector.py` — CDP stealth injector: UA/Client-Hints rebuilt from the real running Chrome version, per-session timezone override, `Fetch.authRequired` proxy credential answering (regression: `handleAuthRequests` must be enabled or 407 challenges never fire), injector handle lifecycle.
 - `tests/live/` — opt-in live suite (`pytest -m live`): real Chromium stealth launch (`applied=True`), synchronizer master→worker replication, and a real-browser XSS check of the dashboard (`test_dashboard_xss_live.py` — drives Chromium against the live Web Studio, feeds attacker-controlled `health.ip/country/city` values, and fails if the injected script executes or reaches the local API); deselected by default in regular runs.

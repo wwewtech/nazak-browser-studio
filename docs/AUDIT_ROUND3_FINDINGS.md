@@ -2,9 +2,11 @@
 
 > **Status: fixed (Round 3 closed).** All findings in §3–§6 are fixed in the code, except for one
 > deliberately deferred (R3-15 still counts as "done": the mypy codes are enabled and 16 errors
-> were fixed). What exactly was done is in `CHANGELOG.md` ("Unreleased — Round-3 Audit
-> Remediation"). Tests: `tests/test_round3_fixes.py` (29) and
-> `tests/test_web_ui_injection_guards.py` (5); `ruff check`, `ruff format --check`, and `mypy`
+> were fixed). What exactly was done is in `CHANGELOG.md` ("v1.11.0 — Round-3 & Round-3b Audit
+> Remediation"). Tests: `tests/test_round3_api_fixes.py`, `tests/test_round3_cli_fixes.py` and
+> `tests/test_round3_publish_fixes.py` (29 together; the single `test_round3_fixes.py` was split
+> into these three later) and `tests/test_web_ui_injection_guards.py` (5); `ruff check`,
+> `ruff format --check`, and `mypy`
 > (with **all** error codes enabled) are clean. A full run in this environment:
 > **659 passed, 9 failed, 0 errors**, where all 9 failures are the absence of `qfluentwidgets` (6)
 > and `playwright` (4) from the environment, that is, exactly the same 9 that failed before the fixes.

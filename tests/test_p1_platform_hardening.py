@@ -324,3 +324,85 @@ def test_documentation_is_free_of_cyrillic_outside_design_notes():
     }
     offenders = {name: count for name, count in offenders.items() if count}
     assert not offenders, f"documentation still contains Cyrillic characters: {offenders}"
+
+
+def _collect_suite_counts() -> tuple[int, int, int]:
+    """Return (selected, collected, deselected) for the real test suite.
+
+    Collection only, so this is cheap and does not re-run anything: it is what
+    keeps the documented figures honest instead of merely self-consistent.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests", "--collect-only", "-q", "-p", "no:cacheprovider"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    output = proc.stdout + proc.stderr
+    match = re.search(r"(\d+)/(\d+) tests collected \((\d+) deselected\)", output)
+    assert match, f"could not read the collected-test counts from pytest output:\n{output[-2000:]}"
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def test_documentation_suite_figures_match_reality():
+    """The documented suite figures must equal the real collection counts.
+
+    These numbers drifted three times (the README said 772 while the changelog
+    said 783 and the suite actually ran 787), so they are now checked against
+    pytest's own collection: the README badge, the README test section and the
+    newest CHANGELOG entry all have to agree with reality, not just each other.
+    Historical changelog entries are ignored on purpose.
+    """
+    selected, collected, deselected = _collect_suite_counts()
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    badge = re.search(r"badge/tests-(\d+)%20passing", readme)
+    assert badge, "README must keep the 'tests passing' badge"
+    readme_collected = re.search(r"\*\*(\d+) collected tests\*\*", readme)
+    assert readme_collected, "README must state the collected test count"
+    readme_run = re.search(r"(\d+) passed, (\d+) deselected", readme)
+    assert readme_run, "README must state the current 'N passed, M deselected' line"
+
+    # The newest CHANGELOG entry is the section right after the title.
+    current_entry = changelog.split("\n## ", 1)[1]
+    changelog_run = re.search(r"(\d+) passed, (\d+) deselected", current_entry)
+    assert changelog_run, "the newest CHANGELOG entry must state 'N passed, M deselected'"
+
+    expected = (
+        f"real suite: {selected} selected / {collected} collected / {deselected} deselected\n"
+        f"README badge: {badge.group(1)}\n"
+        f"README collected: {readme_collected.group(1)}\n"
+        f"README run line: {readme_run.group(1)} passed, {readme_run.group(2)} deselected\n"
+        f"CHANGELOG run line: {changelog_run.group(1)} passed, {changelog_run.group(2)} deselected"
+    )
+
+    assert badge.group(1) == readme_run.group(1) == changelog_run.group(1) == str(selected), (
+        f"documented 'passed' figure is out of date\n{expected}"
+    )
+    assert readme_collected.group(1) == str(collected), f"documented collected figure is out of date\n{expected}"
+    assert readme_run.group(2) == changelog_run.group(2) == str(deselected), (
+        f"documented deselected figure is out of date\n{expected}"
+    )
+
+
+def test_documentation_references_existing_test_files():
+    """Test files named in the docs must exist under tests/.
+
+    `tests/test_round3_fixes.py` was split into three files while README and
+    CHANGELOG kept pointing at the old name, so the references are validated now.
+    """
+    docs = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "CHANGELOG.md",
+        REPO_ROOT / "docs" / "AUDIT_ROUND3_FINDINGS.md",
+    ]
+    ref_re = re.compile(r"tests/(test_[a-z0-9_]+\.py)")
+    missing: dict[str, list[str]] = {}
+    for doc in docs:
+        for ref in sorted(set(ref_re.findall(doc.read_text(encoding="utf-8")))):
+            if not (REPO_ROOT / "tests" / ref).is_file():
+                missing.setdefault(doc.name, []).append(ref)
+    assert not missing, f"documents reference test files that do not exist: {missing}"

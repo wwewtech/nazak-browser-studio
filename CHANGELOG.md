@@ -63,7 +63,9 @@ No behaviour change on default settings. `profiles.json` on-disk format is uncha
   bare-list format), `tests/test_p0_task_bridge.py` (inline sync/async, busy-guard, cancel,
   error, progress), `tests/test_p1_platform_hardening.py` (import purity, log rotation,
   dependency drift, container and CI contracts).
-- Suite: **783 passed, 5 deselected**; `ruff check`, `ruff format --check` and `mypy nazak` clean.
+- Suite: **789 passed, 5 deselected** (794 collected); `ruff check`, `ruff format --check` and
+  `mypy nazak` clean. CI: all 12 jobs green on the tagged commit (lint, mypy, security audit,
+  and the 8 OS/Python matrix legs, each with a SQLite-backend leg).
 - Documentation translated to English throughout (`docs/*.md`, `CHANGELOG.md`), plus new
   [API reference § Operations & Hardening](docs/API_REFERENCE.md#-operations--hardening-p1) and
   a rewritten `docs/CLI_REFERENCE.md` § 5b/5c. User-facing CLI help text stays Russian by
@@ -268,7 +270,9 @@ import and every API request model. Findings, evidence and verification: §11 of
 - `core.video_uniquifier.generate_demo_clip()` — a single honest demo-clip generator for the API and the CLI.
 - A global `--reveal` flag + the `NAZAK_REVEAL` env var; `--force` for `cookie export`, `cookie bulk-export`, `profile bundle-export`.
 - `enforce_exposure_policy(host)` in `nazak/api/server.py`.
-- Tests: `tests/test_round3_fixes.py` (29) and `tests/test_web_ui_injection_guards.py` (5).
+- Tests: `tests/test_round3_api_fixes.py`, `tests/test_round3_cli_fixes.py` and
+  `tests/test_round3_publish_fixes.py` (29 together; the single `test_round3_fixes.py` was split
+  into these three later) and `tests/test_web_ui_injection_guards.py` (5).
 
 ### Fixed — Docker plumbing (verified on real Docker 29.8.2)
 
