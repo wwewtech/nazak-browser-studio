@@ -84,11 +84,18 @@ def check_all_proxies(profiles, profiles_dir: Path, handle=None, progress=None):
 
 
 def rotate_proxy(profile_id: str, rotation_url: str, timeout: float = 8.0, handle=None, progress=None) -> int:
-    """Fetch a rotation URL (blocking, short timeout). Returns HTTP status."""
+    """Fetch a rotation URL (blocking, short timeout). Returns HTTP status.
+
+    The scheme is pinned to http(s) so urlopen can never be handed file:/ftp:/
+    custom schemes (bandit B310) — the URL comes from the user's proxy settings.
+    """
     import urllib.request
 
+    if not rotation_url.lower().startswith(("http://", "https://")):
+        raise ValueError("rotation_url must be an http:// or https:// URL")
+
     req = urllib.request.Request(rotation_url, headers={"User-Agent": "Nazak-Studio"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
         return int(getattr(resp, "status", 0) or 0)
 
 

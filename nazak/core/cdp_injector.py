@@ -155,7 +155,7 @@ def _json_version_ws(port: int, timeout_sec: float = 5.0) -> str | None:
     url = f"http://127.0.0.1:{port}/json/version"
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=1.5) as resp:
+            with urllib.request.urlopen(url, timeout=1.5) as resp:  # nosec B310 - loopback CDP endpoint
                 data = json.loads(resp.read().decode("utf-8"))
                 ws = data.get("webSocketDebuggerUrl")
                 if ws:
@@ -172,7 +172,7 @@ def read_chrome_version_from_ws_info(ws_url: str | None, timeout_sec: float = 3.
         return None
     try:
         port = ws_url.split("/")[2].split(":")[1]
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=timeout_sec) as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=timeout_sec) as resp:  # nosec B310
             browser = json.loads(resp.read().decode("utf-8")).get("Browser", "")
         m = re.search(r"(\d+(?:\.\d+)+)", browser)
         return m.group(1) if m else None

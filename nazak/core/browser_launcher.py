@@ -412,7 +412,7 @@ class BrowserLauncher:
         while time.time() - start_time < timeout_sec:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
-                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                with urllib.request.urlopen(req, timeout=1.0) as resp:  # nosec B310 - loopback CDP endpoint
                     if resp.status == 200:
                         data = json.loads(resp.read().decode("utf-8"))
                         ws_url = data.get("webSocketDebuggerUrl")

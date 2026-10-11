@@ -81,9 +81,28 @@ EXPECTED_EXPORTS = (
 
 
 def test_p0_all_api_paths_still_mounted():
+    """Every pre-split endpoint is still mounted on the app.
+
+    The schema (`app.openapi()["paths"]`) is the contract clients actually see,
+    so it is the primary source of truth here; the router objects are checked
+    too, with a diagnostic message that reports the real state if it ever
+    diverges (a bare `app.routes` comparison failed once on Linux CI while the
+    endpoints kept serving, and a silent failure tells us nothing).
+    """
+    schema_paths = set(app.openapi()["paths"])
+    missing = [p for p in EXPECTED_PATHS if p not in schema_paths]
+    assert not missing, (
+        f"routes lost in split: {missing}\n"
+        f"openapi paths: {len(schema_paths)}\n"
+        f"app.routes: {len(app.routes)} "
+        f"(type={type(app.routes).__name__}, same object as server.app={app is server.app})\n"
+        f"first routes: {[getattr(r, 'path', None) for r in list(app.routes)[:8]]}"
+    )
+
+    # The router list must agree with the schema (belt and braces).
     mounted = {getattr(r, "path", "") for r in app.routes}
-    missing = [p for p in EXPECTED_PATHS if p not in mounted]
-    assert not missing, f"routes lost in split: {missing}"
+    not_in_routers = [p for p in schema_paths if p not in mounted]
+    assert not not_in_routers, f"paths advertised by the schema but not mounted on app.routes: {not_in_routers}"
 
 
 def test_p0_server_exports_preserved():

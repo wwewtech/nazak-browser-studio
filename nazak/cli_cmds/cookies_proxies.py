@@ -10,6 +10,7 @@ from .common import (
     EXIT_CONFLICT,
     EXIT_NOT_FOUND,
     EXIT_OK,
+    EXIT_USAGE,
     GlobalOptions,
     UsageError,
     console,
@@ -284,9 +285,13 @@ def cmd_proxy_rotate(args, opt: GlobalOptions) -> int:
     url = (p.proxy.rotation_url or "").strip()
     if not url or url in ("***", "<encrypted: unavailable passphrase>") or url.startswith("<encrypted"):
         return emit_error("rotation_url не задан или замаскирован", opt, EXIT_CONFLICT)
+    # B310: the scheme is pinned to http(s) before the fetch, so urlopen can
+    # never be talked into file:/ftp:/custom schemes.
+    if not url.lower().startswith(("http://", "https://")):
+        return emit_error("rotation_url должен начинаться с http:// или https://", opt, EXIT_USAGE)
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
-        with urllib.request.urlopen(req, timeout=10.0) as resp:
+        with urllib.request.urlopen(req, timeout=10.0) as resp:  # nosec B310
             body = resp.read().decode("utf-8", errors="ignore")[:200]
             return emit_success(f"IP rotated (HTTP {resp.status})", opt, {"status_code": resp.status, "response": body})
     except Exception as e:

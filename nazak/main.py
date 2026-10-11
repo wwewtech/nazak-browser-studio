@@ -191,7 +191,7 @@ def main():
 def start_web_mode(host: str, port: int, open_browser: bool = True):
     import uvicorn
 
-    if host == "0.0.0.0":
+    if host == "0.0.0.0":  # nosec B104 - compared, not bound; enforce_exposure_policy() guards the bind
         import logging
 
         logging.getLogger(__name__).warning(
