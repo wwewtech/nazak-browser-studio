@@ -1,10 +1,10 @@
 # Deep Audit — Round 2 (2026-09-27)
 
-> ⚠️ **Исторический документ.** Все находки ниже исправлены в v1.9.1, а ссылки на строки
-> кода с тех пор устарели (например, `server.py:205-217` теперь соответствует ~214-228, а
-> упомянутые `POST /api/profiles/{profile_id}/export` и `POST /api/profiles/import` в коде
-> отсутствуют). Актуальный разбор — `docs/AUDIT_ROUND3_FINDINGS.md`, изменения — `CHANGELOG.md`.
-> Документ оставлен как история: переписывать номера строк в нём смысла нет.
+> ⚠️ **Historical document.** All the findings below were fixed in v1.9.1, and the line
+> references have gone stale since (for example, `server.py:205-217` now corresponds to ~214-228, and the
+> mentioned `POST /api/profiles/{profile_id}/export` and `POST /api/profiles/import` are absent
+> from the code). The up-to-date analysis is `docs/AUDIT_ROUND3_FINDINGS.md`; the changes are in `CHANGELOG.md`.
+> The document is kept as history: there is no point in rewriting the line numbers in it.
 
 Second-pass audit after the v1.9.0 remediation. Every finding below was **reproduced at
 runtime** on this machine (Python 3.12.3, Windows), not just read from source. Probes were

@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-725%20collected-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-772%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -240,26 +240,41 @@ curl -H "X-API-Key: change-me-to-a-long-random-secret" http://127.0.0.1:8899/api
 
 `docker compose up` fails fast with an explicit message if `NAZAK_API_TOKEN` is missing. To reach the API from another machine, change the port mapping to `"8899:8899"` **and** keep the token — that combination is the only supported exposed setup. Runtime profiles/cookies live in the bind-mounted `./data` (never baked into the image: `.dockerignore` excludes `data/` and `.git`). `.github/workflows/docker.yml` builds the image and checks the runtime contract on every change to the Docker files; the same scenario was verified locally against Docker 29.8.2 (`docker build` → 16/16 runtime checks → `docker compose up -d --build`).
 
+The image is multi-stage and runs as the unprivileged user `nazak` (uid/gid **10001**) with a `HEALTHCHECK` that probes `/api/system/info`. Since the app writes into the bind mount, make sure `./data` is writable by that uid — once, on the host:
+
+```powershell
+sudo chown -R 10001:10001 ./data
+```
+
+Profile storage is selectable in the container too: `NAZAK_PROFILE_STORE=json` (default) or `sqlite` (`profiles.db` in the same `./data`, with a one-shot migration that keeps `profiles.pre-sqlite.<ts>.bak`).
+
 > 🪟 **Windows note**: Docker Desktop uses the WSL2 backend, so `wsl --install` (in an administrative PowerShell) plus a restart is required before the engine can start on a machine where WSL is absent.
 
 ---
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **725 collected tests** (722 selected; 3 `live` tests are deselected by default):
+The project is backed by a comprehensive regression and unit test suite comprising **772 collected tests** (767 selected; 5 `live` tests are deselected by default):
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-============================ 715 passed, 7 failed, 3 deselected =============================
+=========================== 772 passed, 5 deselected ============================
 ```
 
-The 7 failures in a bare environment are dependency-related, not behavioural: `PyQt6`/`qfluentwidgets`
-(6 GUI tests) and `playwright` (1 live test) are not installed there; the same suite is green once
-those are present. The reference run on the previous commit in the same bare environment reported
-9 failures, so this round also closed one of them.
+The suite is green with all dependencies installed (`PyQt6`/`qfluentwidgets`,
+`playwright`, `ffmpeg`). CI runs the full matrix (Windows + Ubuntu × Python
+3.10–3.13) against both profile storage backends (`NAZAK_PROFILE_STORE=json`
+and `sqlite`) — see [CHANGELOG](CHANGELOG.md) (P0 section) and
+[API reference § Storage Backends](docs/API_REFERENCE.md#-profile-storage-backends--json-default--sqlite-opt-in).
+
+New in this round: `tests/test_p0_api_split.py` (routes/exports/handler
+identity after the API monolith split), `tests/test_p0_sqlite_store.py`
+(SQLite roundtrip, JSON→SQLite migration, single-row upserts, corrupt-JSON
+survival, bare-list format), `tests/test_p0_task_bridge.py` (TaskBridge
+inline sync/async, busy-guard, cancel, error, progress).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 

@@ -23,6 +23,158 @@
 9. [System Diagnostics & WebSocket Events](#-8-system-diagnostics--websocket-events)
 10. [Secrets Storage — User-Selectable Encryption Mode](#-9-secrets-storage--user-selectable-encryption-mode)
 11. [Hardware Isolation & Manifest V3 Stealth Architecture](#-10-hardware-isolation--manifest-v3-stealth-architecture)
+12. [Code Map — Where Each API Area Lives (P0 layout)](#-code-map--where-each-api-area-lives-p0-layout)
+13. [Profile Storage Backends — JSON (default) & SQLite (opt-in)](#-profile-storage-backends--json-default--sqlite-opt-in)
+14. [Operations & Hardening (P1)](#-operations--hardening-p1)
+
+---
+
+## 🗂 Code Map — Where Each API Area Lives (P0 layout)
+
+`nazak/api/server.py` is now a thin composition root (singletons, guard,
+`app`, router mounting, WebSocket). It re-exports every name the old
+1792-line monolith exposed, so `from nazak.api.server import ...` and
+`patch("nazak.api.server.profile_manager")` keep working unchanged.
+
+| Area | Router module | Schemas | Notes |
+|---|---|---|---|
+| System + secrets-mode | `nazak/api/routers/system.py` | `SecretsModeRequest` | `GET /api/system/info`, `GET/POST /api/security/secrets-mode` |
+| Profiles (CRUD, launch/stop, clone, bundles) | `nazak/api/routers/profiles.py` | `LaunchRequest`, `BulkImportRequest`, `MassGenerateRequest` | batch endpoints mutate via `ProfileManager` |
+| Dolphin v1.0 + CDP + batch launch/stop | `nazak/api/routers/automation.py` | `BatchActionRequest` | `launch_with_cdp` returns `automation: {port, wsEndpoint}` |
+| Proxy check + rotation | `nazak/api/routers/proxies.py` | `ProxyTestRequest` | rotation fetch is SSRF-pinned (see `security.py`) |
+| Cookies | `nazak/api/routers/cookies.py` | `CookieImportRequest`, `BulkCookie*Request` | ZIP export via `cookie_manager` |
+| Scenarios & warmup | `nazak/api/routers/warmup.py` | `WarmupRequest`, `ScenarioRunRequest` | `SCENARIO_ALIASES` live in the router |
+| Synchronizer | `nazak/api/routers/synchronizer.py` | `SynchronizerStartRequest`, `SynchronizerNavigateRequest`, `WindowTileRequest` | |
+| Autoposter | `nazak/api/routers/autopost.py` | `AutopostBatchRequest`, `UniquifyRequest` | `asyncio.to_thread` for ffmpeg |
+
+Shared pieces:
+
+- `nazak/api/schemas.py` — all request bodies with audit bounds (count
+  `1..200`, delays `0..3600`, `cols 1..8`, id lists ≤ 500, …). Bounds are
+  load-bearing: single calls cannot stall the server.
+- `nazak/api/security.py` — local-only `Host`/`Origin`/`Sec-Fetch-Site`
+  guard, `NAZAK_API_TOKEN` policy (`enforce_exposure_policy`,
+  `X-API-Key`), CSP + security headers, `validate_pid`, proxy/notes
+  masking, `resolve_media_source`, SSRF-pinned rotation fetch.
+- `nazak/api/realtime.py` — WebSocket `ConnectionManager` (`ws_manager`)
+  + `on_process_state_change` broadcast.
+- `nazak/api/deps.py` — lazy accessors (`pm()`, `bl()`, …) so routers
+  always see the *current* `nazak.api.server` singletons (tests replace
+  them per-test).
+
+The GUI background jobs behind these endpoints (`workers.py`) run through
+a single `TaskBridge` (`nazak/gui/task_bridge.py`): one `QThread` at a time
+(busy → `RuntimeError`), cooperative `cancel()`, Qt signals
+(`progress`/`finished`/`error`/`cancelled`), headless inline fallback for
+tests. Business logic lives in Qt-free callables in `nazak/gui/tasks.py`
+(`check_single_proxy`, `check_all_proxies`, `rotate_proxy`,
+`run_warmup_scenario`, `run_autopost_batch`).
+
+---
+
+## 💾 Profile Storage Backends — JSON (default) & SQLite (opt-in)
+
+`ProfileManager` (`nazak/core/profile_manager.py`) is a facade over the
+`nazak.core.profiles` package and keeps the exact public API the test-suite
+relies on (`profiles` dict, `_save_lock`, `_merge_*`, `MAX_BUNDLE_*`,
+`save_profiles()`, …). On-disk `profiles.json` format is unchanged
+(a bare list of `BrowserProfile` dicts).
+
+| Piece | Module | Role |
+|---|---|---|
+| Store contract | `profiles/store_json.py` (`ProfileBackend`) | `load_all()` / `save_all()` |
+| JSON backend | `profiles/store_json.py` (`JsonProfileBackend`) | atomic write (tmp + rename, Windows retries), corrupt-file `.bak`, rotating `.bak.N` (5) |
+| SQLite backend | `profiles/store_sqlite.py` (`SqliteProfileBackend`) | `profiles.db` (WAL), `save_one`/`delete_one` upserts, `VACUUM`, one-shot JSON→SQLite migration |
+| Business logic | `profiles/service.py` (`ProfileService`) | CRUD, clone (fresh fingerprints/seeds), mass-generate (clamped to 200), batch cookies, bundles, reencrypt |
+| Bundles | `profiles/bundles.py` | `.nazak` export/import with zip-slip + zip-bomb guards |
+| Disk files | `profiles/files.py` | cookies, cache purge, history seeding, sizes, `validate_id` |
+| Merge rules | `profiles/merge.py` | masked-secret round-trip, proxy/fingerprint/google partial-update merges |
+| Constants | `profiles/constants.py` | `MAX_MASS_GENERATE_COUNT=200`, bundle bounds, `MASK="***"` |
+| Defaults | `profiles/presets.py` | the 10 seed profiles |
+| Backend select | `backend_for()` in `store_sqlite.py` | `NAZAK_PROFILE_STORE=json` (default) / `sqlite` (opt-in) |
+
+### `NAZAK_PROFILE_STORE`
+
+- `json` (default) — current behaviour, full backward compatibility.
+- `sqlite` (opt-in) — `profiles.db` next to `profiles.json` (WAL mode).
+  First open migrates every valid row from `profiles.json` in one
+  transaction and keeps the JSON as `profiles.pre-sqlite.<ts>.bak`
+  (never deleted). Updates use single-row upserts (`save_one`) instead
+  of rewriting the whole file; deletes use `delete_one`. Corrupt JSON no
+  longer resets the fleet when SQLite already has data.
+- Rollback: unset the variable (or set `json`) — the JSON file stays in
+  place and is used again on next start.
+
+```powershell
+$env:NAZAK_PROFILE_STORE="sqlite"; python -m nazak.main --mode web
+$env:NAZAK_PROFILE_STORE="sqlite"; python -m nazak.cli profile list --json
+```
+
+GUI `TaskBridge` note: Qt workers that touch profiles (`AutopostBatchWorker`,
+`WarmupScenarioWorker`, proxy checkers) execute `tasks.*` callables through
+one owned `QThread`; headless/test runs execute the same callables inline.
+
+---
+
+## 🛡 Operations & Hardening (P1)
+
+### Dependency policy
+
+`pyproject.toml` `[project.dependencies]` is the canonical runtime list;
+`requirements.txt` is what the Docker image installs. `tests/test_p1_platform_hardening.py`
+parses both and fails if a package exists in only one of them, so the two files cannot
+drift apart.
+
+CI runs a `security-audit` job on every push/PR:
+
+- `pip-audit -r requirements.txt --desc on` — prints every advisory affecting the declared
+  requirement set. It is advisory-only (the step does not fail the build), so a newly
+  published transitive CVE cannot block unrelated pull requests.
+- `bandit -c pyproject.toml -r nazak -ll` — static analysis at **medium severity and above**,
+  and it *does* fail the build. The `[tool.bandit]` skips are explicit and documented:
+  asserts (internal invariants), `subprocess` usage (launching Chrome/ffmpeg is the product
+  feature), best-effort cleanup `try/except`, and `"password"` literals that are field names
+  rather than secrets.
+
+### Import purity
+
+`nazak/config.py` no longer creates directories at import time. `ensure_data_dirs()` is
+idempotent and is called by the real entry points: `nazak/main.py`, the API composition root
+(`nazak/api/server.py`), the CLI helpers (`nazak/cli_cmds/common.py`) and the GUI launcher.
+A test spawns a fresh interpreter with a redirected `NAZAK_DATA_DIR` and asserts that
+`import nazak.config` leaves the filesystem untouched.
+
+### Logging
+
+In the windowed (no-console) build, `sys.stdout`/`sys.stderr` are replaced by a
+size-rotated stream (`nazak/main.py`, 5 MiB × 3 backups). The previous implementation opened
+and appended to the log file on every write with no rotation.
+
+### Container
+
+The image is multi-stage (`builder` → `runtime`): the runtime layer receives a prepared
+virtualenv and the Chromium build, but no pip caches or build tooling. It runs as the
+unprivileged user `nazak` (uid/gid **10001**) and declares a `HEALTHCHECK` that probes
+`/api/system/info` with the token from the environment.
+
+Because the app writes to `./data` through a bind mount, the host directory must be writable
+by uid 10001:
+
+```powershell
+docker compose up -d --build
+# first run only, if ./data is owned by your desktop user:
+sudo chown -R 10001:10001 ./data
+```
+
+`docker compose config`/`docker run` smoke tests (`.github/workflows/docker.yml`) keep
+verifying the refusal-without-token path and the Host/Origin/token policy.
+
+### Test gates
+
+CI runs the full matrix (Windows + Ubuntu × Python 3.10–3.13) against **both** storage
+backends (`NAZAK_PROFILE_STORE=json|sqlite`) with a coverage floor of **65 %** (measured
+baseline: 69 %). A separate opt-in `live-browser-smoke` job (workflow_dispatch) caches the
+Playwright browsers and runs `pytest -m live tests/live`.
 
 ---
 

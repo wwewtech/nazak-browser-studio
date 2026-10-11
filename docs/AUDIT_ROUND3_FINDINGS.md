@@ -1,107 +1,107 @@
-# Аудит Nazak Browser Studio — раунд 3: дыры, расхождения и что осталось неисправленным
+# Nazak Browser Studio Audit — Round 3: Gaps, Discrepancies, and What Remains Unfixed
 
-> **Статус: исправлено (раунд 3 закрыт).** Все находки §3–§6 закрыты в коде, кроме одной
-> сознательно отложенной (R3-15 остаётся как «сделано»: коды mypy включены, 16 ошибок
-> исправлены). Что именно сделано — в `CHANGELOG.md` («Unreleased — Round-3 Audit
-> Remediation»). Тесты: `tests/test_round3_fixes.py` (29) и
-> `tests/test_web_ui_injection_guards.py` (5); `ruff check`, `ruff format --check` и `mypy`
-> (со **всеми** включёнными кодами ошибок) — чистые. Полный прогон в этом окружении:
-> **659 passed, 9 failed, 0 errors**, где все 9 падений — отсутствие `qfluentwidgets` (6)
-> и `playwright` (4) в окружении, то есть ровно те же 9, что падали до правок.
-> Отчёт оставлен как исторический документ аудита: сами находки ниже не переписаны.
-> Позже был отдельно проверен Docker-контур — см. §10 (найдена и исправлена поломка сборки).
+> **Status: fixed (Round 3 closed).** All findings in §3–§6 are fixed in the code, except for one
+> deliberately deferred (R3-15 still counts as "done": the mypy codes are enabled and 16 errors
+> were fixed). What exactly was done is in `CHANGELOG.md` ("Unreleased — Round-3 Audit
+> Remediation"). Tests: `tests/test_round3_fixes.py` (29) and
+> `tests/test_web_ui_injection_guards.py` (5); `ruff check`, `ruff format --check`, and `mypy`
+> (with **all** error codes enabled) are clean. A full run in this environment:
+> **659 passed, 9 failed, 0 errors**, where all 9 failures are the absence of `qfluentwidgets` (6)
+> and `playwright` (4) from the environment, that is, exactly the same 9 that failed before the fixes.
+> The report is kept as a historical audit document: the findings below have not been rewritten.
+> The Docker setup was checked separately later — see §10 (a broken build was found and fixed).
 
-Документ составлен по фактическому чтению кода рабочей копии
-`C:\Users\User\Desktop\work\nazak-browser-studio` и по истории git (69 коммитов, `git rev-list --count HEAD` → 69).
-Каждое утверждение снабжено ссылкой `файл:строка`. Где проверка не удалась — это написано прямо.
+This document was compiled from an actual reading of the working-copy code at
+`C:\Users\User\Desktop\work\nazak-browser-studio` and from the git history (69 commits, `git rev-list --count HEAD` → 69).
+Every statement is backed by a `file:line` reference. Where a check failed, that is stated plainly.
 
 ---
 
-## 0. Методика и границы проверки
+## 0. Methodology and Scope of the Review
 
-Что реально выполнялось (не только чтение):
+What was actually executed (not just read):
 
-| Проверка | Команда / способ | Результат |
+| Check | Command / method | Result |
 |---|---|---|
-| Утечка секретов в CLI | свой профиль в `NAZAK_DATA_DIR`, затем `python -m nazak.cli profile get prof_v1 --json` | секреты в открытом виде, exit 0 |
-| TOTP из CLI | `python -m nazak.cli account totp prof_v1 --json` | `totp_code: "000000"`, exit 0 |
-| Локальный guard API | `starlette.testclient.TestClient(app)` с разными `Host`/`Origin` | см. §3.1 |
-| Экспорт cookie без ключа | `GET /api/profiles/prof_v1/cookies/export` | 200 + httpOnly-cookie в теле |
-| Запуск тестов | `python -m pytest tests -q` (как в `README.md:233`) | ошибка запуска, см. §6.1 |
-| Полный прогон тестов | `pytest tests -o addopts=""` (temp-каталог внутри workspace) | `9 failed, 491 passed, 149 warnings, 133 errors in 196.53s` |
-| Секреты в истории git | `git log --all -p` (патч 7 317 628 байт, 69 коммитов) + поиск шаблонов ключей | см. §7 |
-| Зависимости-транзитивность | `importlib.metadata` Requires-Dist по 8 установленным пакетам | см. §6.2 |
-| Статический счёт тестов | `Select-String '^\s*def test_'` по `tests/**/*.py` | 572 определения, 55 файлов |
+| Secret leakage in the CLI | own profile under `NAZAK_DATA_DIR`, then `python -m nazak.cli profile get prof_v1 --json` | secrets in plaintext, exit 0 |
+| TOTP from the CLI | `python -m nazak.cli account totp prof_v1 --json` | `totp_code: "000000"`, exit 0 |
+| Local API guard | `starlette.testclient.TestClient(app)` with different `Host`/`Origin` values | see §3.1 |
+| Cookie export without a key | `GET /api/profiles/prof_v1/cookies/export` | 200 + httpOnly cookie in the body |
+| Running the tests | `python -m pytest tests -q` (as in `README.md:233`) | startup error, see §6.1 |
+| Full test run | `pytest tests -o addopts=""` (temp directory inside the workspace) | `9 failed, 491 passed, 149 warnings, 133 errors in 196.53s` |
+| Secrets in git history | `git log --all -p` (patch 7,317,628 bytes, 69 commits) + key-pattern search | see §7 |
+| Dependency transitivity | `importlib.metadata` Requires-Dist across 8 installed packages | see §6.2 |
+| Static test count | `Select-String '^\s*def test_'` over `tests/**/*.py` | 572 definitions, 55 files |
 
-Ограничения окружения (важно для честности выводов):
+Environment limitations (important for the honesty of the conclusions):
 
-* `PyQt6-Fluent-Widgets` (`qfluentwidgets`) и `playwright` в этом окружении **не установлены**, `cryptography` и `psutil` установлены. Поэтому часть тестов падает на импорте — это не дефект кода.
-* DSH-песочница запрещает создавать подкаталоги внутри каталогов, созданных `tempfile.mkdtemp`; из-за этого 133 ошибки прогона — `PermissionError` на временных каталогах pytest, а не дефекты проекта.
-* Docker/Docker Compose здесь не запускались: вывод о сетевой экспозиции контейнера опирается на чтение `Dockerfile`/`docker-compose.yml` и официальную документацию Docker (ссылка в §3.2).
-* Второй пользователь Windows для проверки межпользовательского доступа не создавался.
-* Реальный браузер для проверки CSRF/XSS не запускался.
+* `PyQt6-Fluent-Widgets` (`qfluentwidgets`) and `playwright` are **not installed** in this environment, while `cryptography` and `psutil` are installed. That is why some tests fail at import — it is not a code defect.
+* The DSH sandbox forbids creating subdirectories inside directories created by `tempfile.mkdtemp`; because of this, 133 errors in the run are `PermissionError` on pytest temporary directories, not project defects.
+* Docker/Docker Compose were not started here: the conclusion about the container's network exposure rests on reading `Dockerfile`/`docker-compose.yml` and the official Docker documentation (link in §3.2).
+* No second Windows user was created to test cross-user access.
+* No real browser was launched to test CSRF/XSS.
 
 ---
 
-## 1. Сводка находок
+## 1. Summary of Findings
 
-| ID | Серьёзность | Область | Суть | Как проверено |
+| ID | Severity | Area | Essence | How verified |
 |---|---|---|---|---|
-| R3-01 | High | API | API не аутентифицирован; единственная защита — заголовки `Host`/`Origin` от клиента | код + запуск |
-| R3-02 | High | Развёртывание | `Dockerfile` поднимает API на `0.0.0.0`, `docker-compose.yml` публикует порт на все интерфейсы, токен не задан | чтение + док. Docker |
-| R3-03 | High | CLI | `profile get` печатает пароль прокси и пароль/2FA-сид аккаунта в открытом виде | запуск |
-| R3-04 | High | CLI | `account totp` возвращает `000000` с `success: true` и exit 0 | запуск |
-| R3-05 | High | Web UI | DOM-XSS: `health.ip/country/city` вставляются в `innerHTML` без экранирования; источник — ответ стороннего сервиса по HTTP через прокси | чтение обоих концов потока |
-| R3-06 | High | Uploader | Instagram-аплоадер возвращает `success=true` и выдуманный URL, если публикация не произошла | чтение |
-| R3-07 | High | Secrets | Режим хранения секретов по умолчанию — `plain`; пароли и TOTP-сиды маркетплейс-аккаунтов лежат в `data/profiles.json` открытым текстом | чтение + запуск |
-| R3-08 | Medium | CLI/сценарий | `account login --profile <id>` при несовпадении id молча логинится в **другой** аккаунт и публикует видео как Public | чтение |
-| R3-09 | Medium | CLI | Легаси-поток логина пишет фальшивый `DEMO_MP4_HEADER`-файл и загружает его на YouTube, затем печатает «PUBLISHED SUCCESSFULLY» | чтение |
-| R3-10 | Medium | CSRF | Изменяющие состояние эндпоинты зарегистрированы как `GET` | код + запуск + MDN |
-| R3-11 | Medium | Uploader | Ретрай неидемпотентной публикации → возможная повторная публикация того же видео | чтение |
-| R3-12 | Medium | API | `/api/autopost/uniquify` принимает произвольный абсолютный путь к файлу | чтение |
-| R3-13 | Medium | API | SSRF-гонка (`TOCTOU`) в `rotate-proxy`: имя резолвится дважды | чтение |
-| R3-14 | Medium | Сборка | `python -m pytest tests -q` из README не работает: `addopts` требует `pytest-timeout` | запуск |
-| R3-15 | Medium | CI | `mypy`-гейт отключает 13 категорий ошибок (включая `arg-type`, `call-arg`) | чтение конфига |
-| R3-16 | Medium | Зависимости | `requirements.txt` не содержит `psutil` и `cryptography`, которые импортирует код | чтение + метаданные |
-| R3-17 | Low | API | `testserver` в списке «локальных» хостов; сравнение API-ключа через `==` | запуск/чтение |
-| R3-18 | Low | API | `/docs`, `/openapi.json`, `/static` полностью обходят guard | чтение |
-| R3-19 | Low | Web UI | `p.id` подставляется в inline-обработчики без экранирования (сейчас не эксплуатируется) | чтение |
-| R3-20 | Low | Web UI | `href` из DOM YouTube без проверки схемы | чтение |
-| R3-21 | Low | GUI | Второй клик «Проверить» перезаписывает ссылку на работающий `QThread` | чтение |
-| R3-22 | Low | GUI | Блокирующий `urlopen(timeout=8)` в главном потоке Qt | чтение |
-| R3-23 | Low | Секреты | `_HAS_CRYPTOGRAPHY` вычисляется, но нигде не проверяется | grep |
-| R3-24 | Low | Секреты | Fail-open при недоступном шифровании: значение остаётся открытым, только `warning` в лог | чтение |
-| R3-25 | Low | Статусы | Зависший job остаётся `uploading`, профиль — `RUNNING`; неизвестное действие warmup = успех | чтение |
-| R3-26 | Low | Парсер | Пароль с разделителем обрезается, остаток уходит в TOTP-сид | чтение |
-| R3-27 | Low | GUI | Парольная фраза остаётся в поле виджета; в таблице показываются 7 символов 2FA-сида | чтение |
-| R3-28 | Low | Warmup | `dwell`/`human_scroll` без ограничения длительности; сценарий приходит из API | чтение |
-| R3-29 | Low | Процесс/репозиторий | Проглатывание исключений в мониторе процессов; нет `SECURITY.md` и сканера зависимостей | чтение + листинг |
+| R3-01 | High | API | The API is unauthenticated; the only protection is the client-supplied `Host`/`Origin` headers | code + execution |
+| R3-02 | High | Deployment | The `Dockerfile` binds the API to `0.0.0.0`, `docker-compose.yml` publishes the port on all interfaces, and no token is set | reading + Docker docs |
+| R3-03 | High | CLI | `profile get` prints the proxy password and the account password/2FA seed in plaintext | execution |
+| R3-04 | High | CLI | `account totp` returns `000000` with `success: true` and exit 0 | execution |
+| R3-05 | High | Web UI | DOM XSS: `health.ip/country/city` are inserted into `innerHTML` without escaping; the source is a third-party service's response over HTTP through a proxy | reading both ends of the flow |
+| R3-06 | High | Uploader | The Instagram uploader returns `success=true` and a fabricated URL when no publication took place | reading |
+| R3-07 | High | Secrets | The default secret storage mode is `plain`; marketplace account passwords and TOTP seeds sit in `data/profiles.json` as plaintext | reading + execution |
+| R3-08 | Medium | CLI/scenario | When the id does not match, `account login --profile <id>` silently logs into a **different** account and publishes the video as Public | reading |
+| R3-09 | Medium | CLI | The legacy login flow writes a fake `DEMO_MP4_HEADER` file and uploads it to YouTube, then prints "PUBLISHED SUCCESSFULLY" | reading |
+| R3-10 | Medium | CSRF | State-changing endpoints are registered as `GET` | code + execution + MDN |
+| R3-11 | Medium | Uploader | Retrying a non-idempotent publication → the same video may be published again | reading |
+| R3-12 | Medium | API | `/api/autopost/uniquify` accepts an arbitrary absolute file path | reading |
+| R3-13 | Medium | API | SSRF race (`TOCTOU`) in `rotate-proxy`: the name is resolved twice | reading |
+| R3-14 | Medium | Build | `python -m pytest tests -q` from the README does not work: `addopts` requires `pytest-timeout` | execution |
+| R3-15 | Medium | CI | The `mypy` gate disables 13 error categories (including `arg-type`, `call-arg`) | reading the config |
+| R3-16 | Medium | Dependencies | `requirements.txt` does not list `psutil` and `cryptography`, which the code imports | reading + metadata |
+| R3-17 | Low | API | `testserver` is in the list of "local" hosts; the API key is compared with `==` | execution/reading |
+| R3-18 | Low | API | `/docs`, `/openapi.json`, `/static` bypass the guard entirely | reading |
+| R3-19 | Low | Web UI | `p.id` is substituted into inline handlers without escaping (not currently exploitable) | reading |
+| R3-20 | Low | Web UI | `href` from the YouTube DOM without scheme validation | reading |
+| R3-21 | Low | GUI | A second click on "Check" overwrites the reference to the running `QThread` | reading |
+| R3-22 | Low | GUI | A blocking `urlopen(timeout=8)` on the Qt main thread | reading |
+| R3-23 | Low | Secrets | `_HAS_CRYPTOGRAPHY` is computed but never checked anywhere | grep |
+| R3-24 | Low | Secrets | Fail-open when encryption is unavailable: the value stays in plaintext, with only a `warning` in the log | reading |
+| R3-25 | Low | Statuses | A stuck job stays `uploading` and the profile stays `RUNNING`; an unknown warmup action counts as success | reading |
+| R3-26 | Low | Parser | A password containing the separator is truncated and the remainder goes into the TOTP seed | reading |
+| R3-27 | Low | GUI | The passphrase stays in the widget field; 7 characters of the 2FA seed are shown in the table | reading |
+| R3-28 | Low | Warmup | `dwell`/`human_scroll` have no duration limit; the scenario comes from the API | reading |
+| R3-29 | Low | Process/repository | Swallowed exceptions in the process monitor; no `SECURITY.md` and no dependency scanner | reading + listing |
 
-Расхождения документации/коммитов — отдельно в §6.
-
----
-
-## 2. Что показывает история коммитов
-
-Факты из `git log` (69 коммитов, авторские даты 2026-08-23 … 2026-10-03):
-
-1. Самоаудит в проекте проводился минимум трижды:
-   * `948275c` — «add comprehensive English documentation and audit report»;
-   * `838ccf4` — «add comprehensive audit regression suite and 100 deep defect tests»;
-   * `d6ba7e6` — «remediate P0/P1 audit findings across stealth, synchronizer, autoposter, secrets, fingerprint and seeder»;
-   * `f996dfb` — «remediate round-2 findings … (D2-P0-1/2/3, D2-P1-1…5, D2-P2-1/2)».
-2. Отчёты об аудите **удалены** из репозитория: `fa503f7` — «Remove superseded work documents (audit report, deep-analysis plan, remediation progress): all findings are fixed…». Единственный оставшийся документ — `docs/DEEP_AUDIT_ROUND2.md`, и его ссылки на строки устарели (см. §6.12). То есть прослеживаемого бэклога безопасности в репозитории сейчас нет.
-3. `nazak/cli_cmds/*` добавлены в `98a4042` («ADD CLI!») и расширены в `c0fa3d1` (v1.10.0: `17 files changed, 867 insertions(+)`). Именно там находятся три подтверждённых High-дефекта R3-03, R3-04, R3-08/R3-09 — то есть на самой молодой и менее всего отревьюенной поверхности.
-4. `nazak/cli_auto_login_and_upload.py` существует с первого релиза (`7595011`) и **пережил** все раунды аудита: фальшивый MP4 (R3-09) и печать живого TOTP-кода там остались.
-5. Коммит `d6ba7e6` утверждает: «Autoposter: … POST /api/autopost/launch requires a real source or demo=true (generates a genuine ffmpeg clip, **no DEMO_MP4_HEADER blob**)». Это верно только для API-пути: строка `b"DEMO_MP4_HEADER"` по-прежнему присутствует в `nazak/cli_auto_login_and_upload.py:265` (см. §5/R3-09).
+Documentation/commit discrepancies are covered separately in §6.
 
 ---
 
-## 3. Высокие находки
+## 2. What the Commit History Shows
 
-### R3-01. Локальный API не аутентифицирован; guard опирается только на заголовки клиента
+Facts from `git log` (69 commits, author dates 2026-08-23 … 2026-10-03):
 
-**Файлы:** `nazak/api/server.py:239-309`, `nazak/api/server.py:283-287`, `nazak/config.py:40`
+1. The project has self-audited at least three times:
+   * `948275c` — "add comprehensive English documentation and audit report";
+   * `838ccf4` — "add comprehensive audit regression suite and 100 deep defect tests";
+   * `d6ba7e6` — "remediate P0/P1 audit findings across stealth, synchronizer, autoposter, secrets, fingerprint and seeder";
+   * `f996dfb` — "remediate round-2 findings … (D2-P0-1/2/3, D2-P1-1…5, D2-P2-1/2)".
+2. The audit reports were **removed** from the repository: `fa503f7` — "Remove superseded work documents (audit report, deep-analysis plan, remediation progress): all findings are fixed…". The only remaining document is `docs/DEEP_AUDIT_ROUND2.md`, and its line references are stale (see §6.12). In other words, there is no traceable security backlog in the repository right now.
+3. `nazak/cli_cmds/*` was added in `98a4042` ("ADD CLI!") and extended in `c0fa3d1` (v1.10.0: `17 files changed, 867 insertions(+)`). That is exactly where the three confirmed High defects R3-03, R3-04, and R3-08/R3-09 live — that is, on the youngest and least-reviewed surface.
+4. `nazak/cli_auto_login_and_upload.py` has existed since the first release (`7595011`) and **survived** every audit round: the fake MP4 (R3-09) and the printing of a live TOTP code are still there.
+5. Commit `d6ba7e6` claims: "Autoposter: … POST /api/autopost/launch requires a real source or demo=true (generates a genuine ffmpeg clip, **no DEMO_MP4_HEADER blob**)". This holds only for the API path: the string `b"DEMO_MP4_HEADER"` is still present in `nazak/cli_auto_login_and_upload.py:265` (see §5/R3-09).
+
+---
+
+## 3. High Findings
+
+### R3-01. The local API is unauthenticated; the guard relies only on client-supplied headers
+
+**Files:** `nazak/api/server.py:239-309`, `nazak/api/server.py:283-287`, `nazak/config.py:40`
 
 ```python
 # server.py:283-287
@@ -122,7 +122,7 @@ def _is_api_token_valid(request_headers) -> bool:
         return JSONResponse(status_code=401, ...)
 ```
 
-Проверено запуском (`TestClient`, свежий `NAZAK_DATA_DIR`):
+Verified by execution (`TestClient`, fresh `NAZAK_DATA_DIR`):
 
 ```
 Host='127.0.0.1'            -> HTTP 200
@@ -130,24 +130,24 @@ Host='testserver'           -> HTTP 200
 Host='evil.example.com'     -> HTTP 403
 Origin=https://evil.example.com -> 403
 Origin=http://localhost:3000     -> 200
-GET /v1.0/browser_profiles/prof_v1/stop -> 200        (без X-API-Key)
+GET /v1.0/browser_profiles/prof_v1/stop -> 200        (without X-API-Key)
 GET /api/profiles/prof_v1/cookies/export -> 200
    {'format': 'json', 'cookies': [{'name': 'SID', 'value': 'secret-session-value',
      'domain': '.google.com', 'path': '/', 'httpOnly': True, 'secure': True}], ...}
 X-API-Key needed? NAZAK_API_TOKEN = None
 ```
 
-Дополнительно: в проекте **нет** ни одной проверки IP клиента — поиск по `*.py` шаблонов `request.client|client.host|remote_addr|X-Forwarded|trusted` не даёт совпадений.
+Additionally, the project has **no** client IP check at all — searching `*.py` for the patterns `request.client|client.host|remote_addr|X-Forwarded|trusted` yields no matches.
 
-**Почему это дыра, а не теория:** решающее значение имеет только заголовок `Host`, который целиком контролирует клиент. Пока сервер слушает только loopback (`config.py:40`), это ограничивает доступ процессами этой машины; при любом пробросе порта наружу фильтр перестаёт что-либо значить (§R3-02). Отсутствие аутентификации задокументировано (`docs/API_REFERENCE.md:8`), поэтому это осознанный компромисс, а не случайность — но его последствия в коде не ограничены: API выдаёт **сессионные cookie всех профилей** (`server.py:1154-1167`, `1130-1151`), собирает `.nazak`-бандл со `data/` профиля (`server.py:967-994`), запускает браузеры и меняет данные профилей.
+**Why this is a hole rather than a theory:** only the `Host` header matters, and the client controls it entirely. As long as the server listens on loopback only (`config.py:40`), that confines access to processes on this machine; with any port forwarding to the outside, the filter stops meaning anything (§R3-02). The absence of authentication is documented (`docs/API_REFERENCE.md:8`), so it is a deliberate trade-off rather than an accident — but its consequences in the code are not limited: the API hands out **session cookies for every profile** (`server.py:1154-1167`, `1130-1151`), assembles a `.nazak` bundle containing the profile's `data/` (`server.py:967-994`), starts browsers, and modifies profile data.
 
-**Влияние:** любой процесс на машине (в т.ч. запущенный другим пользователем Windows — loopback не изолирован по пользователям; на второй учётной записи я это не проверял) может выгрузить cookie Google/YouTube, то есть забрать аккаунты фермы, и управлять браузерами.
+**Impact:** any process on the machine (including one running under a different Windows user — loopback is not isolated per user; I did not verify this on a second account) can export Google/YouTube cookies, that is, take over the farm's accounts, and control the browsers.
 
-**Что сделать:** включить токен по умолчанию (генерировать при первом старте и класть в `data/`, GUI подставляет его автоматически) либо перейти на Unix-socket / named pipe; отдельно — ограничить выдачу cookie-экспорта отдельным подтверждением.
+**What to do:** enable the token by default (generate it on first start and place it in `data/`, with the GUI injecting it automatically), or switch to a Unix socket / named pipe; separately, gate the cookie export behind a separate confirmation.
 
-### R3-02. Docker-развёртывание из репозитория выставляет неаутентифицированный API в сеть
+### R3-02. The repository's Docker deployment exposes the unauthenticated API to the network
 
-**Файлы:** `Dockerfile:36-38`, `docker-compose.yml:8-13`
+**Files:** `Dockerfile:36-38`, `docker-compose.yml:8-13`
 
 ```dockerfile
 EXPOSE 8899
@@ -160,15 +160,15 @@ CMD ["python", "-m", "nazak.main", "--mode", "web", "--host", "0.0.0.0", "--port
       - PYTHONUNBUFFERED=1
 ```
 
-`NAZAK_API_TOKEN` в compose не задаётся (переменных всего одна). Docker документирует: «When a port is published, it's published to all network interfaces by default» ([Publishing and exposing ports](https://raw.githubusercontent.com/docker/docs/f63001e0752a7337403b2e00fa5ea34e7370048d/content/get-started/docker-concepts/running-containers/publishing-ports.md), проверено 2026-10-03).
+`NAZAK_API_TOKEN` is not set in the compose file (there is only one environment variable). Docker documents: "When a port is published, it's published to all network interfaces by default" ([Publishing and exposing ports](https://raw.githubusercontent.com/docker/docs/f63001e0752a7337403b2e00fa5ea34e7370048d/content/get-started/docker-concepts/running-containers/publishing-ports.md), checked 2026-10-03).
 
-**Влияние:** любой, кто дотянется до порта 8899, отправляет `Host: 127.0.0.1`, проходит guard (это проверено выше) и получает весь API: выгрузка cookie, экспорт бандлов, запуск браузеров, `source_video_path` (§R3-12). Полная цепочка на живом Docker мной не воспроизводилась, но каждый её шаг проверен отдельно.
+**Impact:** anyone who can reach port 8899 sends `Host: 127.0.0.1`, passes the guard (verified above), and gets the whole API: cookie export, bundle export, starting browsers, `source_video_path` (§R3-12). I did not reproduce the full chain on a live Docker instance, but every step of it was verified separately.
 
-**Что сделать:** в `Dockerfile`/`docker-compose.yml` — `--host 127.0.0.1` (или обязательный `NAZAK_API_TOKEN` + отказ стартовать при `0.0.0.0` без токена), добавить `USER` (сейчас контейнер работает от root — в `Dockerfile` нет директивы `USER`).
+**What to do:** in `Dockerfile`/`docker-compose.yml`, use `--host 127.0.0.1` (or make `NAZAK_API_TOKEN` mandatory and refuse to start on `0.0.0.0` without a token); add a `USER` directive (the container currently runs as root — there is no `USER` directive in the `Dockerfile`).
 
-### R3-03. `nazak.cli profile get` печатает пароль прокси и пароль/2FA-сид аккаунта
+### R3-03. `nazak.cli profile get` prints the proxy password and the account password/2FA seed
 
-**Файл:** `nazak/cli_cmds/profiles.py:190-203`
+**File:** `nazak/cli_cmds/profiles.py:190-203`
 
 ```python
 def cmd_get(args, opt: GlobalOptions) -> int:
@@ -182,9 +182,9 @@ def cmd_get(args, opt: GlobalOptions) -> int:
     emit({"success": True, "profile": d}, opt)
 ```
 
-`BrowserProfile` не исключает поля (`nazak/models/profile.py:166` `proxy`, `:168` `google`), `ProxyConfig` хранит `password`/`raw` как обычные поля (`nazak/models/proxy.py:40-43`), а при загрузке прокси-поля расшифровываются в память (`nazak/core/profile_manager.py:494`).
+`BrowserProfile` does not exclude the fields (`nazak/models/profile.py:166` `proxy`, `:168` `google`), `ProxyConfig` stores `password`/`raw` as ordinary fields (`nazak/models/proxy.py:40-43`), and when the profile is loaded the proxy fields are decrypted into memory (`nazak/core/profile_manager.py:494`).
 
-Проверено запуском (профиль `prof_v1`, режим `plain`):
+Verified by execution (profile `prof_v1`, mode `plain`):
 
 ```
 exit code: 0
@@ -193,20 +193,20 @@ exit code: 0
           \"totp_secret\": \"JBSWY3DPEHPK3PXP\", \"_secrets_mode\": \"plain\"}"
 ```
 
-Хелпер маскирования `mask_proxy_dict` (`nazak/cli_cmds/common.py:230-241`) **нигде не вызывается**: поиск по репозиторию даёт единственное совпадение — само определение.
+The masking helper `mask_proxy_dict` (`nazak/cli_cmds/common.py:230-241`) is **never called**: a repository-wide search yields a single match — its own definition.
 
-**Влияние:** пароли и TOTP-сиды попадают в stdout, в логи CI/агентов и в `--json`-потоки. Маскирование, которое есть в API (`server.py:330-370`), в CLI не подключено.
+**Impact:** passwords and TOTP seeds end up in stdout, in CI/agent logs, and in `--json` streams. The masking that exists in the API (`server.py:330-370`) is not wired into the CLI.
 
-**Что сделать:** перед `emit` применять `decrypt_notes(reveal=False)` + `mask_proxy_dict`, а полный вывод отдавать только по явному `--reveal`.
+**What to do:** apply `decrypt_notes(reveal=False)` + `mask_proxy_dict` before `emit`, and return the full output only with an explicit `--reveal`.
 
-### R3-04. `nazak.cli account totp` возвращает неверный код и рапортует об успехе
+### R3-04. `nazak.cli account totp` returns a wrong code and reports success
 
-**Файлы:** `nazak/cli_cmds/autopost_accounts.py:378-399`, `nazak/core/secrets_store.py:390`, `nazak/core/account_provisioner.py:39-64`
+**Files:** `nazak/cli_cmds/autopost_accounts.py:378-399`, `nazak/core/secrets_store.py:390`, `nazak/core/account_provisioner.py:39-64`
 
 ```python
 # autopost_accounts.py:387-398
     try:
-        revealed = decrypt_notes(notes)          # reveal по умолчанию False
+        revealed = decrypt_notes(notes)          # reveal defaults to False
     except Exception:
         revealed = notes
     secret = revealed.get("totp_secret", "")
@@ -223,7 +223,7 @@ exit code: 0
         result[field] = plain if reveal else mask_secret(plain)
 ```
 
-Проверено запуском:
+Verified by execution:
 
 ```
 { "success": true, "profile_id": "prof_v1", "totp_code": "000000" }
@@ -231,22 +231,22 @@ exit code: 0
 [stderr] Error computing TOTP: Non-base32 digit found
 ```
 
-**Влияние:** команда, документированная как генератор 2FA (`docs/CLI_REFERENCE.md`) и предназначенная для ИИ-агентов, всегда отдаёт нерабочий код и при этом `success: true` / exit 0. Тихая ложь вместо ошибки — это же ломает и авто-логин, если его переиспользовать.
+**Impact:** a command documented as a 2FA generator (`docs/CLI_REFERENCE.md`) and intended for AI agents always returns a non-working code while reporting `success: true` / exit 0. A quiet lie instead of an error — the same flaw also breaks auto-login if it is reused.
 
-**Что сделать:** вызывать `reveal_notes`/`decrypt_notes(..., reveal=True)`; при замаскированном значении возвращать `EXIT_CONFLICT` с явным текстом; `generate_totp_rfc6238` не должен возвращать `"000000"` — только исключение.
+**What to do:** call `reveal_notes`/`decrypt_notes(..., reveal=True)`; when the value is masked, return `EXIT_CONFLICT` with explicit text; `generate_totp_rfc6238` must not return `"000000"` — only an exception.
 
-### R3-05. DOM-XSS в Web Studio: `health.ip/country/city` вставляются в `innerHTML` без экранирования
+### R3-05. DOM XSS in Web Studio: `health.ip/country/city` are inserted into `innerHTML` without escaping
 
-**Файлы:** `nazak/web/app.js:361`, `nazak/core/proxy_checker.py:102-118`, `nazak/models/health.py:40-43`
+**Files:** `nazak/web/app.js:361`, `nazak/core/proxy_checker.py:102-118`, `nazak/models/health.py:40-43`
 
 ```javascript
-// app.js:361 (внутри body.innerHTML = `...` на :358)
+// app.js:361 (inside body.innerHTML = `...` at :358)
 ${health.ip ? `${health.ip} (${health.country || "N/A"}, ${health.city || ""})` : "IP error"}
 ```
 
-Экранирование применяется рядом (`app.js:362` — `escapeHtml(health.isp)`, `:368` — `escapeHtml(health.error_message)`, `:263` — `escapeHtml(ipText)/escapeHtml(geoText)`), но не здесь.
+Escaping is applied nearby (`app.js:362` — `escapeHtml(health.isp)`, `:368` — `escapeHtml(health.error_message)`, `:263` — `escapeHtml(ipText)/escapeHtml(geoText)`), but not here.
 
-Источник значений — сторонний сервис, опрашиваемый **по открытому HTTP через прокси пользователя**:
+The source of the values is a third-party service queried **over plain HTTP through the user's proxy**:
 
 ```python
 # proxy_checker.py:102-111
@@ -258,31 +258,31 @@ geo_resp = await client.get(
         result.city = geo_data.get("city")
 ```
 
-Модель не ограничивает эти поля (`health.py:40-43` — обычные `str | None`). Дальше значения идут в UI двумя путями: `server.py:853-866` (ответ `POST /api/profiles/{id}/check` + `broadcast("profile_health_update")`) → `app.js:342` или WS-обработчик `app.js:71-79` → `renderDiagModalContent` (`app.js:350-371`).
+The model does not constrain these fields (`health.py:40-43` — plain `str | None`). From there the values reach the UI along two paths: `server.py:853-866` (the `POST /api/profiles/{id}/check` response + `broadcast("profile_health_update")`) → `app.js:342`, or the WS handler `app.js:71-79` → `renderDiagModalContent` (`app.js:350-371`).
 
-**Почему это реально:** вредоносный/подменённый прокси (или MITM на этом HTTP-запросе) возвращает `country` вида `</span><img src=x onerror=...>`, и скрипт исполняется в origin `http://127.0.0.1:8899` — то есть в origin самого API. Из этого origin запросы проходят и Host-, и Origin-проверки, а значит скрипт может читать cookie-экспорт и бандлы (R3-01). Достаточно открыть модалку «Diagnostics».
+**Why this is real:** a malicious/spoofed proxy (or a MITM on this HTTP request) returns a `country` such as `</span><img src=x onerror=...>`, and the script executes in the origin `http://127.0.0.1:8899` — that is, in the API's own origin. From that origin, requests pass both the Host and the Origin checks, which means the script can read the cookie export and the bundles (R3-01). All it takes is opening the "Diagnostics" modal.
 
-**Проверено в реальном браузере (после исправления).** Отдельный live-тест
-`tests/live/test_dashboard_xss_live.py` поднимает настоящий сервер, открывает дашборд в Chromium и
-подменяет ответы `/api/profiles` и `/api/profiles/{id}/check` вредоносными значениями
-(`</span><img src=x onerror=…>` в `ip`/`country`/`city` плюс payload, который тянет
-`/api/security/secrets-mode`), после чего проверяет маркеры `window.__xss_*` по двум путям:
-прямой вызов `renderDiagModalContent()` и полный UI-путь с реальным кликом по кнопке «Diagnostics».
+**Verified in a real browser (after the fix).** A separate live test
+`tests/live/test_dashboard_xss_live.py` starts a real server, opens the dashboard in Chromium, and
+replaces the `/api/profiles` and `/api/profiles/{id}/check` responses with malicious values
+(`</span><img src=x onerror=…>` in `ip`/`country`/`city` plus a payload that fetches
+`/api/security/secrets-mode`), after which it checks the `window.__xss_*` markers along two paths:
+a direct call to `renderDiagModalContent()` and the full UI path with a real click on the "Diagnostics" button.
 
-| Запуск (один и тот же образ, отличается только `nazak/web/app.js`) | Результат |
+| Run (same image, only `nazak/web/app.js` differs) | Result |
 |---|---|
-| Исправленный код | **тест проходит**: маркеры `country=0, city=0, ip=0, exfil=null`, payload виден в DOM как текст (`&lt;img src=x onerror`) |
-| Контроль: строка откатана на до-фиксовый вид (`${health.ip} (${health.country}…)`) | **тест падает**: `country=1, city=1, ip=1`, `exfil=323` — инжектированный скрипт исполнился и вычитал 323 байта ответа `/api/security/secrets-mode`; поля `isp` и `error_message`, экранированные и раньше, не срабатывают |
+| Fixed code | **the test passes**: markers `country=0, city=0, ip=0, exfil=null`, and the payload is visible in the DOM as text (`&lt;img src=x onerror`) |
+| Control: the line rolled back to its pre-fix form (`${health.ip} (${health.country}…)`) | **the test fails**: `country=1, city=1, ip=1`, `exfil=323` — the injected script executed and read 323 bytes of the `/api/security/secrets-mode` response; the `isp` and `error_message` fields, which were escaped even before, do not fire |
 
-То есть фикс подтверждён исполнением, а сам тест — не «слепой»: на уязвимой версии он падает.
-Запуск: `pytest -m live tests/live/test_dashboard_xss_live.py` (в образе есть Chromium; на хосте
-без `playwright` тест корректно скипается).
+So the fix is confirmed by execution, and the test itself is not "blind": it fails on the vulnerable version.
+Run: `pytest -m live tests/live/test_dashboard_xss_live.py` (the image includes Chromium; on a host
+without `playwright` the test skips correctly).
 
-**Что сделать:** `escapeHtml` на `health.ip/country/city` (или собрать узел через `textContent`); заодно запретить использование открытого HTTP для гео-запроса. — **сделано**: экранирование добавлено, HTTP для гео-запроса помечен как риск (отдельного решения по смене провайдера не принималось).
+**What to do:** use `escapeHtml` on `health.ip/country/city` (or build the node via `textContent`); also forbid plain HTTP for the geo request. — **done**: escaping has been added, and plain HTTP for the geo request is flagged as a risk (no separate decision was made to change providers).
 
-### R3-06. Instagram-аплоадер объявляет успех, даже если публикации не было
+### R3-06. The Instagram uploader reports success even when there was no publication
 
-**Файл:** `nazak/core/instagram_uploader.py:183-222`
+**File:** `nazak/core/instagram_uploader.py:183-222`
 
 ```python
                 share_btn = self._first(page.locator("button:has-text('Share')"))
@@ -293,15 +293,15 @@ geo_resp = await client.get(
                 return True, published_url or "https://www.instagram.com/", None
 ```
 
-Все шаги (загрузка файла, caption, Next, Share) обёрнуты в `if ... is_visible()`; если диалог не появился, исключения нет и управление доходит до `:222`, где возвращается `True` и выдуманный URL. Очередь загрузок принимает это как успех: `upload_queue.py:385-397` ставит `job.status = "published"` и рассылает «Published successfully!».
+All the steps (file upload, caption, Next, Share) are wrapped in `if ... is_visible()`; if the dialog never appears, no exception is raised and control reaches `:222`, which returns `True` and a fabricated URL. The upload queue accepts this as success: `upload_queue.py:385-397` sets `job.status = "published"` and broadcasts "Published successfully!".
 
-**Влияние:** оператор видит «опубликовано» там, где публикации нет; для фермы это ещё и потеря управляемости (ретраев не будет, потому что ошибки нет).
+**Impact:** the operator sees "published" where no publication happened; for a farm this also means losing control (there will be no retries, because there is no error).
 
-**Что сделать:** обязательная проверка результата (появление ссылки `/p/` или запись в профиле) и `return False, None, "share dialog not found"` при отсутствии подтверждения.
+**What to do:** make verification of the result mandatory (a `/p/` link appearing or an entry in the profile) and `return False, None, "share dialog not found"` when there is no confirmation.
 
-### R3-07. Секреты аккаунтов по умолчанию хранятся открытым текстом
+### R3-07. Account secrets are stored as plaintext by default
 
-**Файлы:** `nazak/core/secrets_store.py:44,282-293`, `nazak/core/account_provisioner.py:326-339`, `nazak/config.py:33`
+**Files:** `nazak/core/secrets_store.py:44,282-293`, `nazak/core/account_provisioner.py:326-339`, `nazak/config.py:33`
 
 ```python
 DEFAULT_SECRETS_MODE = "plain"          # secrets_store.py:44
@@ -319,27 +319,27 @@ DEFAULT_SECRETS_MODE = "plain"          # secrets_store.py:44
                         "totp_secret": acc["totp_secret"],
 ```
 
-Проверено запуском: после создания профиля в `data/profiles.json` лежит
+Verified by execution: after a profile is created, `data/profiles.json` contains
 `"account_password": "AccPass456!", "totp_secret": "JBSWY3DPEHPK3PXP"`.
 
-**Влияние:** одна копия файла (бэкап, облачная синхронизация, экспорт бандла, письмо в поддержку) = полный доступ к купленным Google-аккаунтам вместе с 2FA-сидом.
+**Impact:** one copy of the file (a backup, cloud sync, a bundle export, an email to support) = full access to the purchased Google accounts together with the 2FA seed.
 
-**Важно для объективности:** это задокументированный выбор пользователя (`README.md:189-194`: «`plain` — Readable plaintext (**default**, zero setup)»), то есть не скрытый дефект, а небезопасное значение по умолчанию. Формулировка «пользователь сам выбирает» не отменяет того, что до осознанного выбора все секреты уже лежат в открытом виде.
+**Important for objectivity:** this is a documented user choice (`README.md:189-194`: "`plain` — Readable plaintext (**default**, zero setup)"), that is, not a hidden defect but an insecure default. The wording "the user chooses it themselves" does not change the fact that, before any conscious choice is made, all the secrets already sit in plaintext.
 
-**Что сделать:** при первом импорте аккаунтов явно спрашивать режим (или делать `dpapi`/`passphrase` значением по умолчанию, оставляя `plain` как явный opt-in с предупреждением).
+**What to do:** ask for the mode explicitly on the first account import (or make `dpapi`/`passphrase` the default, leaving `plain` as an explicit opt-in with a warning).
 
 ---
 
-## 4. Средние находки
+## 4. Medium Findings
 
-### R3-08. `account login --profile <id>` может залогиниться в другой аккаунт и опубликовать видео
+### R3-08. `account login --profile <id>` can log into a different account and publish a video
 
-**Файлы:** `nazak/cli_cmds/autopost_accounts.py:412-414`, `nazak/cli_auto_login_and_upload.py:37-52`, `:322-333`
+**Files:** `nazak/cli_cmds/autopost_accounts.py:412-414`, `nazak/cli_auto_login_and_upload.py:37-52`, `:322-333`
 
 ```python
 # autopost_accounts.py:412-414
     if args.profile and not args.email:
-        # передаём как email-фильтр по id через env; live_flow умеет матчить по name/id
+        # passed as an email filter by id through env; live_flow can match by name/id
         os.environ["GOOGLE_EMAIL"] = args.profile
 ```
 ```python
@@ -352,18 +352,18 @@ DEFAULT_SECRETS_MODE = "plain"          # secrets_store.py:44
         existing = pm.list_profiles()
         google_profs = [p for p in existing if p.google and (p.google.notes or p.google.target_account_email)]
         if google_profs:
-            profiles = [google_profs[0]]      # ← молчаливый выбор «первого попавшегося»
+            profiles = [google_profs[0]]      # ← silently picks "the first one it finds"
 ```
 
-Совпадение — подстрочное (`in`), а не по id/email. Далее поток вводит пароль и нажимает «Publish» с видимостью Public (`:322-333`).
+The match is a substring match (`in`), not by id/email. Then the flow enters the password and clicks "Publish" with Public visibility (`:322-333`).
 
-**Влияние:** опечатка в id приводит к работе с чужим (другим) аккаунтом фермы и публикации. Ошибки «профиль не найден» не будет.
+**Impact:** a typo in the id leads to working with someone else's (a different) farm account and publishing. There will be no "profile not found" error.
 
-**Что сделать:** матчить строго по `id`/точному email, при несовпадении — выход с кодом 1 и подсказкой; публикацию делать только по явному флагу.
+**What to do:** match strictly by `id`/exact email, and on a mismatch exit with code 1 and a hint; only publish when an explicit flag is given.
 
-### R3-09. Легаси-поток логина загружает на YouTube фальшивый MP4 и печатает ложный успех
+### R3-09. The legacy login flow uploads a fake MP4 to YouTube and prints a false success
 
-**Файл:** `nazak/cli_auto_login_and_upload.py:259-265, 330-357`
+**File:** `nazak/cli_auto_login_and_upload.py:259-265, 330-357`
 
 ```python
             if not video_file.exists():
@@ -378,18 +378,18 @@ DEFAULT_SECRETS_MODE = "plain"          # secrets_store.py:44
             return True
 ```
 
-Дополнительно в этом же файле:
-* строка `:187` печатает **живой** TOTP-код: `print(f"🛡️ Step 4: 2FA prompt detected! Generating current TOTP code: {code}...")`;
-* строки `:80-81` читают `account_password`/`totp_secret` прямо из JSON без расшифровки, поэтому в режимах `dpapi`/`passphrase` в поля логина будет введён конверт, а не пароль;
-* `cmd_account_login` в `--json`-режиме перенаправляет весь этот stdout в **stderr** (`autopost_accounts.py:419-429`), т.е. TOTP-код окажется в логах агента/CI.
+Also in the same file:
+* line `:187` prints a **live** TOTP code: `print(f"🛡️ Step 4: 2FA prompt detected! Generating current TOTP code: {code}...")`;
+* lines `:80-81` read `account_password`/`totp_secret` straight from the JSON without decryption, so in `dpapi`/`passphrase` modes an envelope, not the password, will be typed into the login fields;
+* `cmd_account_login` in `--json` mode redirects all of that stdout to **stderr** (`autopost_accounts.py:419-429`), i.e. the TOTP code will end up in agent/CI logs.
 
-**Влияние:** на аккаунт фермы уходит заведомо невалидный файл (риск для аккаунта), статус публикации — вымысел; живой одноразовый код утекает в лог.
+**Impact:** a knowingly invalid file is uploaded to the farm account (an account risk), the publication status is fiction, and a live one-time code leaks into the log.
 
-**Что сделать:** удалить ветку с `DEMO_MP4_HEADER` (генерировать клип через ffmpeg, как в API-пути `server.py:1368-1410`), не печатать код, расшифровывать секреты через `reveal_notes`, проверять факт публикации перед «SUCCESS».
+**What to do:** remove the `DEMO_MP4_HEADER` branch (generate a clip with ffmpeg, as the API path does in `server.py:1368-1410`), stop printing the code, decrypt secrets via `reveal_notes`, and verify that the publication happened before "SUCCESS".
 
-### R3-10. Изменяющие состояние эндпоинты сделаны `GET`
+### R3-10. State-changing endpoints are implemented as `GET`
 
-**Файлы:** `nazak/api/server.py:697-707` (`GET /v1.0/browser_profiles/{id}/start`), `:732-738` (`GET .../stop`), guard `:301-302`
+**Files:** `nazak/api/server.py:697-707` (`GET /v1.0/browser_profiles/{id}/start`), `:732-738` (`GET .../stop`), guard `:301-302`
 
 ```python
 @app.get("/v1.0/browser_profiles/{profile_id}/start", ...)
@@ -401,15 +401,15 @@ DEFAULT_SECRETS_MODE = "plain"          # secrets_store.py:44
     if origin and not _is_local_origin(origin):
 ```
 
-Проверено запуском: `GET /v1.0/browser_profiles/prof_v1/stop` → 200 без каких-либо заголовков авторизации.
+Verified by execution: `GET /v1.0/browser_profiles/prof_v1/stop` → 200 without any authorization headers.
 
-Origin-проверка выполняется только при наличии заголовка. MDN: «if a cross-origin `GET` or `HEAD` request is made in [no-cors mode], the `Origin` header will not be added» ([Origin header — MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin), проверено 2026-10-03). Следствие: сторонний сайт может тянуть `<img src="http://127.0.0.1:8899/v1.0/browser_profiles/<id>/start">` и запускать/останавливать браузеры профилей (слепой CSRF; ответ прочитать нельзя, но эффект есть). Реальный браузер я не запускал, поведение `Origin` взято из документации MDN.
+The Origin check runs only when the header is present. MDN: "if a cross-origin `GET` or `HEAD` request is made in [no-cors mode], the `Origin` header will not be added" ([Origin header — MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin), checked 2026-10-03). Consequence: a third-party site can fetch `<img src="http://127.0.0.1:8899/v1.0/browser_profiles/<id>/start">` and start/stop profile browsers (blind CSRF; the response cannot be read, but the effect is there). I did not launch a real browser; the `Origin` behavior is taken from the MDN documentation.
 
-**Что сделать:** перенести start/stop на `POST`; для небезопасных методов требовать `Origin` (отсутствие = отказ), а не «отсутствие = разрешено».
+**What to do:** move start/stop to `POST`; for unsafe methods require `Origin` (absent = deny) rather than "absent = allowed".
 
-### R3-11. Ретрай публикации может загрузить видео повторно
+### R3-11. Retrying a publication can upload the video again
 
-**Файлы:** `nazak/core/upload_queue.py:22-31,159-161,175-196,361-368`, `nazak/core/youtube_uploader.py:213-247`
+**Files:** `nazak/core/upload_queue.py:22-31,159-161,175-196,361-368`, `nazak/core/youtube_uploader.py:213-247`
 
 ```python
 RETRYABLE_UPLOAD_ERRORS = ("timeout", "temporarily unavailable", "429", "403", "rate limit",
@@ -418,15 +418,15 @@ RETRYABLE_UPLOAD_ERRORS = ("timeout", "temporarily unavailable", "429", "403", "
         return any(token in lowered for token in RETRYABLE_UPLOAD_ERRORS)
 ```
 
-`upload_shorts` нажимает «Publish» (`youtube_uploader.py:216-217`) и уже потом опрашивает URL, вызывает `browser.close()` и `notify_progress` (`:220-244`). Любое исключение на этих шагах возвращает `False` (`:246-247`), а `_retryable_upload` повторит **весь** цикл до 3 раз, если текст ошибки содержит один из токенов (например, `Timeout 30000ms exceeded`).
+`upload_shorts` clicks "Publish" (`youtube_uploader.py:216-217`) and only afterwards polls the URL, calls `browser.close()`, and calls `notify_progress` (`:220-244`). Any exception in these steps returns `False` (`:246-247`), and `_retryable_upload` will repeat the **entire** cycle up to 3 times if the error text contains one of the tokens (for example, `Timeout 30000ms exceeded`).
 
-**Влияние:** дубликаты публикаций на аккаунтах фермы. Условие — совпадение текста ошибки с токеном; безусловным это не является (что именно вернёт Playwright, я не проверял).
+**Impact:** duplicate publications on the farm's accounts. The precondition is that the error text matches a token; it is not unconditional (I did not check exactly what Playwright returns).
 
-**Что сделать:** после успешного клика «Publish» считать попытку невоспроизводимой (`non-idempotent`), а «403» убрать из списка ретраев (см. R3-25/ниже).
+**What to do:** after a successful "Publish" click, treat the attempt as non-reproducible (`non-idempotent`), and remove "403" from the retry list (see R3-25/below).
 
-### R3-12. `/api/autopost/uniquify` принимает произвольный абсолютный путь
+### R3-12. `/api/autopost/uniquify` accepts an arbitrary absolute path
 
-**Файл:** `nazak/api/server.py:1354-1365`
+**File:** `nazak/api/server.py:1354-1365`
 
 ```python
 async def uniquify_videos_endpoint(req: UniquifyRequest):
@@ -438,39 +438,39 @@ async def uniquify_videos_endpoint(req: UniquifyRequest):
     results = await asyncio.to_thread(video_uniquifier.batch_uniquify, src, req.profile_ids)
 ```
 
-**Влияние:** оракул существования файлов (`400 Source video not found` против запуска ffmpeg) и передача произвольного локального файла в парсер ffmpeg; результат пишется в `DATA_DIR/videos/output` (`video_uniquifier.py:77-78`), траверсала там нет. Прочитать содержимое произвольного файла через этот эндпоинт мне подтвердить не удалось, поэтому «чтение файлов» я не утверждаю.
+**Impact:** a file-existence oracle (`400 Source video not found` versus starting ffmpeg) and passing an arbitrary local file to the ffmpeg parser; the result is written to `DATA_DIR/videos/output` (`video_uniquifier.py:77-78`), where there is no traversal. I was unable to confirm reading the contents of an arbitrary file through this endpoint, so I am not claiming "file read".
 
-**Что сделать:** whitelist каталога (например, только `DATA_DIR/videos`) + проверка `is_relative_to`, проверка расширения/сигнатуры.
+**What to do:** a directory whitelist (for example, only `DATA_DIR/videos`) + an `is_relative_to` check, plus extension/signature validation.
 
-### R3-13. SSRF-гонка (`TOCTOU`) в `rotate-proxy`
+### R3-13. SSRF race (`TOCTOU`) in `rotate-proxy`
 
-**Файл:** `nazak/api/server.py:1035-1082`, `:1096-1101`
+**File:** `nazak/api/server.py:1035-1082`, `:1096-1101`
 
 ```python
-    addresses = _resolve_host_ips(parts.hostname, port)   # первое разрешение имени
+    addresses = _resolve_host_ips(parts.hostname, port)   # first name resolution
     ...
         if not ip.is_global:
             return "host must be a public address"
 ```
 ```python
         req = urllib.request.Request(url, headers={"User-Agent": "Nazak-Studio"})
-        with _NO_REDIRECT_OPENER.open(req, timeout=10.0) as resp:   # второе разрешение имени
+        with _NO_REDIRECT_OPENER.open(req, timeout=10.0) as resp:   # second name resolution
 ```
 
-Проверка идёт по IP из первого разрешения, а `urllib` резолвит имя повторно при подключении. При DNS с чередующимися ответами (public → private) фильтр обходится. Эксплуатацию я не воспроизводил (нет управляемого DNS), факт двойного разрешения — из кода. Дополнительно требуется, чтобы атакующий мог записать `rotation_url` (через API, см. R3-01/R3-02).
+The check uses the IP from the first resolution, while `urllib` resolves the name again when connecting. With DNS that returns alternating answers (public → private), the filter is bypassed. I did not reproduce the exploitation (no controlled DNS); the fact of the double resolution comes from the code. It additionally requires that the attacker be able to write `rotation_url` (through the API, see R3-01/R3-02).
 
-**Что сделать:** резолвить один раз и подключаться по проверенному IP (например, `http.client` с `Host`-заголовком), либо использовать `ipaddress`-allowlist и пиннинг соединения.
+**What to do:** resolve once and connect to the verified IP (for example, `http.client` with a `Host` header), or use an `ipaddress` allowlist and connection pinning.
 
-### R3-14. Документированная команда тестов не запускается
+### R3-14. The documented test command does not run
 
-**Файлы:** `README.md:232-238`, `pyproject.toml:150`, `pyproject.toml:52-55`, `requirements.txt:11-14`
+**Files:** `README.md:232-238`, `pyproject.toml:150`, `pyproject.toml:52-55`, `requirements.txt:11-14`
 
 ```
 addopts = "-p no:asyncio --strict-markers -ra --timeout=30 --timeout-method=thread -m 'not live'"   # pyproject.toml:150
 ```
-`pytest-timeout` объявлен только в dev-extra (`pyproject.toml:55`), в `requirements.txt` его нет.
+`pytest-timeout` is declared only in the dev extra (`pyproject.toml:55`); `requirements.txt` does not have it.
 
-Проверено запуском:
+Verified by execution:
 
 ```
 $ python -m pytest tests -q
@@ -478,13 +478,13 @@ ERROR: usage: python -m pytest [options] [file_or_dir] [...]
 python -m pytest: error: unrecognized arguments: --timeout=30 --timeout-method=thread
 ```
 
-**Влияние:** «Quick Start»-путь (`pip install -r requirements.txt` → `pytest`) не работает; это же подтверждает коммит `5f7a7d4`, который добавил `pytest-timeout` в CI, но не в `requirements.txt`.
+**Impact:** the "Quick Start" path (`pip install -r requirements.txt` → `pytest`) does not work; this is also confirmed by commit `5f7a7d4`, which added `pytest-timeout` to CI but not to `requirements.txt`.
 
-**Что сделать:** добавить `pytest-timeout` в `requirements.txt` или убрать `--timeout*` из `addopts` в `[tool.pytest.ini_options]`.
+**What to do:** add `pytest-timeout` to `requirements.txt` or remove `--timeout*` from `addopts` in `[tool.pytest.ini_options]`.
 
-### R3-15. Гейт `mypy` отключает почти все содержательные проверки
+### R3-15. The `mypy` gate disables almost all meaningful checks
 
-**Файл:** `pyproject.toml:183-205`
+**File:** `pyproject.toml:183-205`
 
 ```toml
 disable_error_code = [
@@ -492,518 +492,518 @@ disable_error_code = [
     "override", "misc", "attr-defined", "call-arg", "call-overload", "valid-type",
 ]
 ```
-При этом CI объявляет это отдельной job «Type Analysis (MyPy)» и падает при ошибке (`ci.yml:43-64`).
+At the same time, CI declares this as a separate job, "Type Analysis (MyPy)", and fails on an error (`ci.yml:43-64`).
 
-**Влияние:** зелёный mypy в CI не означает типовой корректности: неверные типы аргументов, присваивания, вызовы с неверными аргументами и обращения к несуществующим атрибутам подавлены. Это подтверждается и находкой R3-23 (`_HAS_CRYPTOGRAPHY` объявлен и не используется — mypy это не поймает).
+**Impact:** a green mypy in CI does not mean type correctness: wrong argument types, assignments, calls with wrong arguments, and accesses to non-existent attributes are suppressed. This is also borne out by finding R3-23 (`_HAS_CRYPTOGRAPHY` is declared and never used — mypy will not catch that).
 
-**Что сделать:** сузить список, включив минимум `arg-type`, `call-arg`, `attr-defined`, и починить ошибки по модулям.
+**What to do:** narrow the list by enabling at least `arg-type`, `call-arg`, and `attr-defined`, and fix the errors module by module.
 
-### R3-16. `requirements.txt` не содержит `psutil` и `cryptography`, которые нужны коду
+### R3-16. `requirements.txt` does not contain `psutil` and `cryptography`, which the code needs
 
-**Файлы:** `requirements.txt:1-14`, `nazak/core/browser_launcher.py:18`, `nazak/models/profile.py` (через `secrets_store`), `pyproject.toml:41,47`
+**Files:** `requirements.txt:1-14`, `nazak/core/browser_launcher.py:18`, `nazak/models/profile.py` (via `secrets_store`), `pyproject.toml:41,47`
 
 ```
-18: import psutil        # browser_launcher.py — импорт на уровне модуля, подтягивается из nazak/__init__.py
+18: import psutil        # browser_launcher.py — a module-level import, pulled in from nazak/__init__.py
 ```
 
-Проверено метаданными установленных пакетов (`importlib.metadata`, `Requires-Dist`): ни один из `fastapi 0.131.0`, `uvicorn 0.41.0`, `pydantic 2.12.5`, `httpx 0.28.1`, `requests 2.32.5`, `PySocks 1.7.1`, `PyQt6 6.11.0`, `rich 14.3.3`, `pytest 9.1.1`, `websockets 16.0` не требует `psutil` или `cryptography`. `PyQt6-Fluent-Widgets`, `pytest-asyncio`, `playwright` в этом окружении не установлены — их метаданные я проверить не смог.
+Verified with the metadata of the installed packages (`importlib.metadata`, `Requires-Dist`): none of `fastapi 0.131.0`, `uvicorn 0.41.0`, `pydantic 2.12.5`, `httpx 0.28.1`, `requests 2.32.5`, `PySocks 1.7.1`, `PyQt6 6.11.0`, `rich 14.3.3`, `pytest 9.1.1`, `websockets 16.0` requires `psutil` or `cryptography`. `PyQt6-Fluent-Widgets`, `pytest-asyncio`, and `playwright` are not installed in this environment — I could not check their metadata.
 
-**Влияние:** на чистом окружении по инструкции `README.md:208-210` приложение должно упасть на `import psutil`; `cryptography` нужен для режима `passphrase` (там `import` защищён `try/except`, но флаг не используется — R3-23). Docker-сборка использует тот же `requirements.txt` (`Dockerfile:30-31`).
+**Impact:** in a clean environment following the instructions in `README.md:208-210`, the application should crash on `import psutil`; `cryptography` is needed for the `passphrase` mode (there the `import` is guarded by `try/except`, but the flag is not used — R3-23). The Docker build uses the same `requirements.txt` (`Dockerfile:30-31`).
 
-**Что сделать:** синхронизировать `requirements.txt` с `pyproject.toml:34-48`.
-
----
-
-## 5. Низкие находки
-
-* **R3-17** `_LOCAL_HOSTS` включает `"testserver"` (`server.py:239`) — проверено: `Host: testserver` → 200. Ключ API сравнивается через `==` (`server.py:287`), а не `hmac.compare_digest`.
-* **R3-18** Префиксы `/static`, `/docs`, `/redoc`, `/openapi.json`, `/swagger` выходят из middleware до проверок (`server.py:293-294`) — схема API и статика отдаются при любом `Host`.
-* **R3-19** `p.id` без экранирования в inline-обработчиках (`app.js:244, 269, 271-289`). Сейчас не эксплуатируется: id валидируется `^[a-zA-Z0-9_\-]+$` (`server.py:325-326`, `profile_manager.py:179`). Риск появится при ослаблении правила или ручной правке `profiles.json`.
-* **R3-20** `href="${escapeHtml(j.video_url)}"` (`app.js:853`) — экранирование есть, проверки схемы нет; источник — DOM YouTube Studio (`youtube_uploader.py:227`).
-* **R3-21** `self.check_worker = ProxyCheckWorker(...)` без проверки `isRunning()` (`gui/views/profiles_view.py:450`); тот же шаблон с другим классом — `self.worker = CheckAllProxiesWorker(...)` (`gui/views/proxies_view.py:216-218`) — повторный клик теряет последнюю ссылку на работающий `QThread`, что для Qt заканчивается аварийным завершением. Корректный образец есть в `gui/views/warmup_view.py:249, 335`.
-* **R3-22** `urllib.request.urlopen(req, timeout=8.0)` для пользовательского `rotation_url` вызывается из обработчика кнопки в главном потоке Qt (`gui/views/proxies_view.py:157, 162-170`) — UI замирает до 8 с.
-* **R3-23** `_HAS_CRYPTOGRAPHY` присваивается (`secrets_store.py:37,39`) и нигде не читается (grep: только эти две строки). При отсутствии `cryptography` выбор режима `passphrase` приведёт к `NameError` вместо понятной ошибки.
-* **R3-24** Fail-open при недоступном шифровании: `encrypt_notes`/`protect_proxy_fields` пишут значение открытым текстом и только логируют `warning` (`secrets_store.py:352-353, 460-463`). Это осознанное решение с комментарием, но по факту «выбран сильный режим» и «значение в открытом виде» сосуществуют.
-* **R3-25** Честность статусов: `try/finally` без `except` (`upload_queue.py:321, 369-382`) оставляет job в `uploading` и профиль `RUNNING` при неожиданном исключении; неизвестное действие warmup возвращает `True` (`warmup_engine.py:350`); «403» считается ретраибельным (`upload_queue.py:25`); `normalize_upload_platform` регистрозависим (`upload_queue.py:47-56`) — `"Instagram_Reels"` молча станет `youtube_shorts`; `cancel_all` убивает браузеры, которые сам не запускал (`upload_queue.py:144-151`).
-* **R3-26** `parse_account_string` (`account_provisioner.py:81-97`): пароль, содержащий выбранный разделитель, обрезается (`p@ss:w0rd` → `p@ss`, остаток уходит в `totp_secret`); строки с другим разделителем дают мусорный email. Валидации формата нет, ошибочные строки отбрасываются молча (`:78-79`).
-* **R3-27** GUI: парольная фраза остаётся в поле после применения (`gui/views/secrets_mode_card.py:98` читает `passphrase_edit.text()`, вызовов `.clear()` в файле нет; в `settings_view.py:181` очистка есть); в таблице аккаунтов отображается замаскированный 2FA-сид — 7 символов (`gui/views/accounts_view.py:327` `notes = decrypt_notes(notes)` → `:354` `totp_sec = notes.get("totp_secret","")` → `:364` ячейка таблицы; `mask_secret` — `secrets_store.py:74-80`), при этом полный сид кладётся в `Qt.ItemDataRole.UserRole` (`accounts_view.py:368`).
-* **R3-28** `warmup_engine.py:332-336, 362-367`: `dwell` со `min_sec`/`max_sec` и `human_scroll` с `duration_sec` не ограничены; сценарий можно передать через API (`server.py:1223-1224`), и такой шаг навсегда занимает один из 10 слотов конкурентности (`warmup_engine.py:458`).
-* **R3-29** `process_monitor._monitor_loop` глотает все исключения (`process_monitor.py:67-68`); нет `SECURITY.md`, `dependabot.yml` и сканера уязвимостей зависимостей (в `.github/workflows` только `ci.yml`, `release.yml`, `security.yml` = CodeQL).
+**What to do:** synchronize `requirements.txt` with `pyproject.toml:34-48`.
 
 ---
 
-## 6. Расхождения документации, коммитов и кода
+## 5. Low Findings
 
-1. **Тесты.** `README.md:19,230,237` — «631 automated tests», «631 passed, 2 deselected». Проверено: `pytest tests --collect-only -q -o addopts=""` → **633** node id, с `-m "not live"` → **631 из 633** (2 отброшены). Статически в `tests/**/*.py` — **572** строки `def test_`, из них 2 — фикстуры, 10 `parametrize` дают расширение до 633. То есть число 631 корректно как «собранных node id», но реального прогона «631 passed» я **не воспроизвёл**: в этом окружении `9 failed, 491 passed, 133 errors`. Все проверенные падения — `ModuleNotFoundError: qfluentwidgets` (6) и `playwright` (4); все 133 ошибки — `PermissionError` песочницы на временных каталогах. «Не могу подтвердить» относится именно к строке «631 passed».
-2. `README.md:255` — «`test_deep_api_and_scenarios.py` — 25 API & scenario integration tests»; фактически 28 `def test_` (посчитано по файлу).
-3. `README.md:75` документирует ответ `start` как `automation: {port, wsEndpoint, ws_endpoint}`; `server.py:724-729` возвращает только `{port, wsEndpoint}` (`ws_endpoint` есть лишь в `browser_launcher.py:441`).
-4. `README.md:249` — «single-use state tokens, TLS-only callback URL validation». В коде state сравнивается (`account_provisioner.py:157-168`), но не инвалидируется после использования, и `redirect_uri` по умолчанию — `http://127.0.0.1:3000` (`:364`). Тестов на это в `tests/test_oauth_state_security.py` нет.
-5. `docs/API_REFERENCE.md:8` и `CHANGELOG.md:35` — «CORS отражает 8899/3000 плюс порт, переданный с `--port`». CORS-список и regex жёстко заданы (`server.py:216-228`); `--port` расширяет только `_ALLOWED_PORTS` (`server.py:240,247-250`), используемый в `_is_local_origin` (`:280`), — то есть CORS сам по себе порт не «отражает».
-6. `README.md:209` `pip install -r requirements.txt` — см. R3-16: в файле нет `psutil` и `cryptography`.
-7. `CHANGELOG.md:45` — «audio_noise_seed is random again»; в `profile_manager.py:449` значение детерминированное (`0.000001 * idx`), при `idx=0` это `0.0`.
-8. `README.md:244` приписывает тесты `Emulation.setTimezoneOverride`/`setUserAgentOverride` файлу `test_advanced_stealth_and_seeder.py`; они находятся в `test_cdp_injector.py:119,122`.
-9. Версии: `nazak/__init__.py:5`, `pyproject.toml:7`, `version_info.txt`, `README.md:19,26` — 1.10.0; при этом `installer.iss:8` и `build_exe.py:43,45` содержат fallback `"1.9.1"`, `release.yml:12` — дефолтный тег `v1.4.1`, `gui/splash.py:121` рисует `v1.3.0`, `start_macos.sh:69,87` — «271 tests».
-10. `docs/API_REFERENCE.md:402` — «Requires a real `source_video_path` (400 if missing)»; фактически есть fallback на `DATA_DIR/videos/source.mp4` (`server.py:1427-1444`).
-11. `docs/API_REFERENCE.md:476` и `README.md:166` описывают `--time-zone-for-testing` как «C++-side alignment», тогда как `cdp_injector.py:12-13` прямо говорит, что флаг «was proven dead in the audit» (флаг всё ещё добавляется в `browser_launcher.py:247`, `TZ` — в `:350-352`).
-12. `docs/DEEP_AUDIT_ROUND2.md:257,264` ссылается на `POST /api/profiles/{profile_id}/export` и `POST /api/profiles/import` — таких маршрутов в `server.py` нет; ссылки на строки в документе устарели (например, `:205-217` против фактических `214-228`). Историческое состояние я подтвердить не могу, но сам документ сейчас вводит в заблуждение.
-
----
-
-## 7. Что проверено и НЕ подтвердилось (важно не меньше находок)
-
-* **Секретов в истории git нет.** Сканирование полного патча истории (`git log --all -p`, 7 317 628 байт, 69 коммитов) по шаблонам private key / `AKIA…` / `ghp_…` / `AIza…` / `xox[baprs]-…` дало **одно** совпадение — строку `"response": "AKIAIOSFODNN7EXAMPLE / super-secret-token"` в `docs/DEEP_AUDIT_ROUND2.md:174`. Это пример ключа из публичной документации AWS, использованный как тестовая строка, а не реальный креденшл.
-* **Исторические версии `data/profiles.json`** (коммиты `7595011`, `1ea6efe`, `452700d`, `06e4aec`, файл перестал отслеживаться в `9caefc8`) содержат только `"password": null` и человекочитаемые `notes` — учётных данных там нет.
-* **Zip-slip защищён:** `profile_manager.py:1119-1124` (абсолютные пути, диск, `..`, `is_relative_to`); импорт cookie-ZIP читает архив в память и ничего не распаковывает (`cookie_manager.py:219-247`).
-* **Маскирование секретов в API работает:** `server.py:330-370`, `secrets_store.py:74-80, 388-390`; `_totp_raw` появляется только при `reveal=True`.
-* **Инъекций команд нет:** поиск `shell=True|os.system|os.popen|eval(|exec(` по `*.py` вне тестов не даёт совпадений; ffmpeg и Chrome запускаются списком аргументов (`video_uniquifier.py:112-139`, `browser_launcher.py:358`), `custom_url` фильтруется `sanitize_launch_url` (`browser_launcher.py:34-56`) и проверен тестом (`tests/test_audit_round2_regressions.py:116-127`).
-* **Инъекций в SQL нет:** `history_seeder.py` использует параметризованные запросы (`:162, 167-178, 211-217`).
-* **Пути профилей защищены:** `validate_pid` (`server.py:312-327`) и `_validate_id` (`profile_manager.py:166-180`) запрещают `/`, `\`, `:`, `..`; удаление данных требует `is_relative_to` (`:678-683`).
-* **CSRF-токен OAuth генерируется CSPRNG:** `secrets.token_urlsafe(32)` (`account_provisioner.py:124`); колбэк слушает только loopback (`:247`); `?error=` экранируется (`:188`). Замечание — `listen_for_oauth_code(state=None)` делает проверку необязательной (`:382-391`), но **вызовов этого метода вне тестов я не нашёл** (grep: только `tests/`).
-* **`automate_google_login` объявляет успех без проверки результата** (`account_provisioner.py:614-628`), но **вызовов в репозитории нет** (только определение) — поэтому это латентный дефект, а не активная дыра.
-* **CORS ограничен точными портами** (`server.py:214-228`), regex не принимает произвольный порт (проверено: `Origin=http://localhost:3000` → 200, `Origin=https://evil.example.com` → 403).
+* **R3-17** `_LOCAL_HOSTS` includes `"testserver"` (`server.py:239`) — verified: `Host: testserver` → 200. The API key is compared with `==` (`server.py:287`) rather than `hmac.compare_digest`.
+* **R3-18** The prefixes `/static`, `/docs`, `/redoc`, `/openapi.json`, `/swagger` exit the middleware before the checks (`server.py:293-294`) — the API schema and static files are served for any `Host`.
+* **R3-19** `p.id` without escaping in inline handlers (`app.js:244, 269, 271-289`). Not exploitable at present: the id is validated against `^[a-zA-Z0-9_\-]+$` (`server.py:325-326`, `profile_manager.py:179`). The risk will appear if the rule is loosened or `profiles.json` is edited by hand.
+* **R3-20** `href="${escapeHtml(j.video_url)}"` (`app.js:853`) — escaping is present, scheme validation is not; the source is the YouTube Studio DOM (`youtube_uploader.py:227`).
+* **R3-21** `self.check_worker = ProxyCheckWorker(...)` without an `isRunning()` check (`gui/views/profiles_view.py:450`); the same pattern with a different class — `self.worker = CheckAllProxiesWorker(...)` (`gui/views/proxies_view.py:216-218`) — a repeat click loses the last reference to the running `QThread`, which for Qt ends in a crash. A correct example exists in `gui/views/warmup_view.py:249, 335`.
+* **R3-22** `urllib.request.urlopen(req, timeout=8.0)` for a user-supplied `rotation_url` is called from a button handler on the Qt main thread (`gui/views/proxies_view.py:157, 162-170`) — the UI freezes for up to 8 s.
+* **R3-23** `_HAS_CRYPTOGRAPHY` is assigned (`secrets_store.py:37,39`) and never read (grep: only those two lines). Without `cryptography`, choosing the `passphrase` mode will produce a `NameError` instead of a clear error.
+* **R3-24** Fail-open when encryption is unavailable: `encrypt_notes`/`protect_proxy_fields` write the value in plaintext and only log a `warning` (`secrets_store.py:352-353, 460-463`). This is a deliberate decision with a comment, but in practice "a strong mode was chosen" and "the value is in plaintext" coexist.
+* **R3-25** Status honesty: `try/finally` without `except` (`upload_queue.py:321, 369-382`) leaves the job in `uploading` and the profile in `RUNNING` on an unexpected exception; an unknown warmup action returns `True` (`warmup_engine.py:350`); "403" is treated as retryable (`upload_queue.py:25`); `normalize_upload_platform` is case-sensitive (`upload_queue.py:47-56`) — `"Instagram_Reels"` silently becomes `youtube_shorts`; `cancel_all` kills browsers it did not start itself (`upload_queue.py:144-151`).
+* **R3-26** `parse_account_string` (`account_provisioner.py:81-97`): a password containing the chosen separator is truncated (`p@ss:w0rd` → `p@ss`, and the remainder goes into `totp_secret`); lines with a different separator produce a garbage email. There is no format validation, and malformed lines are discarded silently (`:78-79`).
+* **R3-27** GUI: the passphrase stays in the field after it is applied (`gui/views/secrets_mode_card.py:98` reads `passphrase_edit.text()`, and there are no `.clear()` calls in the file; `settings_view.py:181` does clear it); the accounts table displays a masked 2FA seed — 7 characters (`gui/views/accounts_view.py:327` `notes = decrypt_notes(notes)` → `:354` `totp_sec = notes.get("totp_secret","")` → `:364` the table cell; `mask_secret` — `secrets_store.py:74-80`), while the full seed is placed into `Qt.ItemDataRole.UserRole` (`accounts_view.py:368`).
+* **R3-28** `warmup_engine.py:332-336, 362-367`: `dwell` with `min_sec`/`max_sec` and `human_scroll` with `duration_sec` are unbounded; the scenario can be supplied through the API (`server.py:1223-1224`), and such a step permanently occupies one of the 10 concurrency slots (`warmup_engine.py:458`).
+* **R3-29** `process_monitor._monitor_loop` swallows all exceptions (`process_monitor.py:67-68`); there is no `SECURITY.md`, no `dependabot.yml`, and no dependency vulnerability scanner (in `.github/workflows` there are only `ci.yml`, `release.yml`, `security.yml` = CodeQL).
 
 ---
 
-## 8. Чего я НЕ смог проверить (прямо)
+## 6. Discrepancies Between Documentation, Commits, and Code
 
-1. Строку «631 passed» из `README.md:237` — окружение не даёт чистого прогона (нет `qfluentwidgets`/`playwright`, песочница ломает временные каталоги pytest). *(Обновлено: числа в README приведены к фактическим — 669 collected / 666 selected / 3 live deselected.)*
-2. ~~Исполнение XSS (R3-05) в реальном браузере.~~ **Проверено**: live-тест в Chromium + дифференциальный контроль (см. §3/R3-05).
-3. CSRF через no-cors GET (R3-10) в реальном браузере: отсутствие `Origin` взято из MDN.
-4. Эксплуатацию DNS-rebinding SSRF (R3-13) — нет управляемого DNS.
-5. Чтение произвольных файлов через `/api/autopost/uniquify` (R3-12) — не подтверждаю, что содержимое утекает.
-6. Межпользовательский доступ на Windows (R3-01) — вторая учётная запись не создавалась.
-7. Запуск Docker-конфигурации (R3-02) — цепочка собрана из проверенных звеньев, но целиком не воспроизводилась.
-8. Метаданные зависимостей `PyQt6-Fluent-Widgets`, `pytest-asyncio`, `playwright` (не установлены здесь) — поэтому «`psutil` не приходит транзитивно» я утверждаю только про 10 проверенных пакетов.
-9. Историческое состояние кода, на которое ссылается `docs/DEEP_AUDIT_ROUND2.md`.
-10. `docker build` / `docker compose up` целиком — см. §10: движок Docker на этой машине
-    не запускается (нет WSL2, нужен админ + перезагрузка). Всё, что можно проверить без
-    демона, проверено; сам `docker build` вынесен в CI-джобу `docker.yml`.
+1. **Tests.** `README.md:19,230,237` — "631 automated tests", "631 passed, 2 deselected". Verified: `pytest tests --collect-only -q -o addopts=""` → **633** node ids, with `-m "not live"` → **631 of 633** (2 deselected). Statically, `tests/**/*.py` contains **572** `def test_` lines, 2 of which are fixtures, and 10 `parametrize` decorators expand the count to 633. So the number 631 is correct as "collected node ids", but I **did not reproduce** an actual "631 passed" run: in this environment it is `9 failed, 491 passed, 133 errors`. All the failures I inspected are `ModuleNotFoundError: qfluentwidgets` (6) and `playwright` (4); all 133 errors are sandbox `PermissionError`s on temporary directories. "I cannot confirm" applies specifically to the "631 passed" line.
+2. `README.md:255` — "`test_deep_api_and_scenarios.py` — 25 API & scenario integration tests"; in fact there are 28 `def test_` (counted in the file).
+3. `README.md:75` documents the `start` response as `automation: {port, wsEndpoint, ws_endpoint}`; `server.py:724-729` returns only `{port, wsEndpoint}` (`ws_endpoint` exists only in `browser_launcher.py:441`).
+4. `README.md:249` — "single-use state tokens, TLS-only callback URL validation". In the code the state is compared (`account_provisioner.py:157-168`) but is not invalidated after use, and `redirect_uri` defaults to `http://127.0.0.1:3000` (`:364`). There are no tests for this in `tests/test_oauth_state_security.py`.
+5. `docs/API_REFERENCE.md:8` and `CHANGELOG.md:35` — "CORS reflects 8899/3000 plus the port passed with `--port`". The CORS list and regex are hard-coded (`server.py:216-228`); `--port` only extends `_ALLOWED_PORTS` (`server.py:240,247-250`), which is used in `_is_local_origin` (`:280`) — that is, CORS itself does not "reflect" the port.
+6. `README.md:209` `pip install -r requirements.txt` — see R3-16: the file lacks `psutil` and `cryptography`.
+7. `CHANGELOG.md:45` — "audio_noise_seed is random again"; in `profile_manager.py:449` the value is deterministic (`0.000001 * idx`), and with `idx=0` it is `0.0`.
+8. `README.md:244` attributes the `Emulation.setTimezoneOverride`/`setUserAgentOverride` tests to `test_advanced_stealth_and_seeder.py`; they are in `test_cdp_injector.py:119,122`.
+9. Versions: `nazak/__init__.py:5`, `pyproject.toml:7`, `version_info.txt`, `README.md:19,26` — 1.10.0; yet `installer.iss:8` and `build_exe.py:43,45` contain a fallback of `"1.9.1"`, `release.yml:12` uses the default tag `v1.4.1`, `gui/splash.py:121` draws `v1.3.0`, and `start_macos.sh:69,87` says "271 tests".
+10. `docs/API_REFERENCE.md:402` — "Requires a real `source_video_path` (400 if missing)"; in fact there is a fallback to `DATA_DIR/videos/source.mp4` (`server.py:1427-1444`).
+11. `docs/API_REFERENCE.md:476` and `README.md:166` describe `--time-zone-for-testing` as "C++-side alignment", whereas `cdp_injector.py:12-13` states plainly that the flag "was proven dead in the audit" (the flag is still added in `browser_launcher.py:247`, and `TZ` in `:350-352`).
+12. `docs/DEEP_AUDIT_ROUND2.md:257,264` references `POST /api/profiles/{profile_id}/export` and `POST /api/profiles/import` — no such routes exist in `server.py`; the line references in that document are stale (for example, `:205-217` versus the actual `214-228`). I cannot confirm the historical state, but the document itself is misleading now.
 
 ---
 
-## 10. Docker-контур: проверено на реальном движке
+## 7. What Was Checked and NOT Confirmed (No Less Important Than the Findings)
 
-Проверка выполнялась после закрытия §3–§6, уже с работающим Docker:
+* **There are no secrets in the git history.** Scanning the full history patch (`git log --all -p`, 7,317,628 bytes, 69 commits) for private key / `AKIA…` / `ghp_…` / `AIza…` / `xox[baprs]-…` patterns produced **one** match — the line `"response": "AKIAIOSFODNN7EXAMPLE / super-secret-token"` in `docs/DEEP_AUDIT_ROUND2.md:174`. That is an example key from the public AWS documentation, used as a test string, not a real credential.
+* **Historical versions of `data/profiles.json`** (commits `7595011`, `1ea6efe`, `452700d`, `06e4aec`; the file stopped being tracked in `9caefc8`) contain only `"password": null` and human-readable `notes` — there are no credentials in them.
+* **Zip-slip is protected against:** `profile_manager.py:1119-1124` (absolute paths, drive, `..`, `is_relative_to`); the cookie-ZIP import reads the archive into memory and extracts nothing (`cookie_manager.py:219-247`).
+* **Secret masking works in the API:** `server.py:330-370`, `secrets_store.py:74-80, 388-390`; `_totp_raw` appears only with `reveal=True`.
+* **There is no command injection:** searching `*.py` outside the tests for `shell=True|os.system|os.popen|eval(|exec(` yields no matches; ffmpeg and Chrome are launched with an argument list (`video_uniquifier.py:112-139`, `browser_launcher.py:358`), `custom_url` is filtered by `sanitize_launch_url` (`browser_launcher.py:34-56`) and covered by a test (`tests/test_audit_round2_regressions.py:116-127`).
+* **There is no SQL injection:** `history_seeder.py` uses parameterized queries (`:162, 167-178, 211-217`).
+* **Profile paths are protected:** `validate_pid` (`server.py:312-327`) and `_validate_id` (`profile_manager.py:166-180`) forbid `/`, `\`, `:`, `..`; deleting data requires `is_relative_to` (`:678-683`).
+* **The OAuth CSRF token is generated by a CSPRNG:** `secrets.token_urlsafe(32)` (`account_provisioner.py:124`); the callback listens on loopback only (`:247`); `?error=` is escaped (`:188`). One caveat — `listen_for_oauth_code(state=None)` makes the check optional (`:382-391`), but **I found no calls to this method outside the tests** (grep: only `tests/`).
+* **`automate_google_login` reports success without verifying the result** (`account_provisioner.py:614-628`), but **there are no calls to it in the repository** (only the definition) — so this is a latent defect rather than an active hole.
+* **CORS is limited to exact ports** (`server.py:214-228`), and the regex does not accept an arbitrary port (verified: `Origin=http://localhost:3000` → 200, `Origin=https://evil.example.com` → 403).
+
+---
+
+## 8. What I Could NOT Verify (Stated Plainly)
+
+1. The line "631 passed" from `README.md:237` — the environment does not allow a clean run (no `qfluentwidgets`/`playwright`, and the sandbox breaks pytest's temporary directories). *(Updated: the numbers in the README have been brought in line with reality — 669 collected / 666 selected / 3 live deselected.)*
+2. ~~Execution of the XSS (R3-05) in a real browser.~~ **Verified**: a live test in Chromium + differential control (see §3/R3-05).
+3. CSRF via a no-cors GET (R3-10) in a real browser: the absence of `Origin` is taken from MDN.
+4. Exploitation of the DNS-rebinding SSRF (R3-13) — no controlled DNS.
+5. Reading arbitrary files through `/api/autopost/uniquify` (R3-12) — I do not confirm that the contents leak.
+6. Cross-user access on Windows (R3-01) — no second account was created.
+7. Running the Docker configuration (R3-02) — the chain is assembled from verified links, but was not reproduced end to end.
+8. The dependency metadata of `PyQt6-Fluent-Widgets`, `pytest-asyncio`, and `playwright` (not installed here) — which is why I claim "`psutil` does not arrive transitively" only for the 10 packages I checked.
+9. The historical state of the code that `docs/DEEP_AUDIT_ROUND2.md` refers to.
+10. `docker build` / `docker compose up` end to end — see §10: the Docker engine does not start on
+    this machine (no WSL2, which needs admin rights + a reboot). Everything that can be checked
+    without the daemon has been checked; `docker build` itself has been moved into the CI job `docker.yml`.
+
+---
+
+## 10. Docker Setup: Verified on a Real Engine
+
+This check was performed after §3–§6 were closed, with Docker already working:
 
 * `winget install Docker.DockerDesktop` → **Docker 29.8.2, Docker Compose 5.5.1**.
-  Движок сначала не стартовал: лог Docker Desktop
-  (`%LOCALAPPDATA%\Docker\log\host\monitor.log`) содержал
-  `[main.wslexec][E] c:\windows\system32\wsl.exe --version failed: exit status 1` и
+  The engine did not start at first: the Docker Desktop log
+  (`%LOCALAPPDATA%\Docker\log\host\monitor.log`) contained
+  `[main.wslexec][E] c:\windows\system32\wsl.exe --version failed: exit status 1` and
   `[main.engines][E] … engine linux/wsl failed to start: checking preconditions: checking WSL version: wsl is not installed`
-  с сообщением «Install it by running `wsl --install` in an administrative PowerShell, then restart your computer».
-  WSL отсутствовал, а оболочка агента не админ (`elevated: False`).
-* По согласованию с пользователем WSL установлен с повышением прав (UAC):
-  `wsl --install --no-distribution` → «Загрузка: Подсистема Windows для Linux 3.0.1 … Установка выполнена»,
-  затем `wsl --version` → **WSL 3.0.1.0, ядро 6.18.40.1-1**, версия по умолчанию 2.
-  Несмотря на `RebootPending: True` в CBS, движок поднялся без перезагрузки:
+  with the message "Install it by running `wsl --install` in an administrative PowerShell, then restart your computer".
+  WSL was absent, and the agent's shell was not elevated (`elevated: False`).
+* With the user's agreement, WSL was installed with elevation (UAC):
+  `wsl --install --no-distribution` → "Downloading: Windows Subsystem for Linux 3.0.1 … Installation complete",
+  then `wsl --version` → **WSL 3.0.1.0, kernel 6.18.40.1-1**, default version 2.
+  Despite `RebootPending: True` in CBS, the engine came up without a reboot:
   `docker info` → `29.8.2 | Docker Desktop (containerized) | docker-desktop`.
 
-### R3-30 (High, исправлено и проверено сборкой) — `Dockerfile` не собирался: имена пакетов от другой версии Debian
+### R3-30 (High, fixed and verified by a build) — the `Dockerfile` did not build: package names from a different Debian version
 
-Исходный `Dockerfile:2` использовал `FROM python:3.11-slim`, а список apt-пакетов (`:9-28`) — имена
-из bookworm. База при этом уже trixie — это подтверждено **запуском образа**:
+The original `Dockerfile:2` used `FROM python:3.11-slim`, while its apt package list (`:9-28`) used names
+from bookworm. The base image, however, was already trixie — confirmed by **running the image**:
 `docker run --rm python:3.11-slim cat /etc/os-release` → `PRETTY_NAME="Debian GNU/Linux 13 (trixie)"`,
-`VERSION_CODENAME=trixie`; запись в `docker-library/official-images`:
+`VERSION_CODENAME=trixie`; the entry in `docker-library/official-images`:
 `Tags: 3.11.17-slim-trixie, 3.11-slim-trixie, 3.11.17-slim, 3.11-slim` / `Directory: 3.11/slim-trixie`.
-По сервису Debian madison (`api.ftp-master.debian.org/madison`) этих пакетов в stable (trixie) нет:
+According to the Debian madison service (`api.ftp-master.debian.org/madison`), these packages do not exist in stable (trixie):
 
-| Пакет в Dockerfile | stable (trixie) | Замена |
+| Package in the Dockerfile | stable (trixie) | Replacement |
 |---|---|---|
-| `libgl1-mesa-glx` | нет (только bullseye/bookworm) | `libgl1` |
-| `libglib2.0-0` | нет | `libglib2.0-0t64` |
-| `libatk1.0-0` | нет | `libatk1.0-0t64` |
-| `libatk-bridge2.0-0` | нет | `libatk-bridge2.0-0t64` |
-| `libcups2` | нет | `libcups2t64` |
-| `libasound2` | нет | `libasound2t64` |
+| `libgl1-mesa-glx` | no (bullseye/bookworm only) | `libgl1` |
+| `libglib2.0-0` | no | `libglib2.0-0t64` |
+| `libatk1.0-0` | no | `libatk1.0-0t64` |
+| `libatk-bridge2.0-0` | no | `libatk-bridge2.0-0t64` |
+| `libcups2` | no | `libcups2t64` |
+| `libasound2` | no | `libasound2t64` |
 
-**Поломка воспроизведена** сборкой того же списка пакетов на `python:3.11-slim`:
+**The breakage was reproduced** by building the same package list on `python:3.11-slim`:
 `E: Package 'libgl1-mesa-glx' has no installation candidate` → `apt` exit 100, `docker build` exit 1.
-Исправление (база `python:3.11-slim-trixie`, имена `libgl1`/`…t64`, убран неиспользуемый `curl`):
-**`docker build` проходит, exit 0**; `hadolint 2.15.1` → exit 0 (`DL3008` закрыт
-`# hadolint ignore=DL3008` с обоснованием: пиннинг apt-версий в плавающем базовом образе ломает
-сборку иначе).
+The fix (base `python:3.11-slim-trixie`, names `libgl1`/`…t64`, unused `curl` removed):
+**`docker build` passes, exit 0**; `hadolint 2.15.1` → exit 0 (`DL3008` silenced by
+`# hadolint ignore=DL3008` with the justification that pinning apt versions in a floating base image
+would break the build otherwise).
 
-### R3-31 (High, исправлено и проверено) — не было `.dockerignore`: локальные секреты уезжали в образ
+### R3-31 (High, fixed and verified) — there was no `.dockerignore`: local secrets were shipped into the image
 
-`COPY . .` без `.dockerignore` кладёт в слои образа всё содержимое каталога сборки, включая
-`data/profiles.json` (пароли и TOTP-сиды аккаунтов в режиме `plain`), cookie/session-файлы
-профилей и всю историю `.git`. По `dockerignore(5)`: «the CLI modifies the context to exclude
+`COPY . .` without a `.dockerignore` puts the entire contents of the build directory into the image layers, including
+`data/profiles.json` (account passwords and TOTP seeds in `plain` mode), the profiles' cookie/session
+files, and the whole `.git` history. Per `dockerignore(5)`: "the CLI modifies the context to exclude
 files and directories that match patterns specified in the file. This avoids adding them to
-images using the ADD or COPY instruction». Добавлен `.dockerignore` (data/, .git/, .github/,
-секреты, кэши, артефакты сборки). **Проверено в собранном образе**:
-`ls -a /app` не содержит `data` и `.git`.
+images using the ADD or COPY instruction". A `.dockerignore` was added (data/, .git/, .github/,
+secrets, caches, build artifacts). **Verified in the built image**:
+`ls -a /app` contains no `data` and no `.git`.
 
-### R3-32 (Medium, исправлено и проверено) — compose выставлял порт на все интерфейсы
+### R3-32 (Medium, fixed and verified) — compose exposed the port on all interfaces
 
-Было `ports: - "8899:8899"` (Docker публикует на всех интерфейсах хоста) и токен не задавался.
-Стало: только loopback + обязательный токен. **Проверено настоящим Compose**:
+It used to be `ports: - "8899:8899"` (Docker publishes on all host interfaces) and no token was set.
+Now: loopback only + a mandatory token. **Verified with real Compose**:
 `docker compose config` → `host_ip: 127.0.0.1`, `published: "8899"`, `NAZAK_API_TOKEN: ci-compose-token`;
-без переменной — `docker compose config -q` падает с
-«required variable NAZAK_API_TOKEN is missing a value: set NAZAK_API_TOKEN in a .env file next to docker-compose.yml»
-(exit 1). Устаревший `version: '3.8'` убран; добавлен `.env.example`.
+without the variable, `docker compose config -q` fails with
+"required variable NAZAK_API_TOKEN is missing a value: set NAZAK_API_TOKEN in a .env file next to docker-compose.yml"
+(exit 1). The obsolete `version: '3.8'` was removed; `.env.example` was added.
 
-### R3-33 (инфраструктура) — CI-джоба с настоящим `docker build`
+### R3-33 (infrastructure) — a CI job with a real `docker build`
 
-`.github/workflows/docker.yml` (только при изменениях Docker-файлов + `workflow_dispatch`):
-`docker compose config -q` → `docker build` → отказ старта без токена → HTTP-контракт → логи и
-cleanup. Проверен `actionlint 1.7.12` (exit 0). Теперь те же шаги подтверждены и локально (ниже),
-поэтому джоба дублирует уже проверенный сценарий на каждый push.
+`.github/workflows/docker.yml` (only on changes to Docker files + `workflow_dispatch`):
+`docker compose config -q` → `docker build` → refusal to start without a token → the HTTP contract → logs and
+cleanup. Checked with `actionlint 1.7.12` (exit 0). The same steps are now confirmed locally as well (below),
+so the job replays an already-verified scenario on every push.
 
-### Что именно проверено на реальном Docker (все шаги воспроизводимы)
+### What Exactly Was Verified on Real Docker (all steps are reproducible)
 
-| Проверка | Команда/способ | Результат |
+| Check | Command/method | Result |
 |---|---|---|
-| Сборка образа | `docker build -t nazak-r3-verify .` | **exit 0** (слои: apt → pip → `playwright install chromium --with-deps` 114 MiB → COPY) |
+| Image build | `docker build -t nazak-r3-verify .` | **exit 0** (layers: apt → pip → `playwright install chromium --with-deps` 114 MiB → COPY) |
 | `.dockerignore` | `docker run --rm --entrypoint sh IMAGE -c "ls -a /app"` | `NO_GIT`, `NO_DATA` |
-| Зависимости в образе | `docker run --rm --entrypoint python IMAGE -c "import psutil, cryptography, nazak"` | `deps-ok 1.10.0 7.2.2 50.0.2` |
-| Отказ без токена | `docker run --rm -e NAZAK_API_TOKEN= IMAGE` | exit 1 + текст «…`NAZAK_API_TOKEN` не задан. Варианты: 1) … 2) …» |
-| HTTP-контракт | `docker run -e NAZAK_API_TOKEN=… -p 127.0.0.1:18899:8899 IMAGE` | без ключа `401`; с ключом `200` (`status=online`); неверный ключ `401`; чужой `Host` `403`; чужой `Origin` `403`; `Sec-Fetch-Site: cross-site` `403`; `/openapi.json` чужой `Host` `403`, локальный `200` |
-| Веб-дашборд | `GET /` | `200` + HTML |
-| **`docker compose up -d --build`** | реальный Compose | контейнер `Up`, порты `127.0.0.1:8899->8899/tcp`; без ключа `401`, с ключом `200`; `docker compose down` удалил контейнер и сеть |
-| Исходный Dockerfile | сборка старого списка пакетов | `E: Package 'libgl1-mesa-glx' has no installation candidate` (подтверждение R3-30) |
+| Dependencies in the image | `docker run --rm --entrypoint python IMAGE -c "import psutil, cryptography, nazak"` | `deps-ok 1.10.0 7.2.2 50.0.2` |
+| Refusal without a token | `docker run --rm -e NAZAK_API_TOKEN= IMAGE` | exit 1 + the text "…`NAZAK_API_TOKEN` is not set. Options: 1) … 2) …" |
+| HTTP contract | `docker run -e NAZAK_API_TOKEN=… -p 127.0.0.1:18899:8899 IMAGE` | without a key `401`; with a key `200` (`status=online`); wrong key `401`; foreign `Host` `403`; foreign `Origin` `403`; `Sec-Fetch-Site: cross-site` `403`; `/openapi.json` with a foreign `Host` `403`, local `200` |
+| Web dashboard | `GET /` | `200` + HTML |
+| **`docker compose up -d --build`** | real Compose | container `Up`, ports `127.0.0.1:8899->8899/tcp`; without a key `401`, with a key `200`; `docker compose down` removed the container and the network |
+| Original Dockerfile | building the old package list | `E: Package 'libgl1-mesa-glx' has no installation candidate` (confirmation of R3-30) |
 
-Итог: **16/16 проверок контейнера и 8/8 шагов compose-сценария пройдены**; тестовые образы и
-runtime-данные из `data/` после проверки удалены, контейнеров не осталось.
-
----
-
-## 9. Предлагаемый порядок исправления
-
-1. **R3-01/R3-02** — токен по умолчанию + запрет `0.0.0.0` без токена; сузить выдачу cookie-экспорта. Это единственная находка, где ущерб — кража всех аккаунтов фермы.
-2. **R3-03/R3-04/R3-08/R3-09** — CLI: маскировать секреты, починить TOTP, убрать подстановку «первого профиля», удалить `DEMO_MP4_HEADER`, не печатать живые коды.
-3. **R3-05** — экранировать `health.*`; заодно убрать HTTP для гео-запроса.
-4. **R3-06/R3-11** — честный статус публикации + запрет ретрая после клика «Publish».
-5. **R3-07** — сделать безопасный режим хранения значением по умолчанию или спрашивать при импорте.
-6. **R3-14/R3-16/R3-15** — привести `requirements.txt` и `addopts` в рабочее состояние, сузить `disable_error_code`.
-7. **R3-10/R3-12/R3-13** — методы/валидация путей/пиннинг IP.
-8. Остальное — по таблице §1.
+Bottom line: **16/16 container checks and 8/8 steps of the compose scenario passed**; the test images and
+the runtime data from `data/` were deleted after the check, and no containers were left behind.
 
 ---
 
-## 11. Второй проход аудита (round-3b): участки, которые в §1–§10 не проверялись
+## 9. Proposed Remediation Order
 
-Первый проход закрыл периметр API, CLI-секреты, честность публикации, warmup и Docker.
-Второй проход целенаправленно смотрел туда, где я ещё не читал код: `index.html` и
-шрифтовые зависимости дашборда, генератор stealth-JS целиком, `cdp_injector` (цикл
-CDP), `synchronizer`, `cli_cmds/automation.py`, `gui/dialogs/*`, `nazak/tools/*`,
-`build_exe.py`/`installer.iss` (сборка релиза), `profile_manager.import_profile_bundle`
-и cookie-ZIP, а также все pydantic-модели запросов API на предмет границ.
+1. **R3-01/R3-02** — a token by default + a ban on `0.0.0.0` without a token; restrict what the cookie export hands out. This is the only finding where the damage is the theft of every account on the farm.
+2. **R3-03/R3-04/R3-08/R3-09** — CLI: mask secrets, fix TOTP, remove the "first profile" fallback, delete `DEMO_MP4_HEADER`, and stop printing live codes.
+3. **R3-05** — escape `health.*`; also remove HTTP for the geo request.
+4. **R3-06/R3-11** — an honest publication status + no retry after the "Publish" click.
+5. **R3-07** — make the secure storage mode the default, or ask on import.
+6. **R3-14/R3-16/R3-15** — bring `requirements.txt` and `addopts` into working order, and narrow `disable_error_code`.
+7. **R3-10/R3-12/R3-13** — methods / path validation / IP pinning.
+8. Everything else — per the table in §1.
 
-### Сводка
+---
 
-| # | Находка | Severity | Как проверял | Статус |
+## 11. Second Audit Pass (round-3b): Areas Not Covered in §1–§10
+
+The first pass closed out the API perimeter, the CLI secrets, publication honesty, warmup, and Docker.
+The second pass deliberately looked where I had not yet read the code: `index.html` and
+the dashboard's font dependencies, the stealth-JS generator in its entirety, `cdp_injector` (the
+CDP loop), `synchronizer`, `cli_cmds/automation.py`, `gui/dialogs/*`, `nazak/tools/*`,
+`build_exe.py`/`installer.iss` (the release build), `profile_manager.import_profile_bundle`
+and cookie-ZIP, as well as all the pydantic API request models for their bounds.
+
+### Summary
+
+| # | Finding | Severity | How I checked | Status |
 |---|---|---|---|---|
-| R3b-01 | `scenario run` без `--wait`: daemon-поток убивался `SystemExit`, команда печатала success | High | репро механизма + чтение | исправлено, тест |
-| R3b-02 | Отрицательный `min_delay_ms` → `ValueError` вне `try` убивал поток-насос, `session.active` оставался `True` | Medium | запуск: `_mirror_one` пробросил `ValueError('sleep length must be non-negative')` | исправлено, тесты |
-| R3b-03 | `Infinity`/`NaN` из JSON принимались моделями → в stealth.js попадали литералы `inf`/`nan` | Medium | сквозной запуск: POST 200 → `() => inf`, `const factor = nan` | исправлено, тесты |
-| R3b-04 | `MassGenerateRequest.count` без верхней границы → O(n²) перезаписи `profiles.json` | Medium | замер: 20→0.06 с, 40→0.15 с, 80→0.43 с | исправлено, тесты |
-| R3b-05 | `AutopostBatchRequest.delay_seconds` без границы → батч «засыпал» на годы, блокируя `is_running` | Medium | расчёт + чтение `upload_queue.py:227` | исправлено, тесты |
-| R3b-06 | `.nazak` и cookie-ZIP распаковывались без лимитов | Medium | замер: 100 КиБ архив → 100 МиБ на диске | исправлено, тесты |
-| R3b-07 | Сборка релиза увозила runtime `data/` (в т.ч. `profiles.json`) в ZIP и установщик | Medium | фрозен-путь воспроизведён: `data/{profiles.json,profiles,extensions,logs}` рядом с exe | исправлено, тест |
-| R3b-08 | GUI-воркеры использовали предсказуемый диапазон CDP-портов `9350 + idx` | Low-Medium | чтение + grep | исправлено, тест |
-| R3b-09 | `Runtime.addBinding` стоял во всех сессиях: любая страница мастера (включая iframe) могла диктовать клики в браузерах других профилей | High | чтение цепочки `_on_binding_called → submit_event → _dispatch_event` | исправлено, тесты |
-| R3b-10/11 | Ни одного security-заголовка; CSP отсутствовал | Medium | grep по репозиторию + живой сервер | исправлено (частичный CSP), тесты |
-| R3b-12 | GUI: удаление кэша без подтверждения, ложный успех импорта cookie | Medium | чтение | исправлено, статические тесты |
-| R3b-13 | В инжектируемом JS были page-visible маркеры `__nazakShieldApplied`, `__nazakSyncInstalled`, `__nazak_sync_event` | Low (для антидетекта — Medium) | генерация stealth.js и проверка содержимого | исправлено, тесты |
-| R3b-14 | Мелочи: `${e.message}` в `innerHTML`, `target="_blank"` без `rel`, Google Fonts с CDN, `D:/nazak/...` в tools, «V1.3.0» в ассете, docstring 1..500 против слайдера 1..100, неограниченная очередь событий, inline-разбор binding'а в цикле CDP, `cols<0` | Low | чтение + запуск | исправлено |
+| R3b-01 | `scenario run` without `--wait`: the daemon thread was killed by `SystemExit`, and the command printed success | High | repro of the mechanism + reading | fixed, test |
+| R3b-02 | A negative `min_delay_ms` → a `ValueError` outside `try` killed the pump thread, and `session.active` stayed `True` | Medium | execution: `_mirror_one` raised `ValueError('sleep length must be non-negative')` | fixed, tests |
+| R3b-03 | `Infinity`/`NaN` from JSON were accepted by the models → the literals `inf`/`nan` ended up in stealth.js | Medium | end-to-end run: POST 200 → `() => inf`, `const factor = nan` | fixed, tests |
+| R3b-04 | `MassGenerateRequest.count` with no upper bound → O(n²) rewrites of `profiles.json` | Medium | measurement: 20→0.06 s, 40→0.15 s, 80→0.43 s | fixed, tests |
+| R3b-05 | `AutopostBatchRequest.delay_seconds` with no bound → the batch would "sleep" for years, blocking `is_running` | Medium | calculation + reading `upload_queue.py:227` | fixed, tests |
+| R3b-06 | `.nazak` and cookie-ZIP were extracted without limits | Medium | measurement: a 100 KiB archive → 100 MiB on disk | fixed, tests |
+| R3b-07 | The release build shipped the runtime `data/` (including `profiles.json`) into the ZIP and the installer | Medium | the frozen path was reproduced: `data/{profiles.json,profiles,extensions,logs}` next to the exe | fixed, test |
+| R3b-08 | The GUI workers used a predictable CDP port range, `9350 + idx` | Low-Medium | reading + grep | fixed, test |
+| R3b-09 | `Runtime.addBinding` was installed in every session: any page of the wizard (including an iframe) could dictate clicks in other profiles' browsers | High | reading the chain `_on_binding_called → submit_event → _dispatch_event` | fixed, tests |
+| R3b-10/11 | Not a single security header; CSP was absent | Medium | grep across the repository + a live server | fixed (partial CSP), tests |
+| R3b-12 | GUI: cache deletion without confirmation, a false success on cookie import | Medium | reading | fixed, static tests |
+| R3b-13 | The injected JS contained page-visible markers `__nazakShieldApplied`, `__nazakSyncInstalled`, `__nazak_sync_event` | Low (Medium for anti-detection) | generating stealth.js and checking its contents | fixed, tests |
+| R3b-14 | Minor items: `${e.message}` in `innerHTML`, `target="_blank"` without `rel`, Google Fonts from a CDN, `D:/nazak/...` in the tools, "V1.3.0" in an asset, a docstring of 1..500 versus a slider of 1..100, an unbounded event queue, inline parsing of the binding in the CDP loop, `cols<0` | Low | reading + execution | fixed |
 
-### R3b-01. `nazak scenario run` без `--wait` рапортовал успех, не выполняя работу
+### R3b-01. `nazak scenario run` without `--wait` reported success without doing the work
 
-`cli_cmds/automation.py:196-207` (до фикса) стартовал `threading.Thread(target=_bg, daemon=True)`
-и сразу возвращал `emit_success`. `nazak/main.py:90` и `:139` — `raise SystemExit(run_cli())`,
-поэтому интерпретатор завершался немедленно и daemon-поток уничтожался. Воспроизведено
-отдельным репро: процесс печатает «success reported, exiting now», `exit=0`, а файл-маркер,
-который поток должен был создать через 1.5 с, не появился и через 2.5 с.
+`cli_cmds/automation.py:196-207` (before the fix) started `threading.Thread(target=_bg, daemon=True)`
+and immediately returned `emit_success`. `nazak/main.py:90` and `:139` — `raise SystemExit(run_cli())`,
+so the interpreter exited immediately and the daemon thread was destroyed. Reproduced with
+a separate repro: the process prints "success reported, exiting now", `exit=0`, while the marker file,
+which the thread was supposed to create after 1.5 s, had not appeared even after 2.5 s.
 
-**Исправлено:** фон — отдельный процесс (`subprocess.Popen` с `DETACHED_PROCESS |
-CREATE_NEW_PROCESS_GROUP` на Windows, `start_new_session=True` на POSIX), stdout/stderr
-пишутся в `data/logs/scenario_<timestamp>.log`, в JSON-ответе `pid` и путь к логу; при
-невозможности старта — честная ошибка с подсказкой про `--wait`. Команду целиком я не
-запускал, чтобы не поднимать реальный браузер на машине пользователя.
+**Fixed:** the background work is a separate process (`subprocess.Popen` with `DETACHED_PROCESS |
+CREATE_NEW_PROCESS_GROUP` on Windows, `start_new_session=True` on POSIX), stdout/stderr
+are written to `data/logs/scenario_<timestamp>.log`, and the JSON response carries the `pid` and the log path; if
+the process cannot be started, there is an honest error with a hint about `--wait`. I did not run the
+command end to end, so as not to bring up a real browser on the user's machine.
 
-### R3b-02. Отрицательный джиттер убивал синхронизатор, а статус оставался «active»
+### R3b-02. A negative jitter killed the synchronizer while the status stayed "active"
 
-`synchronizer.py:355-356` (до фикса) — `time.sleep(delay_ms / 1000.0)` стоял **вне**
-per-event `try` (строка 357). `SynchronizerStartRequest.min_delay_ms` (`server.py:542`)
-и CLI `--min-delay` не имели нижней границы. Запуск подтвердил:
-`_mirror_one` с интервалом `(-1.0, -0.5)` пробросил `ValueError('sleep length must be non-negative')`;
-в `_mirror_pump` его ловил `except` (строка 316), который писал warning и выходил, **не
-сбрасывая `session.active`** — `get_status()` продолжал отдавать `active: true`, а
-`mirror_navigation` ждал ответа до 110 с.
+`synchronizer.py:355-356` (before the fix) — `time.sleep(delay_ms / 1000.0)` sat **outside**
+the per-event `try` (line 357). `SynchronizerStartRequest.min_delay_ms` (`server.py:542`)
+and the CLI `--min-delay` had no lower bound. Execution confirmed it:
+`_mirror_one` with the interval `(-1.0, -0.5)` raised `ValueError('sleep length must be non-negative')`;
+in `_mirror_pump` it was caught by an `except` (line 316) that logged a warning and exited **without
+resetting `session.active`** — `get_status()` kept returning `active: true`, and
+`mirror_navigation` waited for a response for up to 110 s.
 
-**Исправлено:** `_clamp_delay_range()` нормализует интервал (неотрицательный,
-упорядоченный, ≤60 с) и вызывается и в `SynchronizerSession.__init__`, и перед sleep;
-sleep перенесён внутрь `try`; `finally` насоса выставляет `session.active = False` и
-пишет `last_error`; `mirror_navigation` проверяет живость потока и не ждёт мёртвый насос;
-очередь событий ограничена `MAX_PENDING_EVENTS` с честным счётчиком `dropped_events`.
+**Fixed:** `_clamp_delay_range()` normalizes the interval (non-negative,
+ordered, ≤60 s) and is called both in `SynchronizerSession.__init__` and before the sleep;
+the sleep was moved inside the `try`; the pump's `finally` sets `session.active = False` and
+records `last_error`; `mirror_navigation` checks that the thread is alive and does not wait on a dead pump;
+the event queue is bounded by `MAX_PENDING_EVENTS` with an honest `dropped_events` counter.
 
-### R3b-03. `Infinity`/`NaN` ломали stealth.js
+### R3b-03. `Infinity`/`NaN` broke stealth.js
 
-`json.loads` принимает литералы `Infinity`/`NaN`, pydantic v2 по умолчанию их не
-отвергает, а шаблон stealth-JS подставлял два float-поля через `str()`
+`json.loads` accepts the literals `Infinity`/`NaN`, pydantic v2 does not reject them
+by default, and the stealth-JS template substituted two float fields via `str()`
 (`extension_generator.py:335` — `device_pixel_ratio`, `:601` — `audio_noise_seed`).
-Сквозной запуск: `POST /api/profiles` с `{"device_pixel_ratio":Infinity,"audio_noise_seed":NaN}`
-→ **HTTP 200**, в модели `inf`/`nan`, в `stealth.js`:
+End-to-end run: `POST /api/profiles` with `{"device_pixel_ratio":Infinity,"audio_noise_seed":NaN}`
+→ **HTTP 200**, `inf`/`nan` in the model, and in `stealth.js`:
 
 ```
 Object.defineProperty(Window.prototype, 'devicePixelRatio', { get: makeNative(() => inf, ...
 const factor = nan || 0.00001;
 ```
 
-`inf`/`nan` — не идентификаторы JS (там `Infinity`/`NaN`): первое даёт ReferenceError на
-каждом чтении `devicePixelRatio` (страница ломается и это яркий признак подмены), второе
-глотается внешним `try/catch` → аудио-шум молча отключался.
+`inf`/`nan` are not JS identifiers (the language has `Infinity`/`NaN`): the first produces a ReferenceError on
+every read of `devicePixelRatio` (the page breaks, which is a glaring sign of spoofing), and the second is
+swallowed by an outer `try/catch` → the audio noise was silently disabled.
 
-**Исправлено:** `allow_inf_nan=False` в `FingerprintConfig`/`BatterySpoofConfig`/
-`GeolocationSpoofConfig`; `_js_number()` в генераторе (защита в глубину: `inf`→`Infinity`,
-`nan`→`0` с warning); ответ валидации больше не падает с 500 — `RequestValidationError`
-обрабатывается безопасно (см. R3b-10/11); нечисловые `lat/lon` и слишком长 строки из
-гео-ответа санитизируются в `proxy_checker` (`_finite_or_none`, `_safe_text`, `_safe_timezone`).
+**Fixed:** `allow_inf_nan=False` in `FingerprintConfig`/`BatterySpoofConfig`/
+`GeolocationSpoofConfig`; `_js_number()` in the generator (defense in depth: `inf`→`Infinity`,
+`nan`→`0` with a warning); the validation response no longer fails with a 500 — `RequestValidationError`
+is handled safely (see R3b-10/11); non-numeric `lat/lon` and over-long strings from the
+geo response are sanitized in `proxy_checker` (`_finite_or_none`, `_safe_text`, `_safe_timezone`).
 
-### R3b-04 / R3b-05. Отсутствие границ у числовых полей запросов
+### R3b-04 / R3b-05. Missing bounds on numeric request fields
 
-Ни одна модель запроса не имела `Field(ge/le)` (`server.py:464-553` до фикса). Замер
-стоимости `mass_generate_profiles` (каждый профиль перезаписывает весь `profiles.json`):
-`count=20 → 0.06 с`, `40 → 0.15 с`, `80 → 0.43 с` — то есть один запрос с `count=10000`
-вешает сервер на часы (CLI при этом всегда проверял `1..200`). Для `delay_seconds`
-`upload_queue.py:433` считал `random.randint(max(5, d-3), d+5)`, а вход в новый батч
-закрыт, пока идёт текущий (`upload_queue.py:227`) — `delay_seconds=10**9` означал паузу
-≈31 год и выключенный автопостинг до перезапуска.
+Not a single request model had `Field(ge/le)` (`server.py:464-553` before the fix). A measurement of
+the cost of `mass_generate_profiles` (each profile rewrites the entire `profiles.json`):
+`count=20 → 0.06 s`, `40 → 0.15 s`, `80 → 0.43 s` — that is, a single request with `count=10000`
+hangs the server for hours (the CLI, by contrast, always validated `1..200`). For `delay_seconds`,
+`upload_queue.py:433` computed `random.randint(max(5, d-3), d+5)`, and entry into a new batch is
+blocked while the current one runs (`upload_queue.py:227`) — `delay_seconds=10**9` meant a pause of
+≈31 years and autoposting switched off until a restart.
 
-**Исправлено:** границы в моделях (`count 1..200`, `delay_seconds 0..3600`, `min/max_delay_ms
+**Fixed:** bounds in the models (`count 1..200`, `delay_seconds 0..3600`, `min/max_delay_ms
 0..60000`, `coordinate_jitter_px 0..50`, `cols 1..8`, `cdp_port 1..65535`, `max_concurrency
-1..10`, `steps_count 1..20`, `max_length` для строк и списков, `format` по pattern) и
-**дублирующие клампы в сервисном слое** (`mass_generate_profiles`, `run_batch_upload`,
-`SynchronizerSession`, `tile_windows_win32`). Нижние границы, отвечавшие за 400-контракт
-эндпоинтов, намеренно не добавлялись — проверено, что три существующих теста на 400
-проходят.
+1..10`, `steps_count 1..20`, `max_length` for strings and lists, `format` by pattern) plus
+**duplicate clamps in the service layer** (`mass_generate_profiles`, `run_batch_upload`,
+`SynchronizerSession`, `tile_windows_win32`). The lower bounds that governed the endpoints'
+400 contract were deliberately not added — it was verified that the three existing tests for 400
+pass.
 
-### R3b-06. Zip-бомба в импорте бандла и cookie-архива
+### R3b-06. Zip bomb in the bundle and cookie archive import
 
-`profile_manager.py:1090/1115/1131` использовал только `namelist()`/`read()` — ни проверки
-`ZipInfo.file_size`, ни счётчика записей. Замер: архив **100 КиБ → 100 МиБ** записано на
-диск (5 записей по 20 МиБ нулей). Cookie-ZIP (`cookie_manager.py:233`) читался в память целиком.
+`profile_manager.py:1090/1115/1131` used only `namelist()`/`read()` — no check of
+`ZipInfo.file_size`, no entry counter. Measurement: an archive of **100 KiB → 100 MiB** written to
+disk (5 entries of 20 MiB of zeros each). The cookie ZIP (`cookie_manager.py:233`) was read into memory in full.
 
-**Исправлено:** лимиты по числу записей (20 000 / 200), по записи (512 МиБ / 32 МиБ) и по
-сумме (1 ГиБ / 64 МиБ); распаковка бандла потоковая с реальным подсчётом байт (заявленный
-`file_size` подделывается вниз), при превышении — отказ и удаление полураспакованного каталога.
+**Fixed:** limits on the number of entries (20,000 / 200), on a single entry (512 MiB / 32 MiB), and on the
+total (1 GiB / 64 MiB); the bundle is extracted as a stream with real byte counting (the declared
+`file_size` can be forged downwards), and when a limit is exceeded the extraction is refused and the half-extracted directory is deleted.
 
-### R3b-07. Релизные артефакты увозили `data/`
+### R3b-07. Release artifacts shipped `data/`
 
-Фрозен-приложение держит данные рядом с собой (`config.py:13-17`, `DATA_DIR = EXE_DIR/data`),
-а `build_exe.py:182` запускает собранный exe в рамках сборки — после чего в
-`dist/NazakBrowserStudio/data/` появляются `profiles.json`, `profiles/`, `logs/`,
-`extensions/`. ZIP пакует любой файл под `APP_DIR` (`build_exe.py:204-209`), установщик
-копирует всё рекурсивно (`installer.iss:59`). Воспроизведено на фрозен-пути: рядом с
-фейковым exe создаётся `data/{profiles.json,profiles,extensions,logs,videos}`; в
-`profiles.json` — 10 дефолтных профилей (проверено: паролей и 2FA там нет). Сегодня это
-не утечка, но это ровно тот каталог, где в режиме `plain` лежат пароли и 2FA-сиды.
+A frozen application keeps its data next to itself (`config.py:13-17`, `DATA_DIR = EXE_DIR/data`),
+and `build_exe.py:182` runs the built exe as part of the build — after which
+`dist/NazakBrowserStudio/data/` contains `profiles.json`, `profiles/`, `logs/`, and
+`extensions/`. The ZIP packs any file under `APP_DIR` (`build_exe.py:204-209`), and the installer
+copies everything recursively (`installer.iss:59`). Reproduced on the frozen path: next to a
+fake exe, `data/{profiles.json,profiles,extensions,logs,videos}` is created; in
+`profiles.json` there are 10 default profiles (verified: no passwords or 2FA in them). Today this is
+not a leak, but it is exactly the directory where passwords and 2FA seeds live in `plain` mode.
 
-**Исправлено:** `sanitize_app_data()` в `build_exe.py` (вызывается между `smoke_test()` и
-`package_zip()`, удаляет runtime-файлы и каталоги, восстанавливает `data/assets` для иконки)
-плюс второй слой — `Excludes:` в `installer.iss`. Полный `pyinstaller`/`ISCC` я не запускал:
-проверен механизм (фрозен-каталог и `rglob("*")` в упаковке), сам факт содержимого ZIP — вывод.
+**Fixed:** `sanitize_app_data()` in `build_exe.py` (called between `smoke_test()` and
+`package_zip()`; it deletes the runtime files and directories and restores `data/assets` for the icon)
+plus a second layer — `Excludes:` in `installer.iss`. I did not run a full `pyinstaller`/`ISCC`:
+the mechanism was verified (the frozen directory and `rglob("*")` in the packaging), and the actual contents of the ZIP are an inference.
 
-### R3b-08. Предсказуемые CDP-порты в GUI-воркерах
+### R3b-08. Predictable CDP ports in the GUI workers
 
-`gui/workers.py:133` — `cdp_port = 9350 + idx`, тогда как остальные пути берут эфемерный
-порт (`browser_launcher.get_free_port()`). В связке с отсутствием аутентификации у CDP
-локальный процесс может угадать порт и подключиться к живой сессии профиля.
+`gui/workers.py:133` — `cdp_port = 9350 + idx`, whereas the other paths take an ephemeral
+port (`browser_launcher.get_free_port()`). Combined with the lack of authentication on CDP,
+a local process can guess the port and connect to a profile's live session.
 
-**Исправлено:** `get_free_port()`; тест проверяет, что литерала `9350` больше нет, а также
-что функция возвращает различные bindable порты.
+**Fixed:** `get_free_port()`; the test checks that the literal `9350` is gone and that
+the function returns distinct bindable ports.
 
-### R3b-09. Инъекция действий со страницы в браузеры других профилей
+### R3b-09. Injection of actions from a page into other profiles' browsers
 
-`Runtime.addBinding` ставится для каждой attached-сессии (`cdp_injector.py:317`),
-обработчик проверял только имя и `type` (`:347-360`), после чего событие уходило в
-`submit_event` (`synchronizer.py:221-228`) и проигрывалось как `mouse.click`,
-`keyboard.press` или ввод до 8 символов в **worker-профилях** (`:454`, `:466`, `:470-477`).
-Пока идёт sync-сессия, любой скрипт на странице мастера (в том числе рекламный iframe)
-мог кликать в чужих залогиненных профилях.
+`Runtime.addBinding` is installed for every attached session (`cdp_injector.py:317`),
+and the handler checked only the name and `type` (`:347-360`), after which the event went to
+`submit_event` (`synchronizer.py:221-228`) and was replayed as a `mouse.click`,
+`keyboard.press`, or a text entry of up to 8 characters in the **worker profiles** (`:454`, `:466`, `:470-477`).
+While a sync session was running, any script on the master page (including an advertising iframe)
+could click inside other logged-in profiles.
 
-**Исправлено:** `binding_event_allowed()` (чистая, тестируемая) принимает жест только если
-это main-world контекст (`auxData.isDefault`) **главного** фрейма (`Page.getFrameTree` +
-`Page.frameNavigated`) top-level страницы (`targetInfo.type == "page"`, OOPIF исключён);
-payload ограничен 4 КиБ; включён token-bucket (60 событий/с, burst 120); разбор payload'а
-вынесен в задачу, чтобы флуд со страницы не задерживал `Fetch.continueRequest` в цикле чтения
-CDP; счётчики `binding_events_accepted/rejected/throttled` доступны в статусе инжектора.
+**Fixed:** `binding_event_allowed()` (pure and testable) accepts a gesture only if
+it comes from the main-world context (`auxData.isDefault`) of the **main** frame (`Page.getFrameTree` +
+`Page.frameNavigated`) of the top-level page (`targetInfo.type == "page"`, OOPIF excluded);
+the payload is limited to 4 KiB; a token bucket is enabled (60 events/s, burst 120); payload parsing
+was moved into a task so that a flood from the page does not delay `Fetch.continueRequest` in the CDP read
+loop; the `binding_events_accepted/rejected/throttled` counters are available in the injector's status.
 
-### R3b-10/11. Security-заголовки и CSP
+### R3b-10/11. Security headers and CSP
 
-Ни `Content-Security-Policy`, ни `X-Content-Type-Options`, ни `Referrer-Policy`, ни
-`X-Frame-Options` не выставлялись нигде (`grep` по репозиторию — 0 совпадений); `/`
-отдавался голым `FileResponse`. Строгий CSP тогда был невозможен: в `index.html` 40, а в
-генерируемой `app.js` разметке ещё 18 inline-обработчиков `on*`.
+Neither `Content-Security-Policy`, nor `X-Content-Type-Options`, nor `Referrer-Policy`, nor
+`X-Frame-Options` was ever set (`grep` across the repository — 0 matches); `/`
+was served as a bare `FileResponse`. A strict CSP was impossible at the time: `index.html` had 40, and the
+generated `app.js` markup had another 18 inline `on*` handlers.
 
-**Исправлено:** middleware выставляет `X-Content-Type-Options: nosniff`,
+**Fixed:** middleware sets `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`,
-`Cross-Origin-Resource-Policy`, `Permissions-Policy` и CSP с `object-src 'none'`,
-`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`; для `/api` и `/v1.0`
-добавлен `Cache-Control: no-store` (экспорт cookies не должен оседать в дисковом кэше).
-**Честная граница на тот момент:** проверено в реальном браузере, что CSP с
-`script-src 'self' 'unsafe-inline'` НЕ останавливает сам XSS (версия дашборда без
-экранирования продолжала исполнять payload — `country=1, city=1, ip=1`, 323 байта из
-`/api/security/secrets-mode`): защиту держало экранирование.
+`Cross-Origin-Resource-Policy`, `Permissions-Policy`, and a CSP with `object-src 'none'`,
+`base-uri 'none'`, `form-action 'self'`, `frame-ancestors 'none'`; for `/api` and `/v1.0`
+a `Cache-Control: no-store` header was added (the cookie export must not linger in the disk cache).
+**The honest boundary at that time:** it was verified in a real browser that a CSP with
+`script-src 'self' 'unsafe-inline'` does NOT stop the XSS itself (the dashboard version without
+escaping kept executing the payload — `country=1, city=1, ip=1`, 323 bytes from
+`/api/security/secrets-mode`): escaping was what held the line.
 
-**Закрыто в round-3c (см. §12):** обработчики переведены на `data-action` + делегирование,
-`script-src` стал строгим `'self'`, и инжектированный inline-обработчик больше не исполняется
-даже при сломанном экранировании.
+**Closed in round-3c (see §12):** the handlers were moved to `data-action` + delegation,
+`script-src` became a strict `'self'`, and the injected inline handler no longer executes
+even with broken escaping.
 
-### R3b-12. GUI-диалоги: подтверждение и честные результаты
+### R3b-12. GUI dialogs: confirmation and honest results
 
-`gui/dialogs/cookie_dialog.py:106-107` — один клик удалял Cache/Code Cache/GPUCache/
-DawnCache/Service Worker/CacheStorage без подтверждения и игнорировал `False` от
-`clear_profile_cache`; `:97-98` печатал «Successfully saved N entries» независимо от
-результата `save_profile_cookies`; `batch_cookie_dialog.py:244-245` не показывал счётчик
-`failed`.
+`gui/dialogs/cookie_dialog.py:106-107` — a single click deleted Cache/Code Cache/GPUCache/
+DawnCache/Service Worker/CacheStorage without confirmation and ignored a `False` from
+`clear_profile_cache`; `:97-98` printed "Successfully saved N entries" regardless of the
+result of `save_profile_cookies`; `batch_cookie_dialog.py:244-245` did not show the
+`failed` counter.
 
-**Исправлено:** `QMessageBox.question` + проверка обоих булевых результатов (ошибка вместо
-успеха), счётчик `failed` в сводке с `InfoBar.warning`. GUI без PyQt6 не запускается,
-поэтому проверено чтением и статическим тестом; поведение диалогов в живом GUI не проверялось.
+**Fixed:** `QMessageBox.question` + checks of both boolean results (an error instead of
+success), and the `failed` counter in the summary with `InfoBar.warning`. The GUI does not start without PyQt6,
+so this was verified by reading and a static test; the dialogs' behavior in a live GUI was not tested.
 
-### R3b-13. Page-visible маркеры продукта
+### R3b-13. Page-visible product markers
 
-В сгенерированном `stealth.js` был `window.__nazakShieldApplied`, в sync-клиенте —
-`window.__nazakSyncInstalled`, а binding назывался `__nazak_sync_event`: любая
-антифрод-система могла определить Nazak одной строкой `if (window.__nazak…)`.
+The generated `stealth.js` contained `window.__nazakShieldApplied`, the sync client contained
+`window.__nazakSyncInstalled`, and the binding was named `__nazak_sync_event`: any
+anti-fraud system could identify Nazak with a single line, `if (window.__nazak…)`.
 
-**Исправлено:** флаги идемпотентности переименованы (`window.__nsi`, `window.__nse_c`) и
-сделаны неперечислимыми (`enumerable: false`), имя binding'а — `__nse_ev`, бренд убран из
-комментариев внутри инжектируемого JS (комментарии видны через `Function.prototype.toString()`
-для незаклоаченных функций). Дополнительно инжектор применяет скрипт к текущему документу
-один раз на `(sessionId, loaderId)`, поэтому видимый странице флаг-«предохранитель» стал
-резервным, а не основным механизмом. Тесты: `"__nazak" not in SYNC_CLIENT_JS`,
+**Fixed:** the idempotency flags were renamed (`window.__nsi`, `window.__nse_c`) and
+made non-enumerable (`enumerable: false`), the binding name is now `__nse_ev`, and the brand was removed from
+the comments inside the injected JS (comments are visible through `Function.prototype.toString()`
+for non-closured functions). In addition, the injector applies the script to the current document
+once per `(sessionId, loaderId)`, so the page-visible "fuse" flag has become
+a fallback rather than the primary mechanism. Tests: `"__nazak" not in SYNC_CLIENT_JS`,
 `"__nazakShieldApplied" not in stealth.js`.
 
-**Остаточный риск (не устранён):** страница всё ещё может найти эти свойства явным
-перечислением (`Object.getOwnPropertyNames(window)`, `getOwnPropertySymbols`). Полностью
-невидимый вариант требует убрать флаги и полагаться только на учёт инъекций на стороне CDP —
-это шире, чем правка этого раунда, и риск двойного применения скрипта выше выгоды.
+**Residual risk (not eliminated):** the page can still find these properties by explicitly
+enumerating them (`Object.getOwnPropertyNames(window)`, `getOwnPropertySymbols`). A fully
+invisible variant would require removing the flags and relying only on injection bookkeeping on the CDP
+side — that is broader than this round's fix, and the risk of double-applying the script outweighs the benefit.
 
-### R3b-14. Мелкие исправления
+### R3b-14. Minor fixes
 
-- `app.js:346` — `${e.message}` теперь через `escapeHtml`; `app.js:854` — `rel="noopener noreferrer"`.
-- Google Fonts с CDN (`index.html:8-10`) убраны: дашборд больше не обращается к внешним
-  хостам и работает офлайн; `styles.css` использует явные системные стеки
-  (`Segoe UI Variable Text` / `Cascadia Mono`), других `url()`/`@import` в CSS нет.
-- `synchronizer._navigate_worker_sync` больше не передаёт URL в `page.goto()` как есть:
-  `file://`, `data:` и `javascript:` отклоняются (проверено запуском), плюс `field_validator`
-  на `SynchronizerNavigateRequest.url` отдаёт 422 на границе.
-- `nazak/tools/generate_brand_assets.py` — путь `D:/nazak/data/assets` заменён на
-  repo-relative, версия баннера берётся из пакета (было жёстко «V1.3.0»).
-- `mass_generate_dialog.py` — docstring приведён к реальному диапазону слайдера (1..100).
-- `synchronizer.py:150-153` — `cols` ограничен 1..8 (отрицательное значение давало
-  ZeroDivisionError/отрицательную геометрию, что гасилось общим `except`).
-- `synchronizer._ensure_worker_pages` проверяет кэш страниц **до** импорта playwright
-  (побочный эффект: тест `test_mirror_one_replicates_event_to_all_workers`, падавший из-за
-  отсутствия playwright, теперь проходит).
-- Классы `RequestValidationError`-ответа не эхо исходный ввод: тело 422 сериализуемо даже
-  для `Infinity`, а 5-мегабайтная строка не возвращается клиенту целиком.
+- `app.js:346` — `${e.message}` now goes through `escapeHtml`; `app.js:854` — `rel="noopener noreferrer"`.
+- Google Fonts from the CDN (`index.html:8-10`) were removed: the dashboard no longer contacts external
+  hosts and works offline; `styles.css` uses explicit system stacks
+  (`Segoe UI Variable Text` / `Cascadia Mono`), and there are no other `url()`/`@import` rules in the CSS.
+- `synchronizer._navigate_worker_sync` no longer passes the URL to `page.goto()` as is:
+  `file://`, `data:`, and `javascript:` are rejected (verified by execution), plus a `field_validator`
+  on `SynchronizerNavigateRequest.url` returns 422 at the boundary.
+- `nazak/tools/generate_brand_assets.py` — the path `D:/nazak/data/assets` was replaced with a
+  repo-relative one, and the banner version comes from the package (it used to be hard-coded as "V1.3.0").
+- `mass_generate_dialog.py` — the docstring was brought in line with the slider's actual range (1..100).
+- `synchronizer.py:150-153` — `cols` is bounded to 1..8 (a negative value produced a
+  ZeroDivisionError/negative geometry, which was swallowed by a generic `except`).
+- `synchronizer._ensure_worker_pages` checks the page cache **before** importing playwright
+  (a side effect: the test `test_mirror_one_replicates_event_to_all_workers`, which failed because
+  playwright was missing, now passes).
+- The `RequestValidationError` response classes do not echo the original input: the 422 body is serializable even
+  for `Infinity`, and a 5-megabyte string is not returned to the client in full.
 
-### Что проверено и НЕ подтвердилось во втором проходе
+### What Was Checked and NOT Confirmed in the Second Pass
 
-- Утечек секретов в логи нет: все `logger.*` с упоминанием паролей/токенов логируют имена
-  полей, а не значения (`secrets_store.py:366/475/489`, `account_provisioner.py:549`).
-- `NazakBrowserStudio.spec:13-16` бандлит только `nazak/web` и `data/assets` — корневой
-  `data/` в образ не попадает; `app.manifest:15` — `requestedExecutionLevel="asInvoker"`,
-  `installer.iss:43` — `PrivilegesRequired=lowest` (никакого запроса администратора).
-- В сгенерированном JS нет небезопасных подстановок строк: все строковые/структурные
-  значения идут через `json.dumps`, «сырыми» остаются 14 числовых/булевых полей
-  (единственные float — те, что закрыты `_js_number`).
-- `parse_cookie_files_from_dir/zip` не распаковывают архив на диск (zip-slip невозможен),
-  `import_profile_bundle` фильтрует абсолютные пути, диски и `..`.
+- There are no secret leaks into the logs: every `logger.*` call that mentions passwords/tokens logs field
+  names, not values (`secrets_store.py:366/475/489`, `account_provisioner.py:549`).
+- `NazakBrowserStudio.spec:13-16` bundles only `nazak/web` and `data/assets` — the root
+  `data/` does not end up in the image; `app.manifest:15` — `requestedExecutionLevel="asInvoker"`,
+  `installer.iss:43` — `PrivilegesRequired=lowest` (no administrator prompt at all).
+- The generated JS has no unsafe string interpolation: all string/structured
+  values go through `json.dumps`, and 14 numeric/boolean fields remain "raw"
+  (the only floats are the ones covered by `_js_number`).
+- `parse_cookie_files_from_dir/zip` do not extract the archive to disk (zip-slip is impossible), and
+  `import_profile_bundle` filters out absolute paths, drives, and `..`.
 
-### Что осталось непроверенным (прямо)
+### What Remained Unverified (Stated Plainly)
 
-- Исполнение R3b-09 в живом браузере: цепочку я прочитал и покрыл тестами на чистых
-  функциях, но реальную пару «мастер + воркер» с вредоносной страницей не поднимал.
-- Поведение GUI-диалогов после правок (нет PyQt6/qfluentwidgets в окружении) и отрисовка
-  баннера в `generate_brand_assets.py` (нужны PyQt6 + Pillow).
-- Установщик `Setup.exe` (формат Inno Setup) не распаковывался: содержимое проверено по
-  релизному ZIP, а установщик собирается из того же каталога и имеет второй слой — `Excludes:`.
+- Execution of R3b-09 in a live browser: I read the chain and covered it with tests on pure
+  functions, but I did not bring up a real "master + worker" pair with a malicious page.
+- The behavior of the GUI dialogs after the fixes (no PyQt6/qfluentwidgets in this environment) and the rendering of
+  the banner in `generate_brand_assets.py` (PyQt6 + Pillow are required).
+- The `Setup.exe` installer (Inno Setup format) was not unpacked: the contents were verified against the
+  release ZIP, and the installer is built from the same directory and has a second layer — `Excludes:`.
 
 ---
 
-## 12. Round-3c: строгий CSP и баг Origin/WebSocket, найденный живым браузером
+## 12. Round-3c: Strict CSP and the Origin/WebSocket Bug Found by a Live Browser
 
-### R3c-01 (Medium, исправлено и проверено) — CSP не защищал от XSS из-за inline-обработчиков
+### R3c-01 (Medium, fixed and verified) — the CSP did not protect against XSS because of inline handlers
 
-`script-src` вынужденно содержал `'unsafe-inline'`, потому что вся разметка была построена
-на 58 атрибутах `on*` (40 в `index.html`, 18 в шаблонах `app.js`). Проверка в реальном
-браузере (дифференциальный контроль в `tests/live/test_dashboard_xss_live.py`) показала, что
-такой CSP XSS **не** останавливает: версия дашборда без экранирования исполняла payload
-(`country=1, city=1, ip=1`, 323 байта из `/api/security/secrets-mode`).
+`script-src` was forced to contain `'unsafe-inline'`, because the entire markup was built
+on 58 `on*` attributes (40 in `index.html`, 18 in the `app.js` templates). A check in a real
+browser (differential control in `tests/live/test_dashboard_xss_live.py`) showed that
+such a CSP does **not** stop the XSS: the dashboard version without escaping executed the payload
+(`country=1, city=1, ip=1`, 323 bytes from `/api/security/secrets-mode`).
 
-**Исправлено:**
-- 58 inline-обработчиков переведены на `data-action="имя"` + параметры в `data-*`; один
-  делегированный слушатель (`click`/`change`/`input`) вызывает функцию из `DELEGATED_ACTIONS`
-  (42 действия). Параметры читаются **только** из `data-*`-атрибутов, неизвестное действие
-  логируется, а не исполняется.
-- `CSP_POLICY` в `server.py`: `script-src 'self'` — без `'unsafe-inline'` и `'unsafe-eval'`.
-  `style-src` сохраняет `'unsafe-inline'` (≈62 inline `style=`, CSS-инъекция не даёт исполнения
-  кода) — остаток задокументирован в коде и в API-справочнике.
-- Тесты: `tests/test_csp_strict_and_delegation.py` (11 статических проверок: ни одного `on*=`,
-  паритет `data-action` ↔ реестр, отсутствие inline `<script>`/`eval`/`javascript:`,
-  строгость `script-src`) и живой `tests/live/test_dashboard_ui_smoke_live.py` — 11 сценариев
-  кликов по дашборду с требованием нуля page/console-ошибок плюс дифференциальный контроль:
-  инжектированный inline-обработчик исполняется на обычной странице и **не** исполняется на
-  дашборде. `node --check app.js` — синтаксис валиден.
+**Fixed:**
+- The 58 inline handlers were moved to `data-action="name"` + parameters in `data-*`; a single
+  delegated listener (`click`/`change`/`input`) calls a function from `DELEGATED_ACTIONS`
+  (42 actions). Parameters are read **only** from `data-*` attributes, and an unknown action
+  is logged rather than executed.
+- `CSP_POLICY` in `server.py`: `script-src 'self'` — without `'unsafe-inline'` or `'unsafe-eval'`.
+  `style-src` keeps `'unsafe-inline'` (≈62 inline `style=` attributes; a CSS injection does not lead to code
+  execution) — the remainder is documented in the code and in the API reference.
+- Tests: `tests/test_csp_strict_and_delegation.py` (11 static checks: not a single `on*=`,
+  parity between `data-action` and the registry, absence of inline `<script>`/`eval`/`javascript:`,
+  and a strict `script-src`) and the live `tests/live/test_dashboard_ui_smoke_live.py` — 11 click
+  scenarios across the dashboard requiring zero page/console errors, plus differential control:
+  the injected inline handler executes on an ordinary page and does **not** execute on the
+  dashboard. `node --check app.js` — the syntax is valid.
 
-### R3c-02 (Medium, исправлено и проверено) — Origin-проверка ломала дашборд на нестандартном порту
+### R3c-02 (Medium, fixed and verified) — the Origin check broke the dashboard on a non-standard port
 
-`_is_local_origin()` сверял Origin со списком портов `_ALLOWED_PORTS = {8899, 3000}`,
-который пополнялся только вызовом `configure_local_access(args.port)` из `main.py`.
-Следствия:
-- Запуск приложения иначе, чем через `main.py` (голый `uvicorn nazak.api.server:app`,
-  gunicorn, встраивание, тесты) → порт не зарегистрирован → **каждый** запрос с заголовком
-  `Origin` получал 403. WebSocket-рукопожатие Origin отправляет всегда, поэтому live-обновления
-  (health, статусы профилей, прогресс аплоада) не работали вовсе.
-- Юнит-тесты на `TestClient` этого не видели: он не отправляет `Origin`. Нашёл живой браузерный
-  тест: `WebSocket connection to 'ws://127.0.0.1:46399/ws/events' failed: ... 403`.
+`_is_local_origin()` compared the Origin against the port list `_ALLOWED_PORTS = {8899, 3000}`,
+which was only extended by a call to `configure_local_access(args.port)` from `main.py`.
+Consequences:
+- Starting the application by any route other than `main.py` (a bare `uvicorn nazak.api.server:app`,
+  gunicorn, embedding, tests) → the port was not registered → **every** request with an
+  `Origin` header got a 403. A WebSocket handshake always sends Origin, so live updates
+  (health, profile statuses, upload progress) did not work at all.
+- Unit tests on `TestClient` did not see this: it does not send `Origin`. A live browser test
+  found it: `WebSocket connection to 'ws://127.0.0.1:46399/ws/events' failed: ... 403`.
 
-**Исправлено:** `_origin_matches_request(origin, host)` — loopback-Origin принимается, если он
-либо в CORS-whitelist (`:3000` — осознанный кейс локального фронтенда, плюс порт, зарегистрированный
-`configure_local_access`), либо **совпадает с `Host` самого запроса** (same-origin на любом порту).
-По-прежнему отклоняются: чужой Origin, `null`, подделка суффиксом (`127.0.0.1.evil.com`),
-локальная страница с незарегистрированного и не совпадающего порта. Проверено
-`tests/test_api_origin_and_ws.py` (19 тестов, включая настоящее WebSocket-рукопожатие на
-случайном порту: same-origin → `pong`, чужой Origin и другой порт → отказ) и живым браузером
-(ноль console-ошибок в UI smoke).
+**Fixed:** `_origin_matches_request(origin, host)` — a loopback Origin is accepted if it is
+either in the CORS whitelist (`:3000` — a deliberate case for the local frontend, plus the port registered by
+`configure_local_access`) or **matches the `Host` of the request itself** (same-origin on any port).
+Still rejected: a foreign Origin, `null`, a suffix forgery (`127.0.0.1.evil.com`), and a
+local page from an unregistered and non-matching port. Verified by
+`tests/test_api_origin_and_ws.py` (19 tests, including a real WebSocket handshake on a
+random port: same-origin → `pong`, a foreign Origin and a different port → rejection) and by a live browser
+(zero console errors in the UI smoke test).
 
-### Что проверено в round-3c
+### What Was Verified in round-3c
 
-- Все живые тесты в образе (`3 passed, 2 skipped`): XSS-контроль, UI smoke под строгим CSP,
-  дифференциальный CSP-контроль.
-- Полный прогон: `747 passed`, 7 падений — те же env-зависимые (нет `qfluentwidgets`/`playwright`
-  в этом окружении), новых регрессий нет.
-- `ruff check`/`format`, `mypy` (Linux и Windows), `node --check` — чисто.
-- **Релизный артефакт v1.11.0** (проверялся в этом же раунде): скачан
-  `NazakBrowserStudio-v1.11.0-Windows-x64.zip` (152.34 МБ, 4357 записей), SHA256 совпал с
-  опубликованным `SHA256SUMS.txt`, записей с runtime-данными (`profiles.json`, `profiles/`,
-  `logs/`, `extensions/`, `videos/`, `screenshots/`) — **0**, под `data/` только `assets/`;
-  правки дашборда внутри артефакта на месте (0 ссылок на Google Fonts, системные шрифты,
+- All live tests in the image (`3 passed, 2 skipped`): the XSS control, the UI smoke test under a strict CSP, and the
+  differential CSP control.
+- Full run: `747 passed`, 7 failures — the same environment-dependent ones (no `qfluentwidgets`/`playwright`
+  in this environment), with no new regressions.
+- `ruff check`/`format`, `mypy` (Linux and Windows), `node --check` — clean.
+- **Release artifact v1.11.0** (checked in this same round): `NazakBrowserStudio-v1.11.0-Windows-x64.zip`
+  was downloaded (152.34 MB, 4357 entries), its SHA256 matched the
+  published `SHA256SUMS.txt`, entries with runtime data (`profiles.json`, `profiles/`,
+  `logs/`, `extensions/`, `videos/`, `screenshots/`) — **0**, and only `assets/` under `data/`;
+  the dashboard fixes inside the artifact are in place (0 references to Google Fonts, system fonts,
   `escapeHtml(e.message)`, `rel="noopener noreferrer"`).
-- Строгий CSP без `'unsafe-inline'` — не реализован, см. R3b-10/11.
+- A strict CSP without `'unsafe-inline'` — not implemented, see R3b-10/11.
 
-### Верификация второго прохода
+### Verification of the Second Pass
 
-- Полный прогон: **725 collected, 3 live deselected**; `715 passed, 7 failed` без live
-  (7 — окружение: нет `qfluentwidgets`/`playwright`), против **9** падений на коммите
-  `5a25115` в том же окружении (одно падение закрыто улучшением `_ensure_worker_pages`).
-- Новые файлы тестов: `tests/test_round3b_api_bounds.py` (12),
+- Full run: **725 collected, 3 live deselected**; `715 passed, 7 failed` without live
+  (the 7 are environmental: no `qfluentwidgets`/`playwright`), versus **9** failures at commit
+  `5a25115` in the same environment (one failure was closed by the `_ensure_worker_pages` improvement).
+- New test files: `tests/test_round3b_api_bounds.py` (12),
   `tests/test_round3b_stealth_and_sync.py` (16),
   `tests/test_round3b_storage_and_packaging.py` (9),
   `tests/test_round3b_cli_background.py` (4),
   `tests/test_web_assets_hardening.py` (7), `tests/test_gui_and_tools_hardening.py` (8).
-- `ruff check`/`ruff format --check` — чисто; `mypy nazak` — `Success` (57 файлов) **на обеих
-  платформах** (`--platform linux`, как на CI-раннере, и Windows). Первый прогон CI с полностью
-  включёнными error-кодами нашёл 7 ошибок, которых не видно на Windows: `ctypes.windll`/
-  `GetLastError` не существуют в typeshed для Linux (6 × `attr-defined` в `secrets_store.py`) и
-  `sanitize_launch_url()` возвращает `str | None` (1 × `return-value` в валидаторе URL
-  синхронизатора). Исправлено в `d6f6b51`.
-- В образе (`nazak-browser-studio-nazak-studio:latest`, Chromium внутри): живые заголовки
-  подтверждены (`CSP`, `nosniff`, `DENY`, `no-referrer`, `no-store`), все границы отдают 422,
-  `Infinity` в теле — 422 (было 500), `file://` в navigate — 422; живой XSS-тест в Chromium
-  проходит (21 passed вместе с web/gui-тестами), а на версии дашборда без экранирования —
-  падает, как и должно.
+- `ruff check`/`ruff format --check` — clean; `mypy nazak` — `Success` (57 files) **on both
+  platforms** (`--platform linux`, as on the CI runner, and Windows). The first CI run with fully
+  enabled error codes found 7 errors that are invisible on Windows: `ctypes.windll`/
+  `GetLastError` do not exist in typeshed for Linux (6 × `attr-defined` in `secrets_store.py`) and
+  `sanitize_launch_url()` returns `str | None` (1 × `return-value` in the synchronizer's URL
+  validator). Fixed in `d6f6b51`.
+- In the image (`nazak-browser-studio-nazak-studio:latest`, Chromium inside): the live headers are
+  confirmed (`CSP`, `nosniff`, `DENY`, `no-referrer`, `no-store`), all bounds return 422,
+  `Infinity` in the body — 422 (it used to be 500), `file://` in navigate — 422; the live XSS test in Chromium
+  passes (21 passed together with the web/gui tests), and on the dashboard version without escaping it
+  fails, as it should.
