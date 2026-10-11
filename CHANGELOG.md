@@ -63,13 +63,79 @@ No behaviour change on default settings. `profiles.json` on-disk format is uncha
   bare-list format), `tests/test_p0_task_bridge.py` (inline sync/async, busy-guard, cancel,
   error, progress), `tests/test_p1_platform_hardening.py` (import purity, log rotation,
   dependency drift, container and CI contracts).
-- Suite: **789 passed, 5 deselected** (794 collected); `ruff check`, `ruff format --check` and
-  `mypy nazak` clean. CI: all 12 jobs green on the tagged commit (lint, mypy, security audit,
-  and the 8 OS/Python matrix legs, each with a SQLite-backend leg).
+- Suite: **941 passed, 5 deselected** (964 collected; 18 of the selected tests are
+  `xfail`-marked, documenting the open bugs listed below); `ruff check`, `ruff format --check`
+  and `mypy nazak` clean. CI: all 12 jobs green (lint, mypy, security audit, and the 8
+  OS/Python matrix legs, each with a SQLite-backend leg).
 - Documentation translated to English throughout (`docs/*.md`, `CHANGELOG.md`), plus new
   [API reference § Operations & Hardening](docs/API_REFERENCE.md#-operations--hardening-p1) and
   a rewritten `docs/CLI_REFERENCE.md` § 5b/5c. User-facing CLI help text stays Russian by
   design (English flags/JSON keys), as documented in the CLI reference.
+
+### Bug hunt: 150 new tests, 33 real defects found, 17 fixed here
+
+A coverage-driven deep pass (~150 new tests across six suites:
+`test_storage_backends_deep`, `test_api_routers_deep`, `test_security_perimeter_deep`,
+`test_services_and_parsers_deep`, `test_runtime_and_cli_deep`, `test_cli_deep`, plus
+`test_cli_system_deep` and `test_bugfix_regressions`) found 33 reproducible defects. Fixed in
+this release:
+
+- **Proxy secrets leaked in API and CLI output.** `_mask_proxy_for_api` replaced the first
+  occurrence of the password string, so `password="pw"` inside username `pworker` produced
+  `http://***orker:pw@host` — the real password stayed readable in `GET /api/profiles`. The CLI
+  masker had the mirror-image gap: only `user:pass@host` was masked, so the documented
+  `host:port:user:pass` form printed the password in `raw`.
+- **Stored secrets destroyed on partial updates.** `PUT /api/profiles/{id}` with a notes payload
+  that merely omitted `account_password`/`totp_secret` deleted them; a client echoing the API's
+  own `"***"` mask overwrote a stored secret longer than 8 characters.
+- **JSON→SQLite migration resurrected deleted profiles.** The migration re-ran whenever the table
+  was empty, so deleting every profile brought the whole fleet back from the retained
+  `profiles.json`. It is now one-shot, tracked by a `json_migration` marker written in the same
+  transaction as the imported rows.
+- **HTTP 500 from a non-ASCII API key.** `hmac.compare_digest` raises on non-ASCII `str`, so a
+  hostile `X-API-Key` header (or a non-ASCII operator token) turned a 401 into an unhandled 500;
+  the comparison now runs on UTF-8 bytes.
+- **SSRF filter bypass via IPv4-embedded IPv6.** NAT64 (`64:ff9b::a9fe:a9fe` = 169.254.169.254)
+  and IPv4-compatible (`::7f00:1`) spellings passed `is_global`; `_rotation_target` now also
+  rejects `is_reserved`, `::/96`, `::ffff:0:0/96`, `64:ff9b::/96`, `64:ff9b:1::/48`, `2002::/16`
+  and `2001::/32`.
+- **`/static` bypassed the whole local-only guard** (Host, Origin, Sec-Fetch-Site and token).
+  Static assets still skip the token check (the dashboard fetches them without a key), but the
+  local-host and cross-site checks now apply.
+- **Windows reserved device names accepted as profile ids** (`NUL`, `CON`, `COM1`, `NUL.mp4`):
+  such an id maps to a device, not a directory, so writes were silently discarded.
+- **UNC/device paths were "promoted" to https URLs** by `sanitize_launch_url` instead of being
+  refused, breaking its documented allow-list.
+- **`find_ffmpeg` could execute a binary from the current directory**: with `LOCALAPPDATA` unset
+  the WinGet shim path became relative and resolved against the CWD.
+- **`find_chrome_executable` picked the oldest cached Chromium** (lexicographic sort put
+  `chromium-907` above `chromium-1200`); it now compares revision numbers.
+- **TaskBridge ran a task twice** when its body raised `TypeError` (duplicate uploads) and
+  swallowed exceptions from async tasks started inside a running loop.
+- **Unbounded `POST /api/profiles/bulk-import`** created one profile per line with no cap
+  (1 MB of proxy lines ≈ 100k profiles); the endpoint now enforces 500 lines, matching
+  `MAX_PROFILE_IDS`.
+- **`clear-cache` reported success for unknown profiles** (200/exit 0 instead of 404/1).
+- **Bundle import rejected archives with explicit directory entries** (what `zip`,
+  `shutil.make_archive` and `ZipFile.mkdir` produce) because the directory entry was extracted as
+  a file.
+- **A blank cookie-import key silently targeted an arbitrary profile** (the empty string matched
+  every profile through the substring fallback).
+- **UTF-8 BOM in `@file` input** corrupted the first record (Notepad's default encoding); input
+  files are now read as `utf-8-sig`.
+
+Still open and documented as `xfail(strict=False)` with exact repros in the suites (18 tests):
+`build_oauth_auth_url` does not URL-encode `state`; `parse_netscape_cookies` truncates value
+whitespace and drops empty-value cookies; `check_proxy_health` raises for SOCKS4;
+`generate_warmup_urls` does not urlencode query params; batch cancel marks a mid-flight job
+`failed`; `POST /api/cookies/bulk-export` ignores `format=netscape`;
+`POST /api/synchronizer/start` accepts empty/unknown workers; `test-proxy` degrades to DIRECT for
+malformed input; plus CLI exit-code classes (`batch-stop` counts requested ids, `--profiles all`
+is a no-op, `scenario run --scenario-file` errors as a conflict, `sync navigate` accepts
+`file:`/`javascript:`). They are reported here rather than silently fixed, so the next pass can
+decide the intended semantics.
+
+
 
 ### SQLite default-switch decision (recorded, not yet executed)
 
