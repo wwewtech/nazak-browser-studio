@@ -18,3 +18,7 @@ services:
       # Положите рядом файл .env со строкой:  NAZAK_API_TOKEN=<длинный секрет>
       # Клиенты (CLI/Playwright) передают его заголовком X-API-Key.
       - NAZAK_API_TOKEN=${NAZAK_API_TOKEN:?set NAZAK_API_TOKEN in a .env file next to docker-compose.yml}
+      # Хранилище профилей: json (default) или sqlite (opt-in, profiles.db в
+      # том же ./data, миграция из profiles.json один раз, JSON остаётся как
+      # profiles.pre-sqlite.<ts>.bak). См. docs/API_REFERENCE.md § Storage.
+      - NAZAK_PROFILE_STORE=${NAZAK_PROFILE_STORE:-json}

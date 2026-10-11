@@ -7,7 +7,7 @@
 ; Audit R3: fallback синхронизирован с nazak/__init__.py (build_exe.py всё равно
 ; подставляет актуальную версию через /DMyAppVersion).
 #ifndef MyAppVersion
-#define MyAppVersion "1.11.0"
+#define MyAppVersion "1.12.0"
 #endif
 #define MyAppPublisher "Nazak Technologies"
 #define MyAppURL "https://github.com/wwewtech/nazak-browser-studio"
@@ -59,7 +59,7 @@ Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescrip
 ; Audit R3-round2: runtime-данные явно исключены вторым слоем защиты (первый —
 ; sanitize_app_data() в build_exe.py). Этот каталог хранит пароли и 2FA-сиды в
 ; режиме plain и не должен попадать ни в установщик, ни в ZIP релиза.
-Source: "dist\NazakBrowserStudio\*"; DestDir: "{app}"; Excludes: "data\profiles\*,data\profiles.json,data\profiles.json.*,data\secrets_mode.json,data\secrets_mode.json.*,data\logs\*,data\extensions\*,data\videos\*,data\screenshots\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\NazakBrowserStudio\*"; DestDir: "{app}"; Excludes: "data\profiles\*,data\profiles.json,data\profiles.json.*,data\profiles.db,data\profiles.db.*,data\secrets_mode.json,data\secrets_mode.json.*,data\logs\*,data\extensions\*,data\videos\*,data\screenshots\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"

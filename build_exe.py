@@ -36,7 +36,7 @@ ISS_FILE = ROOT_DIR / "installer.iss"
 
 # Dynamically extract version from package
 # Audit R3: fallback обновляется вместе с версией пакета (был "1.9.1", затем "1.10.0").
-_FALLBACK_VERSION = "1.11.0"
+_FALLBACK_VERSION = "1.12.0"
 try:
     import re
 
@@ -281,7 +281,9 @@ def print_summary():
 
 
 RUNTIME_DATA_DIRS = ("profiles", "extensions", "logs", "videos", "screenshots")
-RUNTIME_DATA_FILES = ("profiles.json", "secrets_mode.json")
+# P1: SQLite backend artefacts belong here too — profiles.db plus its WAL/SHM
+# sidecars and the one-shot JSON migration backup (all secret-bearing).
+RUNTIME_DATA_FILES = ("profiles.json", "profiles.db", "profiles.pre-sqlite.", "secrets_mode.json")
 
 
 def sanitize_app_data():

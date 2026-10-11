@@ -85,6 +85,12 @@ def test_r3b_build_sanitizes_runtime_data(tmp_path, monkeypatch):
     (data_dir / "extensions").mkdir()
     (data_dir / "profiles.json").write_text('{"profiles": []}', encoding="utf-8")
     (data_dir / "profiles.json.bak").write_text("{}", encoding="utf-8")
+    # P0: SQLite backend artefacts must be stripped too (profiles.db*, WAL sidecars,
+    # pre-sqlite backups) — same secret-bearing runtime data, other file names.
+    (data_dir / "profiles.db").write_bytes(b"SQLite format 3\x00")
+    (data_dir / "profiles.db-wal").write_bytes(b"wal")
+    (data_dir / "profiles.db-shm").write_bytes(b"shm")
+    (data_dir / "profiles.pre-sqlite.1234567890.bak").write_text("{}", encoding="utf-8")
     (data_dir / "secrets_mode.json").write_text('{"mode": "plain"}', encoding="utf-8")
 
     monkeypatch.setattr(module, "APP_DIR", app_dir)
@@ -98,6 +104,7 @@ def test_r3b_build_sanitizes_runtime_data(tmp_path, monkeypatch):
     assert (data_dir / "assets" / "icon.ico").exists()
     assert not (data_dir / "profiles").exists()
     assert not (data_dir / "profiles.json").exists()
+    assert not (data_dir / "profiles.db").exists()
     assert not (data_dir / "secrets_mode.json").exists()
 
 
@@ -110,6 +117,7 @@ def test_r3b_build_calls_sanitize_before_packaging():
     assert "Excludes:" in installer
     assert "data\\profiles\\*" in installer
     assert "data\\profiles.json" in installer
+    assert "data\\profiles.db" in installer
 
 
 def test_r3b_upload_queue_delay_constant_is_used():
