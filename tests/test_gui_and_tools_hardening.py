@@ -108,17 +108,19 @@ def test_batch_cookie_dialog_summary_includes_failed():
     assert old_line not in src
 
 
-# --------------------------------------------------------------------------- workers.py
+# --------------------------------------------------------------------------- workers.py / tasks.py
 def test_workers_uses_get_free_port_instead_of_predictable_range():
-    src = _read(WORKERS)
-    head = src.split("class ", 1)[0]
-    worker = _class_source(src, "AutopostBatchWorker")
-
-    assert "9350" not in src, "the predictable 9350 + idx CDP port range must be gone"
-    assert "from ..core.browser_launcher import get_free_port" in head, (
-        "get_free_port must be imported at module top next to the other core imports"
+    # P0: the autopost business logic moved workers.py -> gui/tasks.py
+    # (TaskBridge); the invariant stays: no predictable 9350+idx range.
+    for path in (WORKERS, REPO_ROOT / "nazak" / "gui" / "tasks.py"):
+        src = _read(path)
+        assert "9350" not in src, f"the predictable 9350 + idx CDP port range must be gone ({path.name})"
+    tasks_src = _read(REPO_ROOT / "nazak" / "gui" / "tasks.py")
+    workers_src = _read(WORKERS)
+    assert "cdp_port = get_free_port()" in tasks_src, "the autopost task must request a real free port"
+    assert "get_free_port" in workers_src or "run_autopost_batch" in workers_src, (
+        "workers.py must route autopost through the TaskBridge task"
     )
-    assert "cdp_port = get_free_port()" in worker, "the autopost worker must request a real free port"
 
 
 # --------------------------------------------------------------------------- tools/generate_brand_assets.py
