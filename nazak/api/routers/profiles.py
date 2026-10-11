@@ -25,6 +25,11 @@ from ..security import (
 
 router = APIRouter(tags=["Profiles"])
 
+# Parity with schemas.MAX_PROFILE_IDS (500): one request must not be able to
+# create an unbounded farm. Before this bound a 1 MB body (~100k proxy lines)
+# created 100k profiles, each with a directory and a generated fingerprint.
+MAX_BULK_IMPORT_LINES = 500
+
 
 @router.get(
     "/api/profiles", response_model=list[BrowserProfile], summary="List all browser profiles with live statuses"
@@ -182,7 +187,9 @@ async def clear_cache(profile_id: str):
             status_code=400, detail="Cannot clear cache while browser is running. Please stop it first."
         )
     ok = profile_manager.clear_profile_cache(profile_id)
-    return {"success": ok, "message": "Cache cleared successfully"}
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found")
+    return {"success": True, "message": "Cache cleared successfully"}
 
 
 @router.post(
@@ -214,6 +221,11 @@ async def bulk_import_profiles(req: BulkImportRequest):
     lines = [line.strip() for line in req.proxy_lines.splitlines() if line.strip()]
     if not lines:
         raise HTTPException(status_code=400, detail="No valid proxy lines provided")
+    if len(lines) > MAX_BULK_IMPORT_LINES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many proxy lines: {len(lines)} (max {MAX_BULK_IMPORT_LINES})",
+        )
     created_list = []
 
     for idx, line in enumerate(lines, start=len(profile_manager.list_profiles()) + 1):
