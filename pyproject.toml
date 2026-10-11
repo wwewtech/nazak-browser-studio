@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nazak-browser-studio"
-version = "1.11.0"
+version = "1.12.0"
 description = "Next-Generation Hardware-Isolated Anti-Detect Browser, Local CDP Automation REST API & YouTube Shorts Autoposter"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -131,6 +131,15 @@ combine-as-imports = true
 "nazak/main.py" = ["E402"]
 "nazak/cli.py" = ["E402"]
 "nazak/gui/*" = ["E402", "F401"]
+# P0 refactor: composition roots / facades intentionally re-export names for
+# backward compatibility (tests patch `nazak.api.server.*` and
+# `nazak.core.profile_manager.*`). F401/RUF022 would otherwise force the
+# removal of the compatibility surface.
+"nazak/api/server.py" = ["F401", "RUF022"]
+"nazak/api/routers/__init__.py" = ["F401"]
+"nazak/core/profile_manager.py" = ["F401", "RUF022"]
+"nazak/core/profiles/__init__.py" = ["F401", "RUF022"]
+"nazak/core/__init__.py" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -176,6 +185,24 @@ exclude_lines = [
     "pass",
     "except ImportError:",
 ]
+
+# -----------------------------------------------------------------------------
+# Bandit Configuration (SAST, P1)
+# -----------------------------------------------------------------------------
+# CI runs `bandit -c pyproject.toml -r nazak -ll` (medium severity and above).
+# The skips are deliberate, documented false positives for a desktop browser
+# automation product:
+#   B101 assert_used      - asserts guard internal invariants, never user input
+#   B404/B603/B607        - subprocess is the product feature (Chrome, ffmpeg)
+#   B110/B112 try_except  - best-effort cleanup paths (rmtree/close/rollback)
+#   B105/B106/B107        - "password" literals are field names, not secrets
+#   B615                  - pip-audit/playwright version pinning handled in CI
+[tool.bandit]
+exclude_dirs = ["tests", "build", "dist", "dist_installer", "nazak/tools"]
+skips = ["B101", "B404", "B603", "B607", "B110", "B112", "B105", "B106", "B107"]
+
+[tool.bandit.assert_used]
+skips = ["*_test.py", "test_*.py", "*tests/*"]
 
 # -----------------------------------------------------------------------------
 # MyPy Configuration (Static Type Checker)
