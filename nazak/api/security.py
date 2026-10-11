@@ -122,7 +122,12 @@ def _is_api_token_valid(request_headers) -> bool:
         return True
     import hmac
 
-    return hmac.compare_digest(str(request_headers.get("x-api-key") or ""), str(expected))
+    provided = str(request_headers.get("x-api-key") or "")
+    # Compare bytes, not str: hmac.compare_digest() raises TypeError on non-ASCII
+    # str input, so a client sending "X-API-Key: sécret" (or an operator setting a
+    # non-ASCII token) turned a 401 into an unhandled 500 — a self-inflicted outage
+    # and a free error channel for anyone who can reach the port.
+    return hmac.compare_digest(provided.encode("utf-8"), str(expected).encode("utf-8"))
 
 
 CSP_POLICY = (
@@ -184,6 +189,11 @@ async def validation_error_handler(request, exc):
     return JSONResponse(status_code=422, content={"detail": errors})
 
 
+_RESERVED_WINDOWS_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+
+
 def validate_pid(profile_id: str) -> str:
     if not profile_id or not isinstance(profile_id, str):
         raise HTTPException(status_code=400, detail="Invalid profile_id: must be a non-empty string")
@@ -199,7 +209,30 @@ def validate_pid(profile_id: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid profile_id: path traversal detected")
     if not re.match(r"^[a-zA-Z0-9_\-]+$", profile_id):
         raise HTTPException(status_code=400, detail="Invalid profile_id: unsafe characters")
+    # Windows resolves these names to devices (NUL, CON, COM1, ...) regardless of
+    # the directory, so a profile id of "NUL" or "COM1" would write to a device
+    # instead of a file — silently discarding data. "NUL.mp4" is the same device.
+    if profile_id.split(".")[0].upper() in _RESERVED_WINDOWS_DEVICE_NAMES:
+        raise HTTPException(status_code=400, detail="Invalid profile_id: reserved Windows device name")
     return profile_id
+
+
+def _mask_raw_proxy_credentials(raw: str) -> str:
+    """Mask the password inside a proxy URL, wherever it sits in the userinfo.
+
+    The previous implementation replaced the first substring equal to the
+    password, which leaked it whenever that substring also occurred in the
+    username: ``password="pw"`` with ``raw="http://pworker:pw@host"`` produced
+    ``http://***orker:pw@host`` — the real password stayed readable in the API
+    response (GET /api/profiles, /v1.0/browser_profiles).
+    """
+    scheme, sep, rest = raw.partition("://") if "://" in raw else ("", "", raw)
+    if "@" not in rest:
+        return raw
+    userinfo, _, hostpart = rest.rpartition("@")
+    user, colon, _password = userinfo.rpartition(":")
+    masked_userinfo = f"{user}{colon}***" if colon else userinfo
+    return f"{scheme}{sep}{masked_userinfo}@{hostpart}"
 
 
 def _mask_proxy_for_api(proxy: ProxyConfig) -> dict:
@@ -207,12 +240,8 @@ def _mask_proxy_for_api(proxy: ProxyConfig) -> dict:
     if data.get("password"):
         data["password"] = "***"
     raw = data.get("raw")
-    password = proxy.password
     if isinstance(raw, str) and raw:
-        if password and password in raw:
-            data["raw"] = raw.replace(password, "***", 1)
-        elif "@" in raw:
-            data["raw"] = re.sub(r":[^:@/]*@", ":***@", raw, count=1)
+        data["raw"] = _mask_raw_proxy_credentials(raw)
     if data.get("rotation_url"):
         data["rotation_url"] = "***"
     return data
@@ -334,6 +363,23 @@ def _resolve_host_ips(hostname: str, port: int) -> list[str]:
     return [str(info[4][0]) for info in infos]
 
 
+_IPV4_EMBEDDING_NETS = (
+    ipaddress.ip_network("::/96"),  # IPv4-compatible (deprecated), e.g. ::7f00:1
+    ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped
+    ipaddress.ip_network("64:ff9b::/96"),  # NAT64 well-known prefix
+    ipaddress.ip_network("64:ff9b:1::/48"),  # NAT64 local-use prefix
+    ipaddress.ip_network("2002::/16"),  # 6to4
+    ipaddress.ip_network("2001::/32"),  # Teredo
+)
+
+
+def _embeds_ipv4(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for IPv6 forms that carry an IPv4 address inside them."""
+    if ip.version != 6:
+        return False
+    return any(ip in net for net in _IPV4_EMBEDDING_NETS)
+
+
 def _rotation_target(url: str) -> tuple[str, int, str] | str:
     try:
         parts = urllib.parse.urlsplit(url)
@@ -354,7 +400,11 @@ def _rotation_target(url: str) -> tuple[str, int, str] | str:
             ip = ipaddress.ip_address(address)
         except ValueError:
             return "host cannot be resolved"
-        if not ip.is_global:
+        # is_global alone is not enough: IPv4-embedded IPv6 forms of loopback and
+        # link-local (NAT64 64:ff9b::a9fe:a9fe == 169.254.169.254, IPv4-compatible
+        # ::7f00:1) are reported as global, so a rotation URL could pin the fetch
+        # to cloud metadata or loopback on a NAT64/CLAT host.
+        if not ip.is_global or ip.is_reserved or _embeds_ipv4(ip):
             return "host must be a public address"
     return parts.hostname, port, addresses[0]
 

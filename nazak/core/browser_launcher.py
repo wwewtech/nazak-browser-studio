@@ -46,6 +46,11 @@ def sanitize_launch_url(url: str | None) -> str | None:
         return None
     if cleaned.startswith("-"):
         raise ValueError("URL must not start with '-'")
+    if "\\" in cleaned:
+        # Windows UNC (`\\server\share`) and device (`\\?\C:\...`) paths were
+        # silently "promoted" to https://<that string>, which both violates the
+        # documented allow-list and looks like a usable URL to the caller.
+        raise ValueError("URL must be http(s) or about:")
     lowered = cleaned.lower()
     if lowered.startswith(("file:", "javascript:", "data:", "blob:", "vbscript:")):
         raise ValueError("URL scheme is not allowed")

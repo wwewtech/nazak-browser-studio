@@ -298,6 +298,23 @@ app.add_middleware(
 async def local_only_guard(request, call_next):
     path = request.url.path
     if path.startswith("/static"):
+        # Static assets are loaded by the dashboard without an API key, so the
+        # token check cannot apply here — but the local-host and cross-site checks
+        # must. Skipping the whole guard let any foreign Host read /static/* and
+        # would have left any future route mounted under /static unguarded.
+        if not _is_local_host(request.headers.get("host")):
+            return _apply_security_headers(
+                JSONResponse(
+                    status_code=403,
+                    content={"detail": "Local access only: Host header must be localhost or 127.0.0.1"},
+                ),
+                path,
+            )
+        if (request.headers.get("sec-fetch-site") or "").strip().lower() == "cross-site":
+            return _apply_security_headers(
+                JSONResponse(status_code=403, content={"detail": "Cross-site requests are not allowed"}),
+                path,
+            )
         return _apply_security_headers(await call_next(request), path)
 
     if not _is_local_host(request.headers.get("host")):
