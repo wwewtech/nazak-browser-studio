@@ -250,7 +250,13 @@ class ProfileService:
                 continue
 
             target_profile: BrowserProfile | None = None
-            key_clean = key.strip()
+            key_clean = (key or "").strip()
+            if not key_clean:
+                # A blank key used to match every profile through the substring
+                # fallback below (`"" in p.name.lower()`), so a stray separator
+                # line silently wrote cookies into the first stored profile.
+                failed_count += 1
+                continue
             key_lower = key_clean.lower()
 
             if key_clean in id_map:

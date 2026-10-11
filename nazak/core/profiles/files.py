@@ -77,7 +77,11 @@ def clear_cache(profiles_dir: Path, profile_id: str) -> bool:
     validate_id(profile_id)
     path = (profiles_dir / profile_id).resolve()
     if not path.is_relative_to(profiles_dir.resolve()) or not path.exists():
-        return True
+        # A missing profile directory is "nothing to clear" for a fresh profile,
+        # but callers use this to report success — returning True made
+        # `clear-cache <unknown-id>` answer "cleared" for a profile that does
+        # not exist. Report the miss instead and let the caller map it to 404.
+        return False
     cache_dirs = ["Cache", "Code Cache", "GPUCache", "DawnCache", "Service Worker/CacheStorage"]
     for cdir in cache_dirs:
         target = path / "Default" / cdir

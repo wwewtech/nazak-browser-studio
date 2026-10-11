@@ -65,10 +65,32 @@ class SqliteProfileBackend(ProfileBackend):
                 )
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_profiles_updated ON profiles(updated_at)")
 
+    def _get_meta(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def _set_meta(self, key: str, value: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
     def _migrate_from_json_if_needed(self) -> None:
+        """One-shot JSON -> SQLite import, decided by a persisted marker.
+
+        The marker is the point: deciding by ``COUNT(*) == 0`` alone made the
+        import run again every time the table happened to be empty, so deleting
+        every profile under the SQLite backend resurrected the whole fleet from
+        the (deliberately kept) ``profiles.json`` on the next start.
+        """
         with self._lock:
+            if self._get_meta("json_migration") == "done":
+                return
             count = self._conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
             if count:
+                # The DB already owns data, so it must never import the JSON file.
+                self._set_meta("json_migration", "done")
                 return
             if not self.profiles_file.exists():
                 return
@@ -101,6 +123,12 @@ class SqliteProfileBackend(ProfileBackend):
                 with self._conn:
                     self._conn.executemany(
                         "INSERT OR REPLACE INTO profiles(id, updated_at, data) VALUES(?, ?, ?)", rows
+                    )
+                    # Marker written in the same transaction as the rows, so a
+                    # crash can never leave imported data behind without the flag.
+                    self._conn.execute(
+                        "INSERT INTO meta(key, value) VALUES('json_migration', 'done') "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
                     )
                 bak = self.profiles_file.with_name(f"profiles.pre-sqlite.{int(time.time())}.bak")
                 try:

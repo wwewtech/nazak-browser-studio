@@ -135,33 +135,42 @@ def import_bundle(profiles_dir: Path, bundle_path: Path, new_name: str | None = 
             extracted_total = 0
 
             for name in zf.namelist():
-                if name.startswith("data/"):
-                    rel_sub = name[len("data/") :]
-                    if not rel_sub:
-                        continue
-                    rel_path = Path(rel_sub)
-                    if rel_path.is_absolute() or rel_path.drive or ".." in rel_path.parts:
-                        continue
-                    target_file = (target_dir / rel_path).resolve()
-                    if not target_file.is_relative_to(target_dir):
-                        continue
-                    target_file.parent.mkdir(parents=True, exist_ok=True)
-                    written = 0
-                    max_entry = _limit("MAX_BUNDLE_ENTRY_BYTES")
-                    max_total_live = _limit("MAX_BUNDLE_TOTAL_BYTES")
-                    chunk_size = _limit("BUNDLE_CHUNK")
-                    with zf.open(name) as src, target_file.open("wb") as dst:
-                        while True:
-                            chunk = src.read(chunk_size)
-                            if not chunk:
-                                break
-                            written += len(chunk)
-                            if written > max_entry:
-                                raise ValueError(f"bundle entry {name!r} exceeds {max_entry} bytes")
-                            extracted_total += len(chunk)
-                            if extracted_total > max_total_live:
-                                raise ValueError(f"bundle expands beyond {max_total_live} bytes")
-                            dst.write(chunk)
+                if not name.startswith("data/"):
+                    continue
+                info = zf.getinfo(name)
+                if info.is_dir() or name.endswith("/"):
+                    # Explicit directory entries are normal in archives produced by
+                    # `zip`, shutil.make_archive or ZipFile.mkdir. They used to be
+                    # extracted as files, so the real file inside them then failed
+                    # with FileExistsError/IsADirectoryError and the whole bundle
+                    # import was rejected. Directories appear implicitly.
+                    continue
+                rel_sub = name[len("data/") :]
+                if not rel_sub:
+                    continue
+                rel_path = Path(rel_sub)
+                if rel_path.is_absolute() or rel_path.drive or ".." in rel_path.parts:
+                    continue
+                target_file = (target_dir / rel_path).resolve()
+                if not target_file.is_relative_to(target_dir):
+                    continue
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                written = 0
+                max_entry = _limit("MAX_BUNDLE_ENTRY_BYTES")
+                max_total_live = _limit("MAX_BUNDLE_TOTAL_BYTES")
+                chunk_size = _limit("BUNDLE_CHUNK")
+                with zf.open(name) as src, target_file.open("wb") as dst:
+                    while True:
+                        chunk = src.read(chunk_size)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > max_entry:
+                            raise ValueError(f"bundle entry {name!r} exceeds {max_entry} bytes")
+                        extracted_total += len(chunk)
+                        if extracted_total > max_total_live:
+                            raise ValueError(f"bundle expands beyond {max_total_live} bytes")
+                        dst.write(chunk)
 
             if "cookies.json" in zf.namelist():
                 cookie_blob = zf.read("cookies.json")
