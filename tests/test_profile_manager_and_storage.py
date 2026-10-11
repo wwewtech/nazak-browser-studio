@@ -114,7 +114,10 @@ def test_clear_profile_cache(tmp_path):
 
 def test_clear_profile_cache_nonexistent_profile(tmp_path):
     pm = ProfileManager(tmp_path / "profiles.json", tmp_path / "data")
-    assert pm.clear_profile_cache("fake_profile") is True
+    # A miss must be reported, not masked as success: the API/CLI turn this into
+    # 404 / exit 1 instead of claiming "cache cleared" for a profile that is not
+    # there (a fresh profile without a data directory still returns True).
+    assert pm.clear_profile_cache("fake_profile") is False
 
 
 def test_clone_nonexistent_profile(tmp_path):

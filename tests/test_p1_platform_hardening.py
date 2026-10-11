@@ -327,10 +327,13 @@ def test_documentation_is_free_of_cyrillic_outside_design_notes():
 
 
 def _collect_suite_counts() -> tuple[int, int, int]:
-    """Return (selected, collected, deselected) for the real test suite.
+    """Return (expected_passed, collected, deselected) for the real test suite.
 
-    Collection only, so this is cheap and does not re-run anything: it is what
-    keeps the documented figures honest instead of merely self-consistent.
+    ``expected_passed`` excludes the tests that carry an ``xfail`` marker: those
+    are the documented open bugs, so they count as ``xfailed``/``xpassed`` in a
+    run rather than as passes. Collection only, so this is cheap and does not
+    re-run anything: it is what keeps the documented figures honest instead of
+    merely self-consistent.
     """
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "tests", "--collect-only", "-q", "-p", "no:cacheprovider"],
@@ -342,7 +345,14 @@ def _collect_suite_counts() -> tuple[int, int, int]:
     output = proc.stdout + proc.stderr
     match = re.search(r"(\d+)/(\d+) tests collected \((\d+) deselected\)", output)
     assert match, f"could not read the collected-test counts from pytest output:\n{output[-2000:]}"
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+    selected, collected, deselected = (int(g) for g in match.groups())
+    xfail_marked = sum(
+        1
+        for path in (REPO_ROOT / "tests").glob("test_*.py")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.lstrip().startswith("@pytest.mark.xfail(")
+    )
+    return selected - xfail_marked, collected, deselected
 
 
 def test_documentation_suite_figures_match_reality():
