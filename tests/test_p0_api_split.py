@@ -80,28 +80,48 @@ EXPECTED_EXPORTS = (
 )
 
 
+def _iter_route_paths(routes):
+    """Yield every concrete path in a route list, unwrapping included routers.
+
+    FastAPI <= 0.13x flattens ``include_router`` into ``app.routes``; 0.14x keeps
+    one ``_IncludedRouter`` wrapper per ``include_router`` call (no ``.path``,
+    children behind ``.original_router``). Walking both shapes keeps this
+    assertion true on every FastAPI version allowed by the ``fastapi>=`` pin,
+    which is exactly how this check first diverged between environments.
+    """
+    for route in routes:
+        path = getattr(route, "path", None)
+        if path:
+            yield path
+        for attr in ("routes", "original_router"):
+            holder = getattr(route, attr, None)
+            children = getattr(holder, "routes", None) if holder is not None else None
+            if children:
+                yield from _iter_route_paths(children)
+
+
 def test_p0_all_api_paths_still_mounted():
-    """Every pre-split endpoint is still mounted on the app.
+    """Every pre-split endpoint is still mounted and advertised.
 
     The OpenAPI schema is the contract clients actually see, so it is the
-    primary source of truth; the app's route objects are checked as well. The
-    failure message reports the real state (route count, object identity, route
-    classes and a sample), because a bare "routes lost" list said nothing about
-    what had actually happened when this diverged in CI.
+    primary source of truth; the route objects are checked as well (unwrapping
+    ``_IncludedRouter``). The failure message reports the real state — route
+    count, classes, a path sample and object identity — because a bare
+    "routes lost" list says nothing about what actually happened.
     """
     schema_paths = set(app.openapi()["paths"])
-    route_paths = {getattr(r, "path", "") for r in app.routes}
+    route_paths = set(_iter_route_paths(app.routes))
     missing = [p for p in EXPECTED_PATHS if p not in schema_paths]
     not_mounted = sorted(schema_paths - route_paths)
 
     diagnostics = (
         f"\n  openapi paths       : {len(schema_paths)}"
         f"\n  app.routes          : {len(app.routes)} ({type(app.routes).__name__})"
+        f"\n  resolved route paths: {len(route_paths)}"
         f"\n  route path sample   : {[getattr(r, 'path', None) for r in list(app.routes)[:6]]}"
         f"\n  route classes       : {sorted({type(r).__name__ for r in app.routes})}"
         f"\n  app is server.app   : {app is server.app}"
         f"\n  router identity     : {app.router is server.app.router}"
-        f"\n  routes-without-path : {sum(1 for r in app.routes if not getattr(r, 'path', None))}"
     )
 
     assert not missing, f"routes lost in split: {missing}{diagnostics}"
