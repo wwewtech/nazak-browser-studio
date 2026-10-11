@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QProgressBar, QSp
 
 from ..config import DATA_DIR
 
-try:  # audit R3: версия на сплэше была захардкожена ("v1.3.0") и отставала от пакета
+try:  # audit R3: the version on the splash screen was hardcoded ("v1.3.0") and lagged behind the package
     from .. import __version__ as PACKAGE_VERSION
 except Exception:  # pragma: no cover - defensive
     PACKAGE_VERSION = ""

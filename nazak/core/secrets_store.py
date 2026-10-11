@@ -96,8 +96,8 @@ def normalize_mode(mode: str | None) -> str:
     if mode == "dpapi" and not IS_WINDOWS:
         raise SecretsError("Mode 'dpapi' is Windows-only. Choose 'passphrase' or 'plain' on this platform.")
     if mode == "passphrase" and not _HAS_CRYPTOGRAPHY:
-        # Audit R3: раньше флаг _HAS_CRYPTOGRAPHY вычислялся и нигде не читался,
-        # поэтому без пакета cryptography режим падал с NameError в недрах KDF.
+        # Audit R3: the _HAS_CRYPTOGRAPHY flag used to be computed and never read,
+        # so without the cryptography package this mode crashed with NameError deep inside the KDF.
         raise SecretsError(
             "Mode 'passphrase' requires the 'cryptography' package (pip install cryptography). "
             "Choose 'dpapi' on Windows or 'plain'."
@@ -216,16 +216,16 @@ def _fernet_decrypt(envelope: str, passphrase: str | None) -> bytes:
 
 
 def _windows_dpapi_api() -> tuple[Any, Any]:
-    """Windows-only вход в crypt32/kernel32 через ctypes.
+    """Windows-only access to crypt32/kernel32 through ctypes.
 
-    Audit R3-round2: обращаемся через getattr, потому что на Linux typeshed не
-    знает ``ctypes.windll``/``GetLastError`` — прямой доступ валил mypy
-    (attr-defined) на CI-раннере, хотя код всё равно работает только на Windows.
+    Audit R3-round2: we go through getattr because on Linux typeshed does not
+    know ``ctypes.windll``/``GetLastError`` — direct access failed mypy
+    (attr-defined) on the CI runner, even though the code only ever runs on Windows.
     """
     import ctypes
 
     windll = getattr(ctypes, "windll", None)
-    if windll is None:  # pragma: no cover - выполняется только вне Windows
+    if windll is None:  # pragma: no cover - only executes outside Windows
         raise SecretsError("DPAPI is only available on Windows")
     get_last_error = getattr(ctypes, "GetLastError", None)
     return windll, get_last_error
@@ -383,8 +383,8 @@ def encrypt_notes(notes: dict, mode: str | None = None, passphrase: str | None =
                 result[field] = encrypt_secret(str(raw), mode=mode, passphrase=passphrase)
                 encrypted_any = True
             except SecretsError as exc:
-                # Значение остаётся читаемым намеренно (не блокируем запись), но
-                # это ошибка уровня ERROR, а не тихое предупреждение (audit R3).
+                # The value is deliberately left readable (we do not block the save), but
+                # this is an ERROR-level failure, not a silent warning (audit R3).
                 logger.error("Secrets: notes %s left unprotected for this save: %s", field, exc)
     # Label the record with the mode the values actually live in: keep the
     # incoming label when nothing was (re)encrypted, so a mixed store never

@@ -37,9 +37,9 @@ async def run_live_flow():
     target_email = os.environ.get("GOOGLE_EMAIL", "").strip()
     profiles = []
     if target_email:
-        # Audit R3: раньше совпадение искалось подстрокой по name/email, а при
-        # промахе поток молча брал ПЕРВЫЙ попавшийся Google-профиль и публиковал
-        # видео от его имени. Теперь — только точный id или точный email.
+        # Audit R3: matching used to be a substring search over name/email, and on a
+        # miss the flow silently picked the FIRST Google profile it found and published
+        # a video under its identity. Now it is an exact id or an exact email only.
         all_profiles = pm.list_profiles()
         profiles = [p for p in all_profiles if p.id == target_email]
         if not profiles:
@@ -78,10 +78,10 @@ async def run_live_flow():
         except Exception:
             raw_notes = {}
 
-    # Audit R3: секреты раскрываются через secrets_store (dpapi/passphrase тоже
-    # работают), а не читаются как есть — иначе в поле пароля уезжал конверт.
-    # raw_notes остаётся «как на диске» и используется для записи обратно,
-    # чтобы расшифрованный текст не попал в profiles.json.
+    # Audit R3: secrets are revealed through secrets_store (dpapi/passphrase also
+    # work) rather than read as-is — otherwise an envelope ended up in the password field.
+    # raw_notes stays "as on disk" and is used for writing back,
+    # so the decrypted text never lands in profiles.json.
     try:
         from nazak.core.secrets_store import reveal_notes
 
@@ -202,8 +202,8 @@ async def run_live_flow():
                 try:
                     if await totp_input.is_visible(timeout=8000):
                         code = generate_totp_rfc6238(totp_secret)
-                        # Audit R3: живой одноразовый код больше не печатается —
-                        # stdout/stderr этого скрипта уходит в логи агента и CI.
+                        # Audit R3: the live one-time code is no longer printed —
+                        # this script's stdout/stderr goes into agent and CI logs.
                         print("🛡️ Step 4: 2FA prompt detected! Entering the current TOTP code (hidden)...")
                         await totp_input.click()
                         for ch in code:
@@ -281,8 +281,8 @@ async def run_live_flow():
             if not video_file.exists():
                 video_file = DATA_DIR / "videos" / "source.mp4"
             if not video_file.exists():
-                # Audit R3: раньше здесь писались мусорные байты
-                # b"DEMO_MP4_HEADER" + b"0"*1024 и уходили на YouTube.
+                # Audit R3: this used to write junk bytes
+                # b"DEMO_MP4_HEADER" + b"0"*1024 that were sent to YouTube.
                 from nazak.core.video_uniquifier import generate_demo_clip
 
                 ok_clip, clip_err = generate_demo_clip(video_file)
@@ -360,9 +360,9 @@ async def run_live_flow():
             await asyncio.sleep(6)
             await page.screenshot(path=str(SCREENSHOTS_DIR / "11_publish_completed.png"))
 
-            # Extract Video Link (poll: ссылка появляется с задержкой)
-            # Audit R3: раньше «PUBLISHED SUCCESSFULLY» печаталось безусловно,
-            # даже если публикация не состоялась.
+            # Extract Video Link (poll: the link appears with a delay)
+            # Audit R3: "PUBLISHED SUCCESSFULLY" used to be printed unconditionally,
+            # even when the publication had not happened.
             video_url = None
             for _ in range(10):
                 try:
@@ -375,7 +375,7 @@ async def run_live_flow():
                     pass
                 await asyncio.sleep(2)
 
-            # notes пишем из raw_notes: расшифрованный текст не должен попасть на диск
+            # Write notes from raw_notes: the decrypted text must never reach disk
             raw_notes["auth_status"] = "authenticated"
             raw_notes["last_upload_time"] = time.time()
             if video_url:

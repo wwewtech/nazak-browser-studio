@@ -42,8 +42,8 @@ def format_video_metadata(
     """
     Generates unique, spun title and description with dynamic placeholders.
 
-    Возвращает title/description (str) и tags (list[str]) — отсюда dict[str, Any]:
-    предыдущая аннотация dict[str, str] противоречила фактическому содержимому.
+    Returns title/description (str) and tags (list[str]) — hence dict[str, Any]:
+    the previous dict[str, str] annotation contradicted the actual contents.
     """
     ctx = {
         "tg": tg_channel,

@@ -1,4 +1,4 @@
-"""`nazak warmup/scenario/sync ...` — паритет WarmupView + SynchronizerDialog."""
+"""`nazak warmup/scenario/sync ...` — parity with WarmupView + SynchronizerDialog."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ SCENARIO_ALIASES = {
 
 
 def _background_scenario_command(args) -> list[str]:
-    """Команда для отдельного процесса, который реально выполнит прогрев."""
+    """Command for a separate process that actually performs the warmup."""
     cmd = [sys.executable, "-m", "nazak.cli", "scenario", "run", "--wait", "--profiles", ",".join(args.profiles or [])]
     if getattr(args, "all", False):
         cmd.append("--all")
@@ -50,9 +50,9 @@ def _background_scenario_command(args) -> list[str]:
 
 
 def _spawn_background_scenario(args, profile_ids: list[str]) -> tuple[int, Path] | None:
-    """Запускает прогрев отдельным процессом; возвращает (pid, путь к логу).
+    """Starts the warmup as a separate process; returns (pid, log path).
 
-    Audit R3-round2: фон обязан переживать выход CLI, иначе «success» — ложь.
+    Audit R3-round2: the background job must survive the CLI exit, otherwise "success" is a lie.
     """
     import subprocess
 
@@ -65,8 +65,8 @@ def _spawn_background_scenario(args, profile_ids: list[str]) -> tuple[int, Path]
     creationflags = 0
     popen_kwargs: dict = {}
     if os.name == "nt":
-        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: процесс не привязан к
-        # консоли CLI и не получает Ctrl+C вместе с ней.
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: the process is not tied to the
+        # CLI console and does not receive Ctrl+C along with it.
         creationflags = 0x00000008 | 0x00000200
     else:
         popen_kwargs["start_new_session"] = True
@@ -252,11 +252,11 @@ def cmd_scenario_run(args, opt: GlobalOptions) -> int:
         res = asyncio.run(ex.run_batch_warmup(scenario=scenario, profile_ids=ids, max_concurrency=args.concurrency))
         emit({"success": True, "results": res}, opt)
     else:
-        # Audit R3-round2: раньше здесь стартовал daemon-поток и команда сразу
-        # печатала success. main.py делает `raise SystemExit(run_cli())`, поэтому
-        # daemon-поток умирал на выходе интерпретатора: работа не выполнялась
-        # ВООБЩЕ, а агент получал success + exit 0. Теперь фон — это отдельный
-        # процесс (переживает выход CLI), с логом и pid в ответе.
+        # Audit R3-round2: this used to start a daemon thread and the command immediately
+        # printed success. main.py does `raise SystemExit(run_cli())`, so the
+        # daemon thread died when the interpreter exited: the work was not done
+        # AT ALL, yet the agent got success + exit 0. Now the background job is a separate
+        # process (survives the CLI exit), with a log and a pid in the response.
         launched = _spawn_background_scenario(args, ids)
         if launched is None:
             return emit_error(
@@ -273,7 +273,7 @@ def cmd_scenario_run(args, opt: GlobalOptions) -> int:
     return EXIT_OK
 
 
-# Synchronizer — direct через singleton; в server-режиме через API.
+# Synchronizer — direct via singleton; in server mode via the API.
 
 _sync_mgr = None
 

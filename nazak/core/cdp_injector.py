@@ -1,5 +1,5 @@
 """
-CDP Stealth Injector — audit fix P0-1 (plan Этап 1).
+CDP Stealth Injector — audit fix P0-1 (plan Stage 1).
 
 Branded Google Chrome 137+ ignores ``--load-extension``, so the generated
 stealth extension (and its proxy-auth service worker) never loads. This module
@@ -45,15 +45,15 @@ except ImportError:  # pragma: no cover - dependency guard
 
 CHROME_VERSION_RE = re.compile(r"Chrome/\d+(?:\.\d+)*")
 
-# Audit R3-round2 (безопасность + стелс):
-#  * имя binding'а было "__nazak_sync_event" — любая страница видела функцию,
-#    по имени которой продукт определяется в один if. Имя нейтральное.
-#  * Runtime.addBinding ставится для КАЖДОЙ attached-сессии, поэтому жест могли
-#    присылать и сторонние iframe'ы: теперь событие принимается только из
-#    main-world контекста главного фрейма top-level страницы (см.
-#    _binding_event_allowed) и только при активной arming-проверке.
-#  * payload ограничен по размеру и по частоте (анти-flood: обработка
-#    вынесена в задачу, чтобы не блокировать цикл чтения CDP).
+# Audit R3-round2 (security + stealth):
+#  * the binding name used to be "__nazak_sync_event" — any page saw a function
+#    whose name identifies the product in a single if. The name is now neutral.
+#  * Runtime.addBinding is installed for EVERY attached session, so third-party
+#    iframes could send gestures as well: the event is now accepted only from the
+#    main-world context of the top-level page's main frame (see
+#    _binding_event_allowed) and only with an active arming check.
+#  * the payload is bounded in size and rate (anti-flood: handling is
+#    moved into a task so it does not block the CDP read loop).
 SYNC_BINDING_NAME = "__nse_ev"
 MAX_BINDING_PAYLOAD_BYTES = 4096
 BINDING_RATE_LIMIT_PER_SEC = 60.0
@@ -61,7 +61,7 @@ BINDING_RATE_BURST = 120.0
 
 
 class _TokenBucket:
-    """Простой лимитер частоты (чистый, тестируемый)."""
+    """Simple rate limiter (pure, testable)."""
 
     def __init__(self, rate_per_sec: float, burst: float) -> None:
         self.rate = max(0.0, float(rate_per_sec))
@@ -217,14 +217,14 @@ class StealthInjector:
         self._next_id = 0
         self._pending: dict[int, asyncio.Future] = {}
         self._stop_event: asyncio.Event | None = None
-        # --- приём sync-жестов (audit R3-round2) -------------------------
-        # sessionId -> является ли таргет top-level страницей
+        # --- receiving sync gestures (audit R3-round2) -------------------
+        # sessionId -> whether the target is a top-level page
         self._session_is_page: dict[str, bool] = {}
-        # sessionId -> id главного фрейма этой сессии
+        # sessionId -> id of this session's main frame
         self._main_frame: dict[str, str | None] = {}
         # executionContextId -> (frameId, isDefault)
         self._contexts: dict[int, tuple[str | None, bool]] = {}
-        # уже применённые документы: (sessionId, loaderId)
+        # documents already applied: (sessionId, loaderId)
         self._injected_docs: set[tuple[str, str]] = set()
         self._binding_bucket = _TokenBucket(BINDING_RATE_LIMIT_PER_SEC, BINDING_RATE_BURST)
         self._binding_tasks: set[asyncio.Task] = set()
@@ -316,9 +316,9 @@ class StealthInjector:
                         # auto-continue so navigation never stalls.
                         asyncio.create_task(self._continue_paused(params, sid))
                     elif method == "Runtime.bindingCalled":
-                        # Audit R3-round2: разбор payload'а (до 4 КиБ) вынесен в
-                        # задачу — раньше он выполнялся inline в цикле чтения и
-                        # флуд со страницы задерживал Fetch.continueRequest.
+                        # Audit R3-round2: parsing the payload (up to 4 KiB) is moved
+                        # into a task — it used to run inline in the read loop and
+                        # page flooding delayed Fetch.continueRequest.
                         task = asyncio.create_task(self._on_binding_called(params, sid))
                         self._binding_tasks.add(task)
                         task.add_done_callback(self._binding_tasks.discard)
@@ -342,8 +342,8 @@ class StealthInjector:
         if info.get("type") not in ("page", "iframe", "other", "webview"):
             return
         session_id = params.get("sessionId")
-        # Только top-level страницы имеют право присылать sync-жесты: OOPIF
-        # (type=iframe) — это чужой фрейм внутри страницы.
+        # Only top-level pages are allowed to send sync gestures: an OOPIF
+        # (type=iframe) is a foreign frame inside the page.
         if session_id:
             self._session_is_page[session_id] = info.get("type") == "page"
         await self._apply_session(session_id)
@@ -388,9 +388,9 @@ class StealthInjector:
             )
             if src:
                 # Apply immediately to the *current* document (addScript covers
-                # future ones). Audit R3-round2: применяем ровно один раз на
-                # документ — иначе скрипт ставился дважды и его приходилось
-                # защищать видимым странице флагом window.__nazakShieldApplied.
+                # future ones). Audit R3-round2: we apply it exactly once per
+                # document — otherwise the script was installed twice and had to be
+                # guarded by a flag visible to the page, window.__nazakShieldApplied.
                 frame_tree = await self._command("Page.getFrameTree", {}, session_id=session_id)
                 tree_frame = (frame_tree.get("frameTree") or {}).get("frame") or {}
                 main_frame_id = tree_frame.get("id")
@@ -429,15 +429,15 @@ class StealthInjector:
 
     def _on_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
         frame = params.get("frame", {}) or {}
-        # Главный фрейм сессии — тот, у которого нет parentId.
+        # The session's main frame is the one without a parentId.
         if session_id and not frame.get("parentId") and frame.get("id"):
             self._main_frame[session_id] = str(frame["id"])
 
     def binding_event_allowed(self, params: dict[str, Any], session_id: str | None) -> tuple[bool, str]:
-        """Чистая проверка: можно ли принимать этот binding-вызов.
+        """Pure check: whether this binding call may be accepted.
 
-        Возвращает (разрешено, причина_отказа). Вынесено отдельно, чтобы
-        покрывать тестами без браузера.
+        Returns (allowed, rejection_reason). Kept separate so it can be
+        covered by tests without a browser.
         """
         if params.get("name") != SYNC_BINDING_NAME:
             return False, "wrong-binding"
@@ -449,15 +449,15 @@ class StealthInjector:
         ctx_id = params.get("executionContextId")
         ctx = self._contexts.get(ctx_id) if isinstance(ctx_id, int) else None
         if ctx is None:
-            # Контекст неизвестен (не пришёл executionContextCreated) — отказ.
+            # Context unknown (executionContextCreated never arrived) — reject.
             return False, "unknown-context"
         frame_id, is_default = ctx
         if not is_default:
-            # Изолированный мир (content script / расширение) — не страница.
+            # Isolated world (content script / extension) — not the page.
             return False, "isolated-world"
         main_frame = self._main_frame.get(session_id)
         if main_frame and frame_id != main_frame:
-            # Субфрейм/iframe внутри той же сессии.
+            # Subframe/iframe inside the same session.
             return False, "subframe"
         payload = params.get("payload", "")
         if not isinstance(payload, str) or len(payload.encode("utf-8", "ignore")) > MAX_BINDING_PAYLOAD_BYTES:
@@ -467,10 +467,10 @@ class StealthInjector:
     async def _on_binding_called(self, params: dict[str, Any], session_id: str | None = None) -> None:
         """Forward page-side gesture events to the synchronizer sink.
 
-        Audit R3-round2: binding ставится во все attached-сессии, поэтому
-        страница (в т.ч. рекламный iframe) могла диктовать клики в браузерах
-        других профилей. Теперь принимаются только жесты из main-world
-        главного фрейма top-level страницы, с лимитом размера и частоты.
+        Audit R3-round2: the binding is installed in every attached session, so a
+        page (including an ad iframe) could dictate clicks in the browsers of
+        other profiles. Now only gestures from the main world of the top-level
+        page's main frame are accepted, with size and rate limits.
         """
         allowed, reason = self.binding_event_allowed(params, session_id)
         if not allowed:
@@ -490,7 +490,7 @@ class StealthInjector:
             self.binding_events_rejected += 1
             return
         sink = self.opts.event_sink
-        if sink is None:  # pragma: no cover - уже проверено в binding_event_allowed
+        if sink is None:  # pragma: no cover - already checked in binding_event_allowed
             return
         self.binding_events_accepted += 1
         try:

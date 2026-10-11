@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def _js_number(value: object) -> str:
-    """Рендерит число как валидный JS-литерал.
+    """Renders a number as a valid JS literal.
 
-    Audit R3-round2: f-строка вставляла float через str(), поэтому Infinity и
-    NaN из JSON-тела (json.loads их принимает) превращались в python-литералы
-    ``inf``/``nan``. В браузере это неопределённые идентификаторы: getter
-    devicePixelRatio падал с ReferenceError (страница ломается + яркий признак
-    подмены), а аудио-шум молча отключался, потому что исключение глоталось
-    внешним try/catch.
+    Audit R3-round2: the f-string inserted floats through str(), so Infinity and
+    NaN from a JSON body (json.loads accepts them) became the Python literals
+    ``inf``/``nan``. In the browser these are undefined identifiers: the
+    devicePixelRatio getter crashed with a ReferenceError (the page breaks plus a
+    glaring sign of tampering), and the audio noise was silently disabled because
+    the exception was swallowed by the outer try/catch.
     """
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -232,10 +232,10 @@ chrome.webRequest.onAuthRequired.addListener(
 if (window.__nsi) {{
     // Already applied on this document (extension content script + CDP injector may both run).
 }} else {{
-// Audit R3-round2: раньше здесь стоял брендовый флаг вида window.__nazak*,
-// по которому любая антифрод-система определяла продукт одной строкой. Флаг
-// идемпотентности остался, но переименован и сделан неперечислимым, чтобы не
-// попадать в обычное перечисление свойств window.
+// Audit R3-round2: this used to be a branded flag of the form window.__nazak*,
+// by which any anti-fraud system could identify the product in a single line. The
+// idempotency flag is still here, but it was renamed and made non-enumerable so it
+// does not appear in the ordinary enumeration of window properties.
 Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enumerable: false, writable: false}});
 (function() {{
     'use strict';

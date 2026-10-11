@@ -12,10 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from .health import HealthCheckResult
 from .proxy import ProxyConfig, ProxyType as ProxyType
 
-# Audit R3-round2: JSON допускает литералы Infinity/NaN (json.loads их принимает),
-# а pydantic по умолчанию их не отвергает. Попав в генератор stealth.js, значение
-# превращалось в python-литерал "inf"/"nan" — невалидный JS (ReferenceError и
-# молча отключённый аудио-шум). Запрещаем нечисловые значения на входе моделей.
+# Audit R3-round2: JSON allows the literals Infinity/NaN (json.loads accepts them),
+# while pydantic does not reject them by default. Once such a value reached the
+# stealth.js generator it became the Python literal "inf"/"nan" — invalid JS
+# (ReferenceError plus silently disabled audio noise). We reject non-finite values at model input.
 _STRICT_NUMBERS = ConfigDict(allow_inf_nan=False)
 
 

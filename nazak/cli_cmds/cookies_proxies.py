@@ -1,4 +1,4 @@
-"""`nazak cookie ...` и `nazak proxy ...` — паритет ProxiesView + BatchCookieDialog/CookieManagerDialog."""
+"""`nazak cookie ...` and `nazak proxy ...` — parity with ProxiesView + BatchCookieDialog/CookieManagerDialog."""
 
 from __future__ import annotations
 
@@ -186,7 +186,7 @@ def cmd_cookie_bulk_export(args, opt: GlobalOptions) -> int:
 
 
 def _proxy_label(raw: str) -> str:
-    """Прокси для вывода: без пароля (audit R3 — `proxy test host:port:user:pass` печатал пароль)."""
+    """Proxy for display: without the password (audit R3 — `proxy test host:port:user:pass` printed the password)."""
     from nazak.models.proxy import ProxyConfig
 
     try:
@@ -267,7 +267,7 @@ def cmd_proxy_test(args, opt: GlobalOptions) -> int:
 
     proxy = ProxyConfig.parse(raw)
     res = asyncio.run(check_proxy_health(proxy, profile_dir=None))
-    # Audit R3: в вывод уходит только безопасная форма (user:***@host:port).
+    # Audit R3: only the safe form (user:***@host:port) goes into the output.
     _print_health(_proxy_label(raw), res, opt, proxy_label=_proxy_label(raw))
     return EXIT_OK
 

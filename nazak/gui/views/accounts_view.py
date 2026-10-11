@@ -46,10 +46,10 @@ from ...models.profile import BrowserProfile, ProfileStatus
 
 
 def _safe_totp(secret: str) -> str:
-    """Код для таблицы; невалидный/пустой секрет — это «—», а не падение.
+    """Code for the table; an invalid/empty secret yields "—" instead of a crash.
 
-    Audit R3: `generate_totp_rfc6238` больше не возвращает фиктивный "000000",
-    а бросает ValueError — GUI обязан это пережить.
+    Audit R3: `generate_totp_rfc6238` no longer returns a fake "000000" but
+    raises ValueError — the GUI has to survive that.
     """
     if not secret:
         return "—"

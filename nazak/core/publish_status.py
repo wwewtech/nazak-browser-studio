@@ -1,8 +1,8 @@
-"""Честный статус публикации: «не подтверждено» — это не «получилось» (audit R3).
+"""Honest publication status: "not confirmed" is not "succeeded" (audit R3).
 
-Загрузчики помечают этим префиксом ситуацию «клик Publish/Share сделан, но
-результат не подтверждён». Такую ошибку нельзя ретраить (иначе дубль
-публикации на аккаунте), и нельзя выдавать за успех.
+Uploaders use this prefix to mark the situation "the Publish/Share click was made,
+but the result is not confirmed". Such an error must not be retried (otherwise a
+duplicate publication on the account), and must not be passed off as success.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ PUBLISH_UNCERTAIN_PREFIX = "publish-uncertain"
 
 
 def publish_uncertain(message: str) -> str:
-    """Строка ошибки для «опубликовано? неизвестно»."""
+    """Error string for "published? unknown"."""
     return f"{PUBLISH_UNCERTAIN_PREFIX}: {message}"
 
 

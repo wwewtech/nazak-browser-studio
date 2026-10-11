@@ -20,13 +20,13 @@ from .spintax import format_video_metadata
 from .video_uniquifier import VideoUniquifier
 from .youtube_uploader import YouTubeUploader
 
-# Audit R3-round2: верхняя граница паузы между аккаунтами (1 час). Значение
-# приходит из API/CLI, поэтому ограничивается и в сервисном слое, а не только
-# в pydantic-модели: иначе батч «засыпал» на годы, удерживая is_running=True.
+# Audit R3-round2: upper bound for the pause between accounts (1 hour). The value
+# arrives from the API/CLI, so it is clamped in the service layer as well, not only
+# in the pydantic model: otherwise a batch "fell asleep" for years while holding is_running=True.
 MAX_BATCH_DELAY_SECONDS = 3600
 
-# Audit R3: "403" убран из списка — это блок/отказ в правах, а не сбой сети;
-# ретраить его 4 раза значит долбить платформу и рисковать аккаунтом.
+# Audit R3: "403" was removed from the list — it is a block/denial of rights, not a network failure;
+# retrying it 4 times means hammering the platform and risking the account.
 RETRYABLE_UPLOAD_ERRORS = (
     "timeout",
     "temporarily unavailable",
@@ -54,8 +54,8 @@ SUPPORTED_UPLOAD_PLATFORMS = ("youtube_shorts", "instagram_reels")
 def normalize_upload_platform(platform: str | None) -> str:
     """Normalize an upload platform name to a supported value.
 
-    Audit R3: сравнение больше не регистрозависимое — "Instagram_Reels" раньше
-    молча превращался в youtube_shorts, т.е. видео уезжало не на ту платформу.
+    Audit R3: the comparison is no longer case-sensitive — "Instagram_Reels" used to
+    be silently turned into youtube_shorts, i.e. the video went to the wrong platform.
     """
     if isinstance(platform, str):
         candidate = platform.strip().lower()
@@ -112,8 +112,8 @@ class UploadQueueManager:
         self._cancel_requested = False
         self._batch_lock = asyncio.Lock()
         self._profile_locks: dict[str, asyncio.Lock] = {}
-        # Профили, браузеры которых подняла именно эта очередь (audit R3):
-        # cancel_all не должен убивать сессию, открытую пользователем вручную.
+        # Profiles whose browsers were launched by this very queue (audit R3):
+        # cancel_all must not kill a session the user opened manually.
         self._launched_here: set[str] = set()
 
     async def broadcast(self, event: str, data: dict[str, Any]):
@@ -151,8 +151,8 @@ class UploadQueueManager:
                 j.progress_message = "Upload canceled by user"
                 canceled_ids.append(j.profile_id)
         # Sweep: a cancel may land between launch() and upload completion —
-        # take down those browsers so no Chrome process leaks. Только те, что
-        # подняла очередь: чужую сессию пользователя не трогаем (audit R3).
+        # take down those browsers so no Chrome process leaks. Only the ones
+        # the queue launched: we leave another user's session alone (audit R3).
         launcher = getattr(self, "browser_launcher", None)
         stop = getattr(launcher, "stop", None)
         if stop is not None:
@@ -169,7 +169,7 @@ class UploadQueueManager:
     def _is_retryable_error(err: str | None) -> bool:
         if not err:
             return False
-        # Публикация уже нажата, но результат неизвестен: повтор = дубль поста.
+        # The publication was already clicked but the result is unknown: a retry duplicates the post.
         if is_publish_uncertain(err):
             return False
         lowered = err.lower()
@@ -420,8 +420,8 @@ class UploadQueueManager:
                     else:
                         job.status = "failed"
                         job.error = upload_err
-                        # Audit R3: сообщение о запрете ретрая не должно теряться
-                        # (раньше оно перезаписывалось текстом ошибки на этой строке).
+                        # Audit R3: the retry-forbidden message must not be lost
+                        # (it used to be overwritten by the error text on this line).
                         if not is_publish_uncertain(upload_err) and not is_manual_action_error(upload_err):
                             job.progress_message = upload_err or "Upload failed"
                         await self.broadcast(
@@ -435,18 +435,18 @@ class UploadQueueManager:
                         )
 
                     if idx < len(profile_ids) and not self._cancel_requested:
-                        # Audit R3-round2: пауза приходит из API/CLI, поэтому
-                        # ограничена и здесь (Field(ge=0, le=3600) — первый слой).
-                        # Раньше delay_seconds=10**9 усыплял батч на годы, а
-                        # is_running=True всё это время блокировал новые запуски.
+                        # Audit R3-round2: the pause comes from the API/CLI, so it is
+                        # bounded here too (Field(ge=0, le=3600) is the first layer).
+                        # Previously delay_seconds=10**9 put the batch to sleep for years, while
+                        # is_running=True blocked new runs the whole time.
                         safe_delay = max(0, min(int(delay_between_accounts_sec), MAX_BATCH_DELAY_SECONDS))
                         delay = random.randint(max(1, safe_delay - 3), safe_delay + 5)
                         await asyncio.sleep(delay)
 
         finally:
             self.is_running = False
-            # Audit R3: неожиданное исключение раньше оставляло job в статусе
-            # "uploading" и профиль RUNNING, а браузер — висеть. Закрываем явно.
+            # Audit R3: an unexpected exception used to leave the job in status
+            # "uploading" and the profile RUNNING, with the browser hanging. We close it explicitly.
             for stuck in self.jobs.values():
                 if stuck.status in ("pending", "uniqueizing", "launching", "uploading"):
                     stuck.status = "failed"

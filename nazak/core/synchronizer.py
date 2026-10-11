@@ -12,13 +12,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Audit R3-round2: границы для синхронизатора.
-#  * MAX_PENDING_EVENTS — очередь мастер-жестов: без maxsize мёртвый/медленный
-#    насос копил события в памяти бесконечно.
-#  * MAX_DELAY_MS — интервал джиттера: отрицательное значение уходило в
-#    time.sleep вне try и убивало поток-насос (ValueError), а session.active
-#    оставался True, т.е. клиент видел активную сессию при мёртвом насосе.
-#  * MAX_SYNC_NAVIGATE_WAIT_SEC — ожидание ответа насоса при навигации.
+# Audit R3-round2: bounds for the synchronizer.
+#  * MAX_PENDING_EVENTS — the master-gesture queue: without maxsize a dead/slow
+#    pump piled up events in memory indefinitely.
+#  * MAX_DELAY_MS — the jitter interval: a negative value went into
+#    time.sleep outside try and killed the pump thread (ValueError), while
+#    session.active stayed True, i.e. the client saw an active session with a dead pump.
+#  * MAX_SYNC_NAVIGATE_WAIT_SEC — how long to wait for the pump's reply during navigation.
 MAX_PENDING_EVENTS = 5000
 MAX_COORDINATE_JITTER_PX = 50
 MAX_DELAY_MS = 60_000
@@ -26,7 +26,7 @@ MAX_SYNC_NAVIGATE_WAIT_SEC = 45.0
 
 
 def _clamp_delay_range(delay_range_ms: Any) -> tuple[int, int]:
-    """Нормализует интервал задержек: неотрицательный, упорядоченный, в границах."""
+    """Normalizes the delay interval: non-negative, ordered, within bounds."""
     try:
         low = int(delay_range_ms[0])
         high = int(delay_range_ms[1])
@@ -41,10 +41,10 @@ def _clamp_delay_range(delay_range_ms: Any) -> tuple[int, int]:
 
 # Sync client for master pages: captures user gestures and forwards them through
 # the Runtime binding registered by the CDP injector.
-# Audit R3-round2: раньше здесь стояли `window.__nazakSyncInstalled = true` и
-# `window.__nazak_sync_event` — любая страница могла определить Nazak одной
-# строкой. Флаг идемпотентности теперь невидим при обычном перечислении
-# (неперечислимое свойство), а имя binding'а нейтральное (SYNC_BINDING_NAME).
+# Audit R3-round2: this used to hold `window.__nazakSyncInstalled = true` and
+# `window.__nazak_sync_event` — any page could identify Nazak with a single
+# line. The idempotency flag is now invisible under ordinary enumeration
+# (non-enumerable property), and the binding name is neutral (SYNC_BINDING_NAME).
 SYNC_CLIENT_JS = """
 (() => {
   if (window.__nse_c) return;
@@ -114,9 +114,9 @@ class SynchronizerSession:
         self.master_profile_id = master_profile_id
         self.worker_profile_ids = [w for w in worker_profile_ids if w != master_profile_id]
         self.humanize_jitter = humanize_jitter
-        # Audit R3-round2: интервал нормализуется здесь, потому что отрицательный
-        # delay уходил в time.sleep вне try -> ValueError убивал поток-насос,
-        # а session.active оставался True (клиент видел "active" при мёртвом насосе).
+        # Audit R3-round2: the interval is normalized here because a negative
+        # delay went into time.sleep outside try -> ValueError killed the pump thread,
+        # while session.active stayed True (the client saw "active" with a dead pump).
         self.delay_range_ms = _clamp_delay_range(delay_range_ms)
         self.coordinate_jitter_px = max(0, min(int(coordinate_jitter_px), MAX_COORDINATE_JITTER_PX))
         self.active = False
@@ -126,7 +126,7 @@ class SynchronizerSession:
         self.started_at: float | None = None
         # Thread-safe event queue: the CDP injector (its own thread) appends
         # master gestures here, the mirror pump thread consumes them.
-        # maxsize обязателен: без него мёртвый/медленный насос копил память.
+        # maxsize is mandatory: without it a dead/slow pump accumulated memory.
         self.events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_PENDING_EVENTS)
         # Control commands (mirror_navigation) executed by the pump thread so
         # every CDP session is opened on ONE thread (Playwright requirement).
@@ -183,9 +183,9 @@ def tile_windows_win32(pids: list[int], cols: int | None = None) -> bool:
         if not hwnds:
             return False
         total = len(hwnds)
-        # Audit R3-round2: cols приходит из API/CLI. Отрицательное значение
-        # давало ZeroDivisionError или отрицательную геометрию окна (гасилось
-        # общим except и выглядело как «не сработало»), поэтому диапазон 1..8.
+        # Audit R3-round2: cols comes from the API/CLI. A negative value
+        # produced a ZeroDivisionError or negative window geometry (swallowed by the
+        # generic except and looking like "it did not work"), hence the 1..8 range.
         default_cols = 2 if total <= 4 else (3 if total <= 9 else 4)
         try:
             num_cols = max(1, min(int(cols), 8)) if cols is not None else default_cols
@@ -269,8 +269,8 @@ class SynchronizerManager:
         if not isinstance(event, dict) or "type" not in event:
             return False
         try:
-            # Audit R3-round2: ограниченная очередь + явный счётчик отброшенных
-            # событий вместо бесконечного роста памяти.
+            # Audit R3-round2: a bounded queue plus an explicit dropped-event
+            # counter instead of unbounded memory growth.
             session.events.put_nowait({"profile_id": profile_id, "event": event, "ts": time.time()})
         except queue.Full:
             session.dropped_events += 1
@@ -298,8 +298,8 @@ class SynchronizerManager:
         import asyncio
 
         async def _install() -> None:
-            # Импорт внутри try: без playwright поток не должен падать
-            # необработанным исключением (audit R3-round2).
+            # Import inside try: without playwright the thread must not die from an
+            # unhandled exception (audit R3-round2).
             from playwright.async_api import async_playwright
 
             endpoint = cdp_info.get("http_endpoint") if isinstance(cdp_info, dict) else None
@@ -345,7 +345,7 @@ class SynchronizerManager:
         workers = list(session.worker_profile_ids)
         if not workers:
             return {}
-        # Audit R3-round2: мёртвый насос не должен заставлять ждать ответа минуты.
+        # Audit R3-round2: a dead pump must not make the caller wait minutes for a reply.
         pump = self._pump_thread
         if pump is not None and not pump.is_alive():
             session.active = False
@@ -372,9 +372,9 @@ class SynchronizerManager:
     def _mirror_pump(self, session: SynchronizerSession) -> None:
         """Consume master gestures and mirror them onto worker pages (blocking pump)."""
         try:
-            # Audit R3-round2: импорт внутри try — отсутствие playwright должно
-            # быть зафиксировано как last_error сессии, а не как необработанное
-            # исключение потока (pytest превращает его в падение теста).
+            # Audit R3-round2: import inside try — a missing playwright must be
+            # recorded as the session's last_error rather than as an unhandled
+            # thread exception (pytest turns that into a test failure).
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as pw:
@@ -394,9 +394,9 @@ class SynchronizerManager:
             logger.warning("synchronizer mirror pump stopped: %s", exc)
             session.last_error = str(exc)
         finally:
-            # Audit R3-round2: мёртвый насос обязан быть виден клиенту. Раньше
-            # session.active оставался True, get_status() отдавал "active", а
-            # mirror_navigation ждал ответа до 110 с.
+            # Audit R3-round2: a dead pump must be visible to the client. Previously
+            # session.active stayed True, get_status() reported "active", and
+            # mirror_navigation waited up to 110 s for a reply.
             session.active = False
             self._detach_workers()
 
@@ -434,9 +434,9 @@ class SynchronizerManager:
             if not info or not info.get("page"):
                 continue
             try:
-                # Audit R3-round2: sleep ВНУТРИ try. Раньше он стоял снаружи, и
-                # отрицательный delay (невалидированный --min-delay/min_delay_ms)
-                # выбрасывал ValueError мимо обработчика -> насос умирал.
+                # Audit R3-round2: sleep INSIDE try. It used to sit outside, and a
+                # negative delay (unvalidated --min-delay/min_delay_ms)
+                # raised ValueError past the handler -> the pump died.
                 if session.humanize_jitter:
                     delay_ms = random.uniform(*_clamp_delay_range(session.delay_range_ms))
                     if delay_ms > 0:
@@ -450,9 +450,9 @@ class SynchronizerManager:
     # ------------------------------------------------------ worker attachments
     def _ensure_worker_pages(self, worker_ids: list[str], browser: Any = None) -> dict[str, dict[str, Any]]:
         """Attach one Playwright page per worker (cached, lazily reconnected)."""
-        # Audit R3-round2: сначала проверяем кэш — если все страницы живы,
-        # playwright не нужен вовсе (раньше импорт выполнялся всегда и падал
-        # там, где зависимость не установлена, хотя работы не требовалось).
+        # Audit R3-round2: the cache is checked first — if every page is alive,
+        # playwright is not needed at all (the import used to run every time and fail
+        # where the dependency is not installed, even though no work was required).
         need_attach = [
             worker_id
             for worker_id in worker_ids
@@ -525,9 +525,9 @@ class SynchronizerManager:
         if not info or not info.get("page"):
             return False
         try:
-            # Audit R3-round2: URL приходит из API/CLI. Раньше он уходил в
-            # page.goto() как есть, т.е. file://, data: и javascript: открывались
-            # в браузерах воркеров (в warmup/launch такая же проверка уже была).
+            # Audit R3-round2: the URL comes from the API/CLI. It used to go into
+            # page.goto() as-is, i.e. file://, data: and javascript: were opened
+            # in the worker browsers (the same check already existed in warmup/launch).
             from .browser_launcher import sanitize_launch_url
 
             target_url = sanitize_launch_url(url)

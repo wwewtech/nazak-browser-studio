@@ -10,8 +10,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-# Audit R3-round2: лимиты для cookie-ZIP (архив приходит из GUI/CLI от
-# пользователя; без границ 100-килобайтный архив разворачивался в память).
+# Audit R3-round2: limits for the cookie ZIP (the archive arrives from the user
+# through the GUI/CLI; without bounds a 100-kilobyte archive was unpacked into memory).
 MAX_COOKIE_ZIP_ENTRIES = 200
 MAX_COOKIE_ZIP_ENTRY_BYTES = 32 * 1024 * 1024
 MAX_COOKIE_ZIP_TOTAL_BYTES = 64 * 1024 * 1024
@@ -237,8 +237,8 @@ def parse_cookie_files_from_zip(zip_source: Any) -> dict[str, list[dict[str, Any
 
         with zf:
             infos = zf.infolist()
-            # Audit R3-round2: cookie-архивы тоже читаются целиком в память,
-            # поэтому ограничиваем число записей и суммарный объём.
+            # Audit R3-round2: cookie archives are also read into memory in full,
+            # so we cap the entry count and the total size.
             if len(infos) > MAX_COOKIE_ZIP_ENTRIES:
                 return results
             total_declared = sum(max(0, info.file_size) for info in infos)

@@ -120,8 +120,8 @@ class SecretsModeCard(QGroupBox):
             return
 
         re_count = self._reencrypt_existing_profiles()
-        # Audit R3: парольная фраза не должна оставаться в поле виджета после
-        # применения (в settings_view.py очистка уже была).
+        # Audit R3: the passphrase must not remain in the widget field after it
+        # is applied (settings_view.py already cleared it).
         self.passphrase_edit.clear()
         self.status_label.setText(f"Active mode: {effective} (re-encrypted {re_count} profiles)")
         QMessageBox.information(

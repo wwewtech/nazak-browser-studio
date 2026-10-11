@@ -26,13 +26,13 @@ GOOGLE_ENDPOINTS = {
     "youtube": "https://www.youtube.com/generate_204",
 }
 
-# Audit R3-round2: гео-ответ идёт по открытому HTTP через прокси пользователя,
-# поэтому каждое поле санитизируется до попадания в профиль/DOM/stealth.js.
+# Audit R3-round2: the geo response travels over plain HTTP through the user's proxy,
+# so every field is sanitized before it reaches the profile/DOM/stealth.js.
 _TIMEZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+){0,2}$")
 
 
 def _safe_text(value: object, limit: int) -> str | None:
-    """Строка ограниченной длины без управляющих символов, иначе None."""
+    """A length-limited string without control characters, otherwise None."""
     if value is None:
         return None
     text = str(value)
@@ -44,7 +44,7 @@ def _safe_text(value: object, limit: int) -> str | None:
 
 
 def _safe_timezone(value: object) -> str | None:
-    """Только правдоподобное IANA-имя: значение уходит в TZ и Chrome-флаг."""
+    """Only a plausible IANA name: the value goes into the timezone and a Chrome flag."""
     if not isinstance(value, str) or len(value) > 64:
         return None
     text = value.strip()
@@ -54,7 +54,7 @@ def _safe_timezone(value: object) -> str | None:
 
 
 def _finite_or_none(value: object, low: float, high: float) -> float | None:
-    """Конечное число в границах, иначе None (inf/nan/строки отбрасываются)."""
+    """A finite number within bounds, otherwise None (inf/nan/strings are dropped)."""
     try:
         number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -144,12 +144,12 @@ async def check_proxy_health(
             if geo_resp.status_code == 200:
                 geo_data = geo_resp.json()
                 if geo_data.get("status") == "success":
-                    # Audit R3-round2: ответ приходит по открытому HTTP через
-                    # пользовательский прокси, т.е. полностью подконтролен
-                    # посреднику. Раньше значения писались в профиль как есть:
-                    # строка любой длины (память/логи/DOM) и нечисловые числа
-                    # (json.loads принимает Infinity/NaN -> pydantic-модели и
-                    # генератор stealth.js получали inf/nan).
+                    # Audit R3-round2: the response arrives over plain HTTP through
+                    # the user's proxy, i.e. it is fully controlled by the
+                    # intermediary. Previously the values were written into the profile
+                    # as-is: strings of any length (memory/logs/DOM) and non-finite
+                    # numbers (json.loads accepts Infinity/NaN -> the pydantic models
+                    # and the stealth.js generator received inf/nan).
                     result.ip = _safe_text(geo_data.get("query"), 64)
                     result.country = _safe_text(geo_data.get("country"), 128)
                     result.country_code = _safe_text(geo_data.get("countryCode"), 8)

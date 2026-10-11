@@ -1,7 +1,7 @@
 """
 Rich Command Line Interface for Nazak Browser Studio.
-Полный паритет с GUI: profile/cookie/proxy/warmup/scenario/sync/autopost/account/cdp/secrets/system.
-AI-agent контракт: --json + exit-коды 0/1/2/4. Backward-compat: list/launch/stop/check/check-all/info.
+Full parity with the GUI: profile/cookie/proxy/warmup/scenario/sync/autopost/account/cdp/secrets/system.
+AI-agent contract: --json + exit codes 0/1/2/4. Backward-compat: list/launch/stop/check/check-all/info.
 """
 
 from __future__ import annotations
@@ -135,7 +135,7 @@ def _show_help(args, opt: GlobalOptions) -> int:
     return EXIT_OK
 
 
-# --- legacy shims -> новые модули ---
+# --- legacy shims -> the new modules ---
 
 
 def _legacy_list(args, opt: GlobalOptions) -> int:
@@ -167,7 +167,7 @@ def _legacy_info(args, opt: GlobalOptions) -> int:
 
 
 def _hoist_global_flags(argv: list[str]) -> list[str]:
-    """Позволяет `profile list --json` и `--json profile list`: выносит глобальные флаги вперёд."""
+    """Allows both `profile list --json` and `--json profile list`: hoists global flags to the front."""
     hoisted: list[str] = []
     rest: list[str] = []
     i = 0
@@ -190,9 +190,9 @@ def _hoist_global_flags(argv: list[str]) -> list[str]:
 
 
 def run_cli() -> int:
-    # Совместимость: `cli.py list` / exe без `profile` префикса уже приходит сюда из main.py.
-    # argparse покрывает и legacy, и новые группы — отдельный ручной парсинг не нужен,
-    # кроме bare `launch <id> [url]` когда argparse вызван как `prog launch ...`: он уже зарегистрирован.
+    # Compatibility: `cli.py list` / an exe without the `profile` prefix already arrives here from main.py.
+    # argparse covers both legacy and new groups — no separate manual parsing needed,
+    # except for a bare `launch <id> [url]` when argparse is invoked as `prog launch ...`: it is already registered.
     parser = build_parser()
     argv = _hoist_global_flags(sys.argv[1:])
     if not argv or argv[0] == "help":
@@ -225,11 +225,11 @@ def run_cli() -> int:
     except BrokenPipeError:
         return EXIT_OK
     except UsageError as exc:
-        # Ошибка ввода/пути: чистый exit 2 без traceback.
+        # Input/path error: clean exit 2 without a traceback.
         from nazak.cli_cmds.common import emit_error
 
         return emit_error(str(exc), opt, EXIT_USAGE, hint="Проверьте аргументы: system schema --json")
-    except Exception as exc:  # транспорт/API: чистый JSON вместо traceback
+    except Exception as exc:  # transport/API: clean JSON instead of a traceback
         from nazak.cli_cmds.common import EXIT_CONFLICT, ApiError, api_error_code, emit_error
 
         if opt.verbose:
@@ -245,7 +245,7 @@ def run_cli() -> int:
 
 
 def list_profiles(pm, bl):
-    """Оставлено для тестов/обратной совместимости импортов."""
+    """Kept for tests/backward compatibility of imports."""
     from nazak.models.profile import ProfileStatus  # noqa
 
     profiles_list = pm.list_profiles()

@@ -1,4 +1,4 @@
-"""`nazak profile ...` — полный CRUD + ферма (паритет ProfilesView + MassGenerateDialog + ProfileEditDialog)."""
+"""`nazak profile ...` — full CRUD + farm (parity with ProfilesView + MassGenerateDialog + ProfileEditDialog)."""
 
 from __future__ import annotations
 
@@ -196,7 +196,7 @@ def cmd_get(args, opt: GlobalOptions) -> int:
     p = pm.get_profile(args.profile_id)
     if not p:
         return emit_error(f"Профиль '{args.profile_id}' не найден", opt, EXIT_NOT_FOUND)
-    # Audit R3: секреты маскируются по умолчанию, открытый текст — только --reveal.
+    # Audit R3: secrets are masked by default, cleartext only with --reveal.
     d = profile_for_output(p, reveal=opt.reveal)
     d["live_running"] = bl.is_profile_running(p.id)
     cdp = bl.get_cdp_info(p.id) if d["live_running"] else None
@@ -519,7 +519,7 @@ def cmd_bundle_import(args, opt: GlobalOptions) -> int:
 
 
 def cmd_ensure(args, opt: GlobalOptions) -> int:
-    """Идемпотентный get-or-create по имени: безопасен для ретраев агентов."""
+    """Idempotent get-or-create by name: safe for agent retries."""
     if opt.server:
         existing = server_request(opt, "GET", "/api/profiles")
         items = existing if isinstance(existing, list) else existing.get("data", existing)
@@ -579,4 +579,4 @@ def cmd_ensure(args, opt: GlobalOptions) -> int:
 
 
 def add_legacy_parsers(sp: argparse.ArgumentParser) -> None:
-    """Ничего не делает здесь; legacy обрабатывается в cli.py."""
+    """Does nothing here; legacy is handled in cli.py."""

@@ -205,9 +205,9 @@ class InstagramUploader:
                     await self._safe_wait(next_btn.click(), timeout=10.0, label="next button click")
                     await asyncio.sleep(2 * self.delay_scale)
 
-                # Audit R3: каждый шаг ниже был под `if is_visible()`, и при
-                # провале управление доходило до `return True, "https://www.instagram.com/"`.
-                # Теперь отсутствие подтверждения — это честная ошибка.
+                # Audit R3: every step below used to sit under `if is_visible()`, and on
+                # failure control fell through to `return True, "https://www.instagram.com/"`.
+                # Now a missing confirmation is an honest error.
                 share_btn = self._first(page.locator("button:has-text('Share')"))
                 if not await asyncio.wait_for(share_btn.is_visible(), timeout=20.0):
                     return (
@@ -219,7 +219,7 @@ class InstagramUploader:
                 share_clicked = True
                 await asyncio.sleep(5 * self.delay_scale)
 
-                # Подтверждение: ссылка на пост, тост об успехе или закрытие диалога.
+                # Confirmation: a post link, a success toast, or the dialog closing.
                 published_url = None
                 confirmed = False
                 for _ in range(10):

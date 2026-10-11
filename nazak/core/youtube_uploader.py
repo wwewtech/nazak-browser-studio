@@ -98,8 +98,8 @@ class YouTubeUploader:
 
         async_playwright = ensure_async_playwright()
 
-        # Audit R3: после клика «Publish» повторный прогон = дубль публикации,
-        # поэтому такие сбои помечаются publish-uncertain и не ретраятся.
+        # Audit R3: after the "Publish" click a second run means a duplicate
+        # publication, so such failures are marked publish-uncertain and not retried.
         publish_clicked = False
 
         async with async_playwright() as p:
@@ -252,6 +252,6 @@ class YouTubeUploader:
 
             except Exception as e:
                 if publish_clicked:
-                    # Публикация могла состояться: не ретраим и не выдаём за успех.
+                    # The publication may have happened: we do not retry and do not report success.
                     return False, None, publish_uncertain(f"YouTube: publish was clicked, result unverified ({e})")
                 return False, None, f"YouTube upload error: {e!s}"

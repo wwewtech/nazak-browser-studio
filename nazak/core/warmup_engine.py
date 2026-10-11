@@ -150,11 +150,11 @@ _MAX_STEP_SECONDS = 600.0
 
 
 def _clamped_seconds(value: Any, default: float, *, lo: float = 0.5, hi: float = _MAX_STEP_SECONDS) -> float:
-    """Длительность шага из API/JSON: всегда конечное число в разумных границах.
+    """Step duration coming from the API/JSON: always a finite number within sane bounds.
 
-    Audit R3: `min_sec`/`duration_sec` приходили без валидации, и сценарий
-    ``{"action":"dwell","params":{"min_sec":1e12}}`` держал слот конкурентности
-    практически вечно.
+    Audit R3: `min_sec`/`duration_sec` arrived without validation, and a scenario
+    ``{"action":"dwell","params":{"min_sec":1e12}}`` held a concurrency slot
+    practically forever.
     """
     try:
         num = float(value)
@@ -349,8 +349,8 @@ class ScenarioExecutor:
             )
 
         if step.action == "dwell":
-            # Audit R3: min_sec/max_sec приходили из API без границ, и dwell с
-            # min_sec=1e12 навсегда занимал слот конкурентности.
+            # Audit R3: min_sec/max_sec arrived from the API without bounds, and a dwell
+            # with min_sec=1e12 occupied a concurrency slot forever.
             min_s = _clamped_seconds(step.params.get("min_sec", 2), 2.0)
             max_s = _clamped_seconds(step.params.get("max_sec", 5), 5.0)
             if max_s < min_s:
@@ -370,15 +370,15 @@ class ScenarioExecutor:
             await asyncio.sleep(watch_s)
             return True
 
-        # Audit R3: неизвестное действие больше не считается успешным шагом.
+        # Audit R3: an unknown action no longer counts as a successful step.
         logger.warning("warmup: unknown action %r for profile %s", step.action, profile_id)
         return False
 
     # ------------------------------------------------------------ CDP page actions
     async def _navigate(self, page: Any, url: str) -> bool:
         try:
-            # Audit R3: сценарий приходит из API, поэтому схема URL проверяется
-            # тем же правилом, что и custom_url при запуске Chrome.
+            # Audit R3: the scenario comes from the API, so the URL scheme is validated
+            # by the same rule as custom_url when launching Chrome.
             from .browser_launcher import sanitize_launch_url
 
             try:

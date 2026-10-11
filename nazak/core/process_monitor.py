@@ -68,6 +68,6 @@ class ProcessMonitor:
                                 except Exception:
                                     pass
             except Exception as exc:
-                # Audit R3: молчаливое «pass» скрывало поломку монитора целиком.
+                # Audit R3: a silent `pass` concealed a total breakdown of the monitor.
                 logger.debug("process monitor iteration failed: %s", exc)
             time.sleep(self.poll_interval)

@@ -47,11 +47,11 @@ def find_ffmpeg() -> str | None:
 
 
 def generate_demo_clip(path: Path, duration_sec: int = 5) -> tuple[bool, str | None]:
-    """Создаёт НАСТОЯЩИЙ короткий клип через ffmpeg (audit R3).
+    """Creates a REAL short clip through ffmpeg (audit R3).
 
-    Раньше легаси-поток логина писал ``b"DEMO_MP4_HEADER" + b"0" * 1024`` —
-    мусорные байты, которые затем уходили на YouTube. Один и тот же честный
-    генератор используется и API (`/api/autopost/launch?demo=true`), и CLI.
+    The legacy login flow used to write ``b"DEMO_MP4_HEADER" + b"0" * 1024`` —
+    garbage bytes that were then uploaded to YouTube. The same honest generator
+    is used both by the API (`/api/autopost/launch?demo=true`) and by the CLI.
     """
     ffmpeg = find_ffmpeg()
     if not ffmpeg:

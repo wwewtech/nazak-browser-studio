@@ -1,4 +1,4 @@
-"""`nazak autopost ...` и `nazak account ...` — паритет AutopostView + AccountsView + live_flow скрипта."""
+"""`nazak autopost ...` and `nazak account ...` — parity with AutopostView + AccountsView + the live_flow script."""
 
 from __future__ import annotations
 
@@ -308,8 +308,8 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
     ids = [p.id for p in profiles]
     if not profiles:
         return emit_error("Не распознано ни одного аккаунта (формат login:pass:2fa:recovery)", opt)
-    # Audit R3: режим plain пишет пароли и 2FA-сиды в profiles.json открытым текстом.
-    # Это осознанный выбор пользователя, но агент/оператор должен видеть это сразу.
+    # Audit R3: plain mode writes passwords and 2FA seeds into profiles.json in cleartext.
+    # That is the user's deliberate choice, but the agent/operator must see it immediately.
     warning = None
     try:
         from nazak.core.secrets_store import get_current_mode
@@ -403,9 +403,9 @@ def cmd_account_totp(args, opt: GlobalOptions) -> int:
     if not p:
         return emit_error("Профиль не найден", opt, EXIT_NOT_FOUND)
     notes = _extract_account_notes(p)
-    # Audit R3: раньше вызывался decrypt_notes() без reveal=True, т.е. в генератор
-    # уходила маска вида "JBS...PKXP", и команда отдавала code="000000" с
-    # success=true и exit 0. Теперь секрет раскрывается, а ошибка — это ошибка.
+    # Audit R3: decrypt_notes() used to be called without reveal=True, so a mask
+    # like "JBS...PKXP" went into the generator and the command returned code="000000"
+    # with success=true and exit 0. Now the secret is revealed, and an error is an error.
     try:
         revealed = reveal_notes(notes)
     except SecretsDecryptError as exc:
@@ -422,7 +422,7 @@ def cmd_account_totp(args, opt: GlobalOptions) -> int:
 
 
 def cmd_account_login(args, opt: GlobalOptions) -> int:
-    """Тонкая обёртка над cli_auto_login_and_upload.run_live_flow с параметрами."""
+    """Thin wrapper around cli_auto_login_and_upload.run_live_flow with parameters."""
     import os
 
     if args.email:
@@ -432,15 +432,15 @@ def cmd_account_login(args, opt: GlobalOptions) -> int:
     if args.data_file:
         os.environ["NAZAK_DATA_FILE"] = args.data_file
     if args.profile and not args.email:
-        # передаём как email-фильтр по id через env; live_flow умеет матчить по name/id
+        # pass it as an email filter by id via env; live_flow can match by name/id
         os.environ["GOOGLE_EMAIL"] = args.profile
     if opt.server:
         return emit_error("account login работает только в direct-режиме", opt)
     from nazak.cli_auto_login_and_upload import run_live_flow
 
     if opt.as_json:
-        # live_flow болтлив (print/эмодзи): в --json его прогресс уходит в stderr,
-        # а stdout остаётся одним JSON-документом — парсер агента не ломается.
+        # live_flow is chatty (prints/emoji): in --json its progress goes to stderr,
+        # while stdout stays a single JSON document — the agent's parser is not broken.
         import contextlib
         import io
         import sys as _sys

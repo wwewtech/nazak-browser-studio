@@ -28,8 +28,8 @@ class ProxiesView(QWidget):
         super().__init__(parent)
         self.profile_manager = profile_manager
         self.browser_launcher = browser_launcher
-        self.worker = None  # audit R3: держим ссылку на живой QThread
-        self.rotate_worker = None  # audit R3: ротация IP не блокирует UI
+        self.worker = None  # audit R3: we keep a reference to the live QThread
+        self.rotate_worker = None  # audit R3: IP rotation does not block the UI
         self.setObjectName("proxies_view")
         self.init_ui()
         self.refresh_table()
@@ -165,8 +165,8 @@ class ProxiesView(QWidget):
         prof = self.profile_manager.get_profile(profile_id)
         if not prof or not prof.proxy.rotation_url:
             return
-        # Audit R3: сетевой запрос уходит в рабочий поток — главный поток Qt
-        # больше не замирает на 8 секунд.
+        # Audit R3: the network request goes to a worker thread — the Qt main
+        # thread no longer freezes for 8 seconds.
         if self.rotate_worker is not None and self.rotate_worker.isRunning():
             InfoBar.warning(
                 "Rotation in progress", "Дождитесь ответа провайдера", parent=self, position=InfoBarPosition.TOP
@@ -227,8 +227,8 @@ class ProxiesView(QWidget):
 
     def on_check_all(self):
         profs = self.profile_manager.list_profiles()
-        # Audit R3: без проверки isRunning() повторный клик терял последнюю
-        # ссылку на работающий QThread (для Qt это аварийное завершение).
+        # Audit R3: without the isRunning() check a repeated click dropped the last
+        # reference to the running QThread (for Qt that is an abort).
         if self.worker is not None and self.worker.isRunning():
             InfoBar.warning(
                 "Already running",
