@@ -55,6 +55,9 @@ SECRET_FIELDS = ("account_password", "totp_secret")
 # Shown instead of a value whose envelope cannot be opened right now. It is a
 # *display* value: it must never be written back over the real secret.
 UNAVAILABLE_PLACEHOLDER = "<encrypted: unavailable passphrase>"
+# Canonical literal mask shown by the API/GUI for proxy secrets and for short
+# values. Treated as a display value everywhere, never as new input.
+DISPLAY_MASK = "***"
 
 # Where the user-selected mode + (optional) passphrase are persisted.
 # Passphrase itself is NEVER persisted to disk; it is held in memory only
@@ -434,13 +437,19 @@ def reveal_notes(notes: dict, passphrase: str | None = None) -> dict:
 def is_display_value(value: str | None, stored_value: str | None) -> bool:
     """True when ``value`` is only a rendering of ``stored_value``, not new input.
 
-    Covers the three shapes a client can echo back to us: the mask produced by
-    :func:`mask_secret`, the unavailable-passphrase placeholder, and the stored
-    envelope itself (pass-through).
+    Covers every shape a client can echo back to us: the mask produced by
+    :func:`mask_secret`, the canonical literal mask ``***`` (what the API uses
+    for proxy secrets and the GUI shows for short values), the
+    unavailable-passphrase placeholder, and the stored envelope itself
+    (pass-through).
+
+    The literal ``***`` case matters: a client that PUTs back exactly what the
+    API returned would otherwise overwrite a long stored secret with the string
+    ``***`` and destroy it.
     """
     if not isinstance(value, str) or not isinstance(stored_value, str):
         return False
-    if value in (stored_value, UNAVAILABLE_PLACEHOLDER):
+    if value in (stored_value, UNAVAILABLE_PLACEHOLDER, DISPLAY_MASK):
         return True
     if value.startswith("<encrypted"):
         return True
@@ -464,9 +473,15 @@ def sanitize_notes_for_write(new_notes: dict, stored_notes: dict | None = None) 
     # would make the write path re-label old envelopes with the current mode.
     result = {k: v for k, v in new_notes.items() if not k.startswith("_") or k == ENVELOPE_KEY}
     for field in SECRET_FIELDS:
-        if field not in result:
-            continue
         stored_value = stored.get(field)
+        if field not in result:
+            # Partial update: the API accepts any subset of notes keys, and a
+            # payload that simply omits a secret must not delete the stored
+            # credential (PUT /api/profiles/{id} with just {"account_email": ...}
+            # used to wipe account_password and totp_secret).
+            if stored_value:
+                result[field] = stored_value
+            continue
         if stored_value and is_display_value(result[field], stored_value):
             result[field] = stored_value
     return result

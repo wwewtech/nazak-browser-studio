@@ -165,7 +165,9 @@ def _read_text_file(path: Path, *, what: str) -> str:
     if size > _MAX_INPUT_BYTES:
         raise UsageError(f"{what} слишком большой: {path} ({size} байт > {_MAX_INPUT_BYTES})")
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        # utf-8-sig strips a UTF-8 BOM (the Notepad default) instead of leaving it
+        # in the payload, where it corrupted the first proxy/account/cookie record.
+        return path.read_text(encoding="utf-8-sig", errors="replace")
     except OSError as exc:
         raise UsageError(f"{what} не читается: {path} ({exc})") from exc
 
@@ -283,17 +285,40 @@ def server_request(opt: GlobalOptions, method: str, path: str, **kwargs) -> Any:
 
 
 def mask_proxy_dict(d: dict) -> dict:
+    """Mask proxy credentials for CLI output.
+
+    Handles both documented shapes. The previous version only masked
+    ``user:pass@host:port``, so the equally documented ``host:port:user:pass``
+    form printed the real password in ``raw`` (and therefore into stdout, logs
+    and agent transcripts) while the ``password`` field looked masked.
+    """
     out = dict(d)
     if out.get("password"):
         out["password"] = "***"
     raw = out.get("raw")
-    if isinstance(raw, str) and "@" in raw:
-        import re
-
-        out["raw"] = re.sub(r":[^:@/]*@", ":***@", raw, count=1)
+    if isinstance(raw, str) and raw:
+        out["raw"] = _mask_raw_proxy_string(raw)
     if out.get("rotation_url"):
         out["rotation_url"] = "***"
     return out
+
+
+def _mask_raw_proxy_string(raw: str) -> str:
+    """Replace the secret segment of a proxy string with ``***``."""
+    import re
+
+    if "@" in raw:
+        return re.sub(r":[^:@/]*@", ":***@", raw, count=1)
+    if "://" in raw:
+        # scheme://host:port — no credentials to hide
+        return raw
+    # host:port:user:pass  (the credentials are the trailing two segments)
+    parts = raw.split(":")
+    if len(parts) >= 4:
+        return ":".join([*parts[:-2], "***", "***"])
+    if len(parts) == 3:
+        return ":".join([*parts[:-1], "***"])
+    return raw
 
 
 def _strip_helper_keys(notes: dict) -> dict:

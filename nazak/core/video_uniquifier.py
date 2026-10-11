@@ -24,9 +24,15 @@ def find_ffmpeg() -> str | None:
     if in_path:
         return in_path
 
-    candidates = [
-        # Windows
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe",
+    # NOTE: the WinGet shim path is only added when LOCALAPPDATA is actually set.
+    # Building it unconditionally with a "" default produced the RELATIVE path
+    # "Microsoft/WinGet/Links/ffmpeg.exe", which resolves against the current
+    # working directory — and this function's result is executed (binary hijack).
+    candidates: list[Path] = []
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe")
+    candidates += [
         Path("C:/ProgramData/chocolatey/bin/ffmpeg.exe"),
         Path("C:/ffmpeg/bin/ffmpeg.exe"),
         Path("C:/tools/ffmpeg/bin/ffmpeg.exe"),

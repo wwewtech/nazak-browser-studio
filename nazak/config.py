@@ -4,6 +4,7 @@ Supports both source runtime and frozen PyInstaller standalone executable.
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -140,7 +141,14 @@ def find_chrome_executable() -> str | None:
     for pattern in playwright_patterns:
         matches = glob.glob(pattern)
         if matches:
-            for match in sorted(matches, reverse=True):
+            # Sort by the revision number, not lexicographically: as plain strings
+            # "chromium-907" sorts after "chromium-1200", so the oldest cached
+            # Chromium used to win and an outdated browser was launched.
+            def _revision(path: str) -> int:
+                found = re.search(r"chromium-(\d+)", path)
+                return int(found.group(1)) if found else -1
+
+            for match in sorted(matches, key=_revision, reverse=True):
                 if os.path.isfile(match):
                     return str(Path(match).resolve())
 

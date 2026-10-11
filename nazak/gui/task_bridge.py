@@ -103,7 +103,17 @@ def _call_with_optional_kw(fn: TaskFn, handle: TaskHandle, progress: ProgressCal
     try:
         return fn(*args, **kwargs, **extra)
     except TypeError:
-        if extra:
+        # Only retry when the TypeError came from binding the call itself (a
+        # callable that does not accept handle/progress). A TypeError raised by
+        # the task BODY also lands here — retrying it ran the task twice, which
+        # duplicated side effects such as an upload.
+        import sys
+
+        tb = sys.exc_info()[2]
+        # tb_next is None only when the TypeError was raised at the call site
+        # itself (argument binding), never when it came from inside the callee.
+        binding_failed = tb is not None and tb.tb_next is None
+        if extra and binding_failed:
             return fn(*args, **kwargs)
         raise
 
@@ -131,7 +141,13 @@ def run_task_inline(fn: TaskFn, handle: TaskHandle, progress: ProgressCallback, 
             box: dict[str, Any] = {}
 
             def _awaitable_target():
-                box["result"] = asyncio.run(_runner())
+                # Record failures: the box used to receive only "result", so an
+                # exception raised by an async task inside a running loop was
+                # swallowed by the threading excepthook and the caller saw None.
+                try:
+                    box["result"] = asyncio.run(_runner())
+                except BaseException as exc:  # re-raised on the caller's thread
+                    box["error"] = exc
 
             thread = threading.Thread(target=_awaitable_target, daemon=True)
             thread.start()
