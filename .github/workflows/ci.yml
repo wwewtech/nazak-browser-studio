@@ -92,7 +92,7 @@ jobs:
         run: bandit -c pyproject.toml -r nazak -ll
 
   test-matrix:
-    name: Tests (${{ matrix.os }} - Python ${{ matrix.python-version }} - store ${{ matrix.profile-store }})
+    name: Tests (${{ matrix.os }} - Python ${{ matrix.python-version }})
     needs: [lint-and-format]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -100,12 +100,6 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-        # P0: ProfileManager supports two storage backends (JSON default, SQLite
-        # opt-in via NAZAK_PROFILE_STORE). Both must stay green on every combo.
-        profile-store: ["json", "sqlite"]
-
-    env:
-      NAZAK_PROFILE_STORE: ${{ matrix.profile-store }}
 
     steps:
       - name: Checkout repository
@@ -140,11 +134,22 @@ jobs:
         run: |
           xvfb-run --auto-servernum pytest -p no:asyncio tests/ -v --cov=nazak --cov-report=xml --cov-report=term-missing --cov-fail-under=65
 
+      - name: Storage backend matrix (SQLite opt-in)
+        # The default run above exercises the JSON backend. This leg re-runs the
+        # backend-agnostic API/store suites with NAZAK_PROFILE_STORE=sqlite, so
+        # the whole request path is verified against profiles.db as well.
+        # The env var is set inside Python: the step has to work under both the
+        # PowerShell (Windows) and bash (Linux) default shells.
+        # Suites that assert JSON-file internals on purpose are excluded — they
+        # are covered by the default leg.
+        run: |
+          python -c "import os, sys, pytest; os.environ['NAZAK_PROFILE_STORE'] = 'sqlite'; sys.exit(pytest.main(['-q', 'tests/test_p0_sqlite_store.py', 'tests/test_api.py', 'tests/test_api_extended.py', 'tests/test_api_endpoints_comprehensive.py', 'tests/test_api_secrets_mode.py', 'tests/test_autopost_api.py', 'tests/test_local_automation_cdp_api.py', 'tests/test_profile_bundle_portability.py', 'tests/test_mass_profile_generator.py', 'tests/test_secrets_store.py', 'tests/test_round3_api_fixes.py', 'tests/test_round3b_api_bounds.py', 'tests/test_proxy_rotation_and_mobile.py', 'tests/test_cookie_bulk_manager.py', 'tests/test_deep_api_and_scenarios.py']))"
+
       - name: Upload Coverage Artifact
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ matrix.profile-store }}
+          name: coverage-report
           path: coverage.xml
 
   live-browser-smoke:

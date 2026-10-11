@@ -50,9 +50,11 @@ No behaviour change on default settings. `profiles.json` on-disk format is uncha
   SQLite artefacts (`profiles.db*`, `profiles.pre-sqlite.*`).
 - **CI gates.** New `security-audit` job: advisory `pip-audit` over the requirement set plus a
   blocking `bandit -ll` SAST pass with an explicit, documented skip list (`[tool.bandit]` in
-  `pyproject.toml`). The test matrix now runs every OS/Python combination against **both**
-  storage backends, enforces a coverage floor of **65 %** (measured baseline 69 %), and a new
-  opt-in `live-browser-smoke` job caches the Playwright browsers for `pytest -m live`.
+  `pyproject.toml`). The test matrix enforces a coverage floor of **65 %** (measured baseline
+  69 %) and then re-runs the backend-agnostic API/store suites with `NAZAK_PROFILE_STORE=sqlite`,
+  so the whole request path is exercised against `profiles.db` as well (the backend is not a
+  job-wide dimension: the suites that assert JSON-file internals stay on the default leg).
+  A new opt-in `live-browser-smoke` job caches the Playwright browsers for `pytest -m live`.
 
 ### Tests & docs
 

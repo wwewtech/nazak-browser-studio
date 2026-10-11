@@ -171,10 +171,13 @@ verifying the refusal-without-token path and the Host/Origin/token policy.
 
 ### Test gates
 
-CI runs the full matrix (Windows + Ubuntu × Python 3.10–3.13) against **both** storage
-backends (`NAZAK_PROFILE_STORE=json|sqlite`) with a coverage floor of **65 %** (measured
-baseline: 69 %). A separate opt-in `live-browser-smoke` job (workflow_dispatch) caches the
-Playwright browsers and runs `pytest -m live tests/live`.
+CI runs the full matrix (Windows + Ubuntu × Python 3.10–3.13) on the default JSON backend with a
+coverage floor of **65 %** (measured baseline: 69 %), and then re-runs the backend-agnostic
+API/store suites with `NAZAK_PROFILE_STORE=sqlite` so the whole request path is verified against
+`profiles.db` too. The backend is deliberately *not* a job-wide matrix dimension: several suites
+assert JSON-file internals on purpose and are covered by the default leg.
+A separate opt-in `live-browser-smoke` job (workflow_dispatch) caches the Playwright browsers and
+runs `pytest -m live tests/live`.
 
 ---
 

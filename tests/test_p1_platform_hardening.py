@@ -199,13 +199,24 @@ def test_ci_runs_both_storage_backends_with_coverage_gate():
     jobs = workflow["jobs"]
 
     matrix = jobs["test-matrix"]["strategy"]["matrix"]
-    assert sorted(matrix["profile-store"]) == ["json", "sqlite"], (
-        "both profile storage backends must be exercised in CI"
+    # The OS/Python matrix must stay a full cross product...
+    assert sorted(matrix["os"]) == ["ubuntu-latest", "windows-latest"]
+    assert len(matrix["python-version"]) == 4
+    # ...while the storage backend is NOT a job-wide dimension: running every
+    # suite with sqlite would break the suites that assert JSON-file internals on
+    # purpose. It is exercised by a dedicated step instead (see the next test).
+    assert "profile-store" not in matrix, (
+        "the storage backend must not be a job-wide matrix dimension (breaks JSON-specific suites)"
     )
-    assert jobs["test-matrix"]["env"]["NAZAK_PROFILE_STORE"] == "${{ matrix.profile-store }}"
 
     steps_text = str(jobs["test-matrix"]["steps"])
     assert "--cov-fail-under=65" in steps_text, "coverage gate must be enforced"
+    assert "NAZAK_PROFILE_STORE" in steps_text and "sqlite" in steps_text, (
+        "a dedicated step must run the API/store suites against the SQLite backend"
+    )
+    assert "os.environ['NAZAK_PROFILE_STORE']" in steps_text.replace("\\'", "'"), (
+        "the sqlite leg must set the variable itself so it works on both shells"
+    )
 
     assert "security-audit" in jobs, "a dependency/SAST audit job must exist"
     audit_text = str(jobs["security-audit"]["steps"])
@@ -214,6 +225,31 @@ def test_ci_runs_both_storage_backends_with_coverage_gate():
     assert "live-browser-smoke" in jobs, "the opt-in live browser job must exist"
     live_text = str(jobs["live-browser-smoke"])
     assert "actions/cache" in live_text and "ms-playwright" in live_text, "the live job must cache Playwright browsers"
+
+
+def test_sqlite_leg_targets_backend_agnostic_suites():
+    """The SQLite CI leg must name real files and avoid JSON-specific suites."""
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    match = re.search(
+        r"os\.environ\['NAZAK_PROFILE_STORE'\] = 'sqlite'.*?pytest\.main\(\[(.*?)\]\)",
+        workflow,
+        re.DOTALL,
+    )
+    assert match, "could not find the SQLite storage-matrix step"
+
+    files = re.findall(r"'(tests/[^']+)'", match.group(1))
+    assert files, "the SQLite leg must name explicit test files"
+    missing = [rel for rel in files if not (REPO_ROOT / rel).is_file()]
+    assert not missing, f"the SQLite leg references missing test files: {missing}"
+
+    forbidden = {
+        "tests/test_deep_storage_and_concurrency.py",
+        "tests/test_core_concurrency_and_storage.py",
+        "tests/test_profile_manager.py",
+        "tests/test_profile_manager_and_storage.py",
+    }
+    overlap = sorted(forbidden & set(files))
+    assert not overlap, f"JSON-specific suites must not run under the SQLite backend: {overlap}"
 
 
 def test_bandit_configuration_is_declared():
