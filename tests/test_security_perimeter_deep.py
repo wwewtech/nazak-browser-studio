@@ -21,6 +21,7 @@ behaviour is kept as an assertion and marked ``xfail`` with a ``BUG:`` reason.
 
 import asyncio
 import socket
+import ssl
 import urllib.error
 import urllib.request
 
@@ -51,7 +52,19 @@ class _FakeRawSocket:
     """Stands in for the TCP socket returned by socket.create_connection."""
 
 
-class _FakeTLSContext:
+class _FakeTLSContext(ssl.SSLContext):
+    """A real SSLContext with a captured ``wrap_socket``.
+
+    Subclassing the real context keeps every attribute the stdlib may read
+    (``verify_mode``, ``check_hostname``, ``minimum_version``, …) present, which
+    plain attribute stubs were not: on Python 3.10/3.11 the tunnel setup read an
+    attribute the stub did not define.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        # ssl.SSLContext consumes the protocol in __new__, not __init__.
+        return super().__new__(cls, ssl.PROTOCOL_TLS_CLIENT)
+
     def __init__(self) -> None:
         self.calls: list[tuple[object, str | None]] = []
 
