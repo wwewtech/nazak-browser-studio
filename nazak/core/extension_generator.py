@@ -571,11 +571,24 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     if ({str(fp.canvas_noise).lower()}) {{
         try {{
             const seed = {fp.canvas_noise_seed};
+            let canvasCallCount = 0;
             const mutateCanvasData = function(imageData) {{
                 if (!imageData || !imageData.data) return imageData;
-                let s = seed;
+                // Per-call reseed: the old code restarted the LCG from the same
+                // seed on every read, so getImageData(x, y, w, h) returned the
+                // SAME noise field on every call — a checker that reads two
+                // regions (or the same region twice) sees identical deltas and
+                // subtracts the noise out in one line. Mixing a call counter
+                // into the start state makes every read carry a different field
+                // while staying fully deterministic for the profile.
+                canvasCallCount = (canvasCallCount + 1) >>> 0;
+                let s = (seed ^ (canvasCallCount * 2654435761)) >>> 0;
                 const len = imageData.data.length;
-                for (let i = (s % 7); i < len; i += 17) {{
+                // Stride 17 keeps cost low on big canvases; the mutated channel
+                // now walks RGBA instead of always landing with period 17 % 4.
+                const start = s % 64;
+                const stride = 13 + (s % 11);
+                for (let i = start; i < len; i += stride) {{
                     s = (s * 1664525 + 1013904223) >>> 0;
                     const delta = ((s % 3) - 1);
                     imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + delta));
@@ -631,14 +644,21 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     if ({str(fp.audio_noise).lower()}) {{
         try {{
             const factor = {_js_number(fp.audio_noise_seed)} || 0.00001;
+            // Per-call phase: the old code applied the identical deterministic
+            // pattern ((i % 3) - 1) on every read, so two getChannelData calls
+            // on the same buffer returned bitwise-identical arrays minus the
+            // untouched samples — a checker diffs them and the noise cancels.
+            let audioCallCount = 0;
             const applyAudioNoise = function(buffer) {{
                 if (!buffer || !buffer.getChannelData) return buffer;
+                audioCallCount = (audioCallCount + 1) >>> 0;
+                const phase = audioCallCount % 3;
                 for (let c = 0; c < buffer.numberOfChannels; c++) {{
                     const data = buffer.getChannelData(c);
                     if (data && data.length > 0) {{
                         const step = Math.max(1, Math.floor(data.length / 100));
                         for (let i = 0; i < data.length; i += step) {{
-                            data[i] = data[i] + factor * (((i % 3) - 1) * 0.5);
+                            data[i] = data[i] + factor * ((((i + phase) % 3) - 1) * 0.5);
                         }}
                     }}
                 }}
@@ -650,9 +670,13 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 AudioBuffer.prototype.getChannelData = makeNative(function(channel) {{
                     const data = origGetChannelData.apply(this, arguments);
                     if (data && data.length > 0) {{
+                        // Reuse the shared phase counter so direct reads and
+                        // OfflineAudioContext renders never repeat the pattern.
+                        audioCallCount = (audioCallCount + 1) >>> 0;
+                        const ph = audioCallCount % 3;
                         const step = Math.max(1, Math.floor(data.length / 100));
                         for (let i = 0; i < data.length; i += step) {{
-                            data[i] = data[i] + factor * (((i % 3) - 1) * 0.5);
+                            data[i] = data[i] + factor * ((((i + ph) % 3) - 1) * 0.5);
                         }}
                     }}
                     return data;
@@ -673,21 +697,38 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
         try {{
-            const seed = {fp.canvas_noise_seed};
-            const jitter = ((seed % 7) - 3) * 0.00005;
+            // A fixed per-session constant is trivially detectable: read the
+            // same rect twice and the delta never changes, while a real
+            // renderer jitters within +-0.5px from frame to frame. The LCG below
+            // re-derives a fresh sub-pixel offset on every call, deterministic
+            // per profile (seeded) but varying per read.
+            const rectSeedBase = ({fp.canvas_noise_seed} >>> 0) || 1;
+            let rectCallCount = 0;
+            const nextRectJitter = function() {{
+                rectCallCount = (rectCallCount + 1) >>> 0;
+                let s = (rectSeedBase ^ (rectCallCount * 2654435761)) >>> 0;
+                s = (s * 1664525 + 1013904223) >>> 0;
+                return (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0001;
+            }};
             const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
             Element.prototype.getBoundingClientRect = makeNative(function() {{
                 const rect = origGetBoundingClientRect.apply(this, arguments);
                 if (!rect || rect.width === 0 || rect.height === 0) return rect;
-                return new DOMRect(rect.x + jitter, rect.y + jitter, rect.width, rect.height);
+                const jx = nextRectJitter();
+                const jy = nextRectJitter();
+                return new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
             }}, 'getBoundingClientRect');
 
-            const fontJitter = ((seed % 5) - 2) * 0.0001;
+            let fontCallCount = 0;
             const origMeasureText = CanvasRenderingContext2D.prototype.measureText;
             CanvasRenderingContext2D.prototype.measureText = makeNative(function(text) {{
                 const metrics = origMeasureText.apply(this, arguments);
                 if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {{
                     try {{
+                        fontCallCount = (fontCallCount + 1) >>> 0;
+                        let s = (rectSeedBase ^ (fontCallCount * 40503)) >>> 0;
+                        s = (s * 1664525 + 1013904223) >>> 0;
+                        const fontJitter = (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0002;
                         Object.defineProperty(metrics, 'width', {{
                             value: metrics.width + fontJitter,
                             configurable: true,

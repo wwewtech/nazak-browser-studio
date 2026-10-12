@@ -88,7 +88,9 @@ def test_v170_stealth_client_rects_subpixel_noise(tmp_path):
 
     assert "Element.prototype.getBoundingClientRect" in stealth_js
     assert "jitter" in stealth_js
-    assert "rect.x + jitter" in stealth_js
+    # Fresh sub-pixel offset per call (rectCallCount), not one session constant.
+    assert "rectCallCount" in stealth_js
+    assert "rect.x + jx" in stealth_js
 
 
 def test_v170_browser_launcher_devtools_active_port(tmp_path):
