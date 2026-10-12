@@ -216,6 +216,10 @@ class TestAdvancedStealthEnhancements:
         assert "sanitizeSdp" in stealth_js
         assert "RTCPeerConnection.prototype.createOffer" in stealth_js
         assert "RTCPeerConnection.prototype.setLocalDescription" in stealth_js
+        # Trickle-ICE + answering side: createAnswer and RTCIceCandidate must be
+        # covered too, otherwise host candidates leak past the SDP hooks.
+        assert "RTCPeerConnection.prototype.createAnswer" in stealth_js
+        assert "RTCIceCandidate" in stealth_js
 
 
 class TestBrowserLauncherTimezone:

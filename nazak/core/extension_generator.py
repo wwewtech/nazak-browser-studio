@@ -774,6 +774,38 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 }});
             }}, 'createOffer');
 
+            // Trickle-ICE: candidates delivered via onicecandidate / addIceCandidate
+            // bypass createOffer/setLocalDescription entirely — an answering peer
+            // (and any trickling local candidate) would leak the host address.
+            // createAnswer covers the answering side; the RTCIceCandidate hook
+            // neutralises host candidates at construction.
+            const origCreateAnswer = RTCPeerConnection.prototype.createAnswer;
+            RTCPeerConnection.prototype.createAnswer = makeNative(function(options) {{
+                return origCreateAnswer.apply(this, arguments).then(answer => {{
+                    if (answer && answer.sdp) {{
+                        answer.sdp = sanitizeSdp(answer.sdp);
+                    }}
+                    return answer;
+                }});
+            }}, 'createAnswer');
+
+            if (window.RTCIceCandidate) {{
+                const OrigRTCIceCandidate = window.RTCIceCandidate;
+                const scrubbedCandidate = function(init) {{
+                    if (init && typeof init.candidate === 'string') {{
+                        const cleaned = sanitizeSdp(init.candidate + '\\r\\n');
+                        if (!cleaned) return null;
+                        init = Object.assign({{}}, init, {{ candidate: cleaned.replace(/\\r\\n$/, '') }});
+                    }}
+                    return init;
+                }};
+                window.RTCIceCandidate = makeNative(function(init) {{
+                    const scrubbed = scrubbedCandidate(init);
+                    if (scrubbed === null) return null;
+                    return new OrigRTCIceCandidate(scrubbed === undefined ? init : scrubbed);
+                }}, 'RTCIceCandidate');
+            }}
+
             const origSetLocalDescription = RTCPeerConnection.prototype.setLocalDescription;
             RTCPeerConnection.prototype.setLocalDescription = makeNative(function(desc) {{
                 if (desc && desc.sdp) {{
