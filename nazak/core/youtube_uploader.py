@@ -43,7 +43,17 @@ class HumanCursor:
 
     @classmethod
     async def move_to(cls, page, target_x: float, target_y: float, current_x: float = 100, current_y: float = 100):
-        """Moves mouse to target coords along realistic human trajectory."""
+        """Moves mouse to target coords along a realistic human trajectory.
+
+        Two properties separate humans from the previous implementation:
+        - OVERSHOOT: ~60-70% of real aimed movements pass the target and come
+          back with 1-2 small correction moves. A trajectory that always
+          converges monotonically is a bot signature.
+        - ASYMMETRIC speed: humans accelerate hard out of the start and then
+          decelerate into a long tail. The old cosine ease is time-symmetric,
+          so the velocity profile rises and falls identically — real profiles
+          peak early (t ~ 0.3) and decay.
+        """
         distance = math.hypot(target_x - current_x, target_y - current_y)
         steps = max(15, int(distance / 25))
 
@@ -53,14 +63,37 @@ class HumanCursor:
         ctrl2_x = current_x + (target_x - current_x) * 0.75 + random.uniform(-30, 30)
         ctrl2_y = current_y + (target_y - current_y) * 0.75 + random.uniform(-30, 30)
 
+        # Asymmetric ease: fast attack, long tail (peak velocity at t ~ 0.3).
+        # ease_t(t) = 1 - (1 - t) ** 2.2 maps [0, 1] -> [0, 1] monotonically with
+        # a steep start and a flat finish, unlike the old symmetric cosine.
+        def _asymmetric_ease(t: float) -> float:
+            return 1.0 - (1.0 - t) ** 2.2
+
         for i in range(1, steps + 1):
             t = i / steps
-            # Smooth ease-in-out curve
-            ease_t = 0.5 - math.cos(t * math.pi) / 2
+            ease_t = _asymmetric_ease(t)
             x = cls.bezier_point(current_x, ctrl1_x, ctrl2_x, target_x, ease_t) + random.uniform(-1.5, 1.5)
             y = cls.bezier_point(current_y, ctrl1_y, ctrl2_y, target_y, ease_t) + random.uniform(-1.5, 1.5)
             await page.mouse.move(x, y)
             await asyncio.sleep(random.uniform(0.008, 0.022))
+
+        # Overshoot + correction: most human moves pass the target by a few
+        # pixels proportional to the travel distance, then settle back.
+        if distance >= 60 and random.random() < 0.65:
+            over = random.uniform(0.02, 0.06) * distance
+            angle = math.atan2(target_y - current_y, target_x - current_x) + random.uniform(-0.4, 0.4)
+            ox = target_x + math.cos(angle) * over
+            oy = target_y + math.sin(angle) * over
+            mid_x = (target_x + ox) / 2 + random.uniform(-1.5, 1.5)
+            mid_y = (target_y + oy) / 2 + random.uniform(-1.5, 1.5)
+            await page.mouse.move(mid_x, mid_y)
+            await asyncio.sleep(random.uniform(0.015, 0.04))
+            if random.random() < 0.35:
+                # Second micro-correction before settling.
+                await page.mouse.move((ox + target_x) / 2, (oy + target_y) / 2)
+                await asyncio.sleep(random.uniform(0.015, 0.035))
+            await page.mouse.move(ox, oy)
+            await asyncio.sleep(random.uniform(0.03, 0.07))
 
         # Final micro-adjustment
         await page.mouse.move(target_x, target_y)

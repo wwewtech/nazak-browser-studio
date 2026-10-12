@@ -45,6 +45,30 @@ def test_calculate_tz_offset():
     assert isinstance(calculate_tz_offset("Europe/Berlin"), int)
 
 
+def test_fingerprint_timezone_offset_is_dst_honest():
+    """Zone and getTimezoneOffset() value must agree at generation time.
+
+    Regression: the random path used to copy the STATIC table offset, so half
+    the year a fingerprint carried e.g. Europe/Berlin with -60 while the real
+    current offset (and the injected getter) is -120 — a one-line consistency
+    check catches it.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    for _ in range(30):
+        fp = generate_random_fingerprint(random.choice(["windows", "mac", "linux"]))
+        now = datetime.now(ZoneInfo(fp.timezone))
+        expected = int(-(now.utcoffset().total_seconds() if now.utcoffset() is not None else 0) / 60)
+        assert fp.timezone_offset == expected, f"{fp.timezone}: stored {fp.timezone_offset}, real {expected}"
+
+
+def test_fingerprint_explicit_timezone_resolves_current_offset():
+    fp = generate_random_fingerprint("windows", target_timezone="Europe/Berlin")
+    assert fp.timezone == "Europe/Berlin"
+    assert fp.timezone_offset == calculate_tz_offset("Europe/Berlin")
+
+
 def test_clone_profile_generates_distinct_seeds_and_uuids(tmp_path):
     pm = ProfileManager(tmp_path / "profiles.json", tmp_path / "data")
     prof1 = pm.get_profile("prof_01")

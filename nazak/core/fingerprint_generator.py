@@ -173,6 +173,11 @@ USER_AGENTS_MAC = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 ]
 
+# IANA zone names with their STANDARD-time offsets in JS getTimezoneOffset() sign
+# (UTC-5 New York -> +300). The offsets below are FALLBACK-ONLY: generation always
+# resolves the CURRENT offset (DST-aware) through zoneinfo, because a static offset
+# goes stale for half the year (Berlin is -60 in winter, -120 in summer) and a
+# timezone/offset mismatch is an instant tell for any consistency check.
 TIMEZONES = [
     ("America/New_York", 300),
     ("America/Chicago", 360),
@@ -232,7 +237,12 @@ def generate_random_fingerprint(
         tz_name = target_timezone
         tz_offset = calculate_tz_offset(target_timezone)
     else:
-        tz_name, tz_offset = random.choice(TIMEZONES)
+        # DST honesty: resolve the CURRENT offset for the picked zone, never the
+        # static table value — otherwise the fingerprint carries winter offsets
+        # in summer (e.g. Europe/Berlin -60 vs real -120) while the page's own
+        # Date math and the injected getTimezoneOffset disagree with the zone.
+        tz_name = random.choice(TIMEZONES)[0]
+        tz_offset = calculate_tz_offset(tz_name)
 
     langs_list = [lang.strip().split(";")[0] for lang in language.split(",") if lang.strip()]
 
