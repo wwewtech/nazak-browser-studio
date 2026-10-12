@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-941%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-951%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -273,14 +273,14 @@ Profile storage is selectable in the container too: `NAZAK_PROFILE_STORE=json` (
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **964 collected tests** (959 selected; 5 `live` tests are deselected by default). 18 of the selected tests are `xfail`-marked: they assert the correct behaviour for documented open bugs (listed in [CHANGELOG](CHANGELOG.md)).
+The project is backed by a comprehensive regression and unit test suite comprising **974 collected tests** (969 selected; 5 `live` tests are deselected by default). 18 of the selected tests are `xfail`-marked: they assert the correct behaviour for documented open bugs (listed in [CHANGELOG](CHANGELOG.md)).
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-=========================== 941 passed, 5 deselected ============================
+=========================== 951 passed, 5 deselected ============================
 ```
 
 The suite is green with all dependencies installed (`PyQt6`/`qfluentwidgets`,
@@ -297,6 +297,10 @@ busy-guard, cancel, error, progress) and `tests/test_p1_platform_hardening.py`
 (import purity, log rotation, dependency drift, container and CI contracts,
 version consistency across the release artefacts, documentation links and
 English-only docs).
+
+Anti-detect hardening (unreleased): `tests/test_human_cursor.py` (cursor overshoot rate,
+asymmetric speed peak, no teleport jumps) and `tests/test_noise_freshness.py` (per-call
+reseed of canvas/audio/rect noise, all hooks intact).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 

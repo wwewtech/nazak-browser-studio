@@ -2,6 +2,32 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## Unreleased — Anti-Detect Hardening (Behaviour, Consistency, Network)
+
+Suite: **951 passed, 5 deselected** (974 collected; 18 `xfail`-marked open bugs).
+
+Three real anti-detect gaps, each fixed with regression tests:
+
+- **Behaviour — human cursor.** `HumanCursor.move_to` always converged monotonically on a
+  symmetric cosine ease — a bot signature. Aimed moves (≥60 px) now overshoot the target and
+  settle back with 1–2 micro-corrections (~65% of moves, magnitude proportional to distance),
+  and the speed profile is asymmetric (`1 − (1−t)^2.2`: fast attack peaking at t ~ 0.3, long
+  tail). New suite `tests/test_human_cursor.py` pins the overshoot rate, the peak position and
+  the absence of teleport jumps.
+- **Consistency — DST-honest timezone offsets.** The random fingerprint path copied the static
+  table offset, so half the year a profile carried e.g. `Europe/Berlin` with −60 while the real
+  current offset (and the injected `getTimezoneOffset`) is −120. Generation now always resolves
+  the current offset through zoneinfo.
+- **Network — trickle-ICE leak.** The SDP sanitizer covered `createOffer`/`setLocalDescription`
+  only, so candidates delivered via trickle-ICE (`onicecandidate`/`addIceCandidate`) and the
+  answering side (`createAnswer`) leaked host addresses. Both are now scrubbed with the same
+  `sanitizeSdp`.
+- **Noise freshness.** Canvas, audio and rect jitter restarted their deterministic pattern on
+  every read, so two reads of the same surface returned identical noise minus a constant — a
+  checker diffs them and the noise cancels. All three now re-derive per-call state (LCG
+  re-seeded from the profile seed plus a call counter), staying deterministic for the profile
+  but varying per read. New suite `tests/test_noise_freshness.py`.
+
 ## v1.12.1 — Security Fix Release (2026-10-12)
 
 Patch release over v1.12.0. **The v1.12.0 tag does not contain the security fixes below** —
