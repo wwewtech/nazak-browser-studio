@@ -2,6 +2,53 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## v1.12.1 — Security Fix Release (2026-10-12)
+
+Patch release over v1.12.0. **The v1.12.0 tag does not contain the security fixes below** —
+they landed on `main` after the tag — so everyone running v1.12.0 binaries should upgrade.
+
+Fixed (found by the coverage-driven bug hunt, each with a regression test):
+
+- **Proxy password leaked through the API.** `_mask_proxy_for_api` replaced the first substring
+  equal to the password, so `password="pw"` inside username `pworker` produced
+  `http://***orker:pw@host` in `GET /api/profiles` and `/v1.0/browser_profiles`. Masking is now
+  positional (the userinfo segment), not a substring search. The CLI had the mirror-image gap:
+  only `user:pass@host` was masked, so the documented `host:port:user:pass` form printed the
+  password in `raw`.
+- **Stored secrets destroyed on update.** `PUT /api/profiles/{id}` with a notes payload that
+  merely omitted `account_password`/`totp_secret` deleted them; echoing the API's own `"***"`
+  mask overwrote any stored secret longer than 8 characters. Both paths now preserve stored
+  secrets unless a genuinely new value is supplied.
+- **SQLite migration resurrected deleted profiles.** The JSON→SQLite import re-ran whenever the
+  table was empty, so deleting every profile brought the fleet back from the retained
+  `profiles.json`. The migration is one-shot, tracked by a `json_migration` marker written in
+  the same transaction as the rows.
+- **HTTP 500 from a non-ASCII API key.** `hmac.compare_digest` raises `TypeError` on non-ASCII
+  `str`, turning a clean 401 into an unhandled 500 — the token comparison now runs on UTF-8
+  bytes.
+- **SSRF filter bypass via IPv4-embedded IPv6.** NAT64 (`64:ff9b::a9fe:a9fe` = 169.254.169.254)
+  and IPv4-compatible (`::7f00:1`) spellings passed `is_global`; the rotation gate now also
+  rejects `is_reserved` and the `::/96`, `::ffff:0:0/96`, `64:ff9b::/96`, `64:ff9b:1::/48`,
+  `2002::/16`, `2001::/32` ranges.
+- **`/static` bypassed the whole local-only guard.** Static assets still skip the API token
+  check (the dashboard fetches them keyless), but the local-host and cross-site checks apply.
+- **Windows reserved device names as profile ids.** `NUL`, `CON`, `COM1`, `NUL.mp4` mapped to
+  devices instead of directories, silently discarding writes — now rejected with 400.
+- **UNC/device paths promoted to https URLs** by `sanitize_launch_url` instead of refused.
+- **`find_ffmpeg` could execute a CWD binary** (relative WinGet shim when `LOCALAPPDATA` unset);
+  **`find_chrome_executable` picked the oldest cached Chromium** (lexicographic revision sort).
+- **TaskBridge double-execution** on `TypeError` bodies and swallowed async exceptions.
+- **Unbounded `POST /api/profiles/bulk-import`** (1 MB body ≈ 100k profiles) now capped at 500
+  lines; **`clear-cache` 404s** for unknown profiles; **bundle import accepts explicit directory
+  entries**; **blank cookie-import key** no longer targets an arbitrary profile; **`@file`
+  input strips the UTF-8 BOM**.
+- **CI fix:** the security-fuzz suite subclassed `ssl.SSLContext` for its fake TLS context so
+  the gate is green on Python 3.10/3.11 as well as 3.12/3.13.
+
+Suite: **941 passed, 5 deselected** (964 collected; 18 `xfail`-marked open bugs, listed in the
+v1.12.0 entry below); `ruff check`, `ruff format --check`, `mypy nazak` clean; CI green on all
+12 jobs.
+
 ## v1.12.0 — Structural Refactor (P0) & Platform Hardening (P1) (2026-10-12)
 
 No behaviour change on default settings. `profiles.json` on-disk format is unchanged; all
