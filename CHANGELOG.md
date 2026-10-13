@@ -2,9 +2,62 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## Unreleased — All 18 documented bugs fixed (zero xfail)
+
+Suite: **969 passed, 5 deselected** (974 collected; **0 `xfail`** — every previously documented
+open bug is now fixed). `ruff check`, `ruff format --check` and `mypy nazak` clean.
+
+The 18 bugs were found by the coverage-driven hunt (v1.12.0) and kept as `xfail` tests with
+exact repros; this pass closed every one of them:
+
+**Anti-detect critical:**
+- `POST /api/profiles/test-proxy` silently downgraded malformed proxy strings to a DIRECT
+  connection and reported a healthy local link while the operator believed traffic was proxied
+  (real-IP exposure). Malformed input now answers 400; `direct` stays an explicit choice.
+- `check_proxy_health` crashed with `ValueError` on SOCKS4 (a supported ProxyType) instead of
+  returning a result; it now reports a clear "socks4 transport unsupported by httpx" status.
+- Store switching lost profiles: created in `json` mode after a one-shot SQLite migration, a
+  profile vanished when switching back to `sqlite`. The backend now runs an incremental JSON
+  catch-up guarded by **deletion tombstones**, so nothing is lost on switch AND deletions made
+  in sqlite mode are never resurrected from the stale JSON copy.
+
+**Feature-breaking:**
+- `build_oauth_auth_url` did not percent-encode the CSRF `state`, so any state containing
+  `+`/`&` failed the callback comparison (and `&` injected extra query parameters).
+- `parse_netscape_cookies` truncated values on runs of 2+ spaces, stripped trailing spaces and
+  silently dropped empty-value cookies; `cookies_to_netscape` also stripped value whitespace.
+  The round-trip is now byte-faithful.
+- `generate_warmup_urls` (and the `google_search` step) interpolated raw query text into the
+  Google URL — `&` split the query. Now `quote_plus`-encoded.
+- `POST /api/cookies/bulk-export` accepted `format="netscape"` but silently returned JSON.
+- `POST /api/synchronizer/start` answered `200 active` for an empty worker list and for
+  non-existent master/worker ids (the CLI refuses both). Now 400.
+- Batch cancel mid-flight: `cancel_all()` marked a job `canceled`, then the failure branch
+  overwrote it with `failed` — the same user action produced different states depending on
+  timing. A cancel now stays `canceled` with no error set.
+
+**CLI agent contract (exit codes / honesty):**
+- `profile batch-stop` reported "stopped: 1" for non-existent ids (exit 0); single `stop`
+  correctly said "not found". Now only real profiles are counted; missing ones are reported.
+- `--profiles all` (documented in help) was a no-op; now expands like `--all`.
+- `profile clear-cache <bad-id>` leaked a `ValueError` as exit 4 instead of a usage error (2).
+- `profile launch --url file://...` answered exit 4 (conflict) instead of usage (2); the URL
+  is now validated before the launcher is reached.
+- `scenario run --scenario-file <missing/garbage>` leaked `OSError`/`JSONDecodeError` as
+  exit 4; now a clean usage error (2).
+- `sync navigate file:///... javascript:...` navigated worker browsers to disallowed schemes
+  and still reported success; the URL is now validated with the same allow-list as launch.
+
+**Found by CI while fixing the above:**
+- `upload_queue` froze the uploader classes with a from-import, making every
+  `patch("nazak.core.youtube_uploader.YouTubeUploader")` a **silent no-op** — tests ran the
+  real uploader. Classes are now resolved late-bound with a snapshot of the originals, so a
+  patch on either module wins.
+
 ## v1.12.2 — Anti-Detect Hardening (Behaviour, Consistency, Network) (2026-10-13)
 
-Suite: **951 passed, 5 deselected** (974 collected; 18 `xfail`-marked open bugs).
+Suite: **951 passed, 5 deselected** (974 collected at release time; the 18 `xfail`-marked
+open bugs listed here were fixed in the next pass — see the Unreleased entry above).
 `ruff check`, `ruff format --check` and `mypy nazak` clean; CI green on all 12 jobs
 (Windows + Ubuntu × Python 3.10–3.13, each with a SQLite-backend leg).
 
@@ -209,16 +262,12 @@ this release:
 - **UTF-8 BOM in `@file` input** corrupted the first record (Notepad's default encoding); input
   files are now read as `utf-8-sig`.
 
-Still open and documented as `xfail(strict=False)` with exact repros in the suites (18 tests):
-`build_oauth_auth_url` does not URL-encode `state`; `parse_netscape_cookies` truncates value
-whitespace and drops empty-value cookies; `check_proxy_health` raises for SOCKS4;
-`generate_warmup_urls` does not urlencode query params; batch cancel marks a mid-flight job
-`failed`; `POST /api/cookies/bulk-export` ignores `format=netscape`;
-`POST /api/synchronizer/start` accepts empty/unknown workers; `test-proxy` degrades to DIRECT for
-malformed input; plus CLI exit-code classes (`batch-stop` counts requested ids, `--profiles all`
-is a no-op, `scenario run --scenario-file` errors as a conflict, `sync navigate` accepts
-`file:`/`javascript:`). They are reported here rather than silently fixed, so the next pass can
-decide the intended semantics.
+These were kept open and documented as `xfail(strict=False)` with exact repros (18 tests)
+for one release — `build_oauth_auth_url` state encoding; `parse_netscape_cookies` whitespace
+fidelity; `check_proxy_health` on SOCKS4; `generate_warmup_urls` query encoding; mid-flight
+batch cancel; `bulk-export` netscape; `synchronizer/start` validation; `test-proxy` DIRECT
+degradation; and the CLI exit-code classes. **All 18 were fixed in the following pass** —
+see the Unreleased entry at the top of this changelog.
 
 
 

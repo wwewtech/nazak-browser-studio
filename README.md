@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-951%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-969%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -273,14 +273,14 @@ Profile storage is selectable in the container too: `NAZAK_PROFILE_STORE=json` (
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **974 collected tests** (969 selected; 5 `live` tests are deselected by default). 18 of the selected tests are `xfail`-marked: they assert the correct behaviour for documented open bugs (listed in [CHANGELOG](CHANGELOG.md)).
+The project is backed by a comprehensive regression and unit test suite comprising **974 collected tests** (969 selected; 5 `live` tests are deselected by default). Every previously `xfail`-documented bug has been fixed — the suite is fully green with no known open defects.
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-=========================== 951 passed, 5 deselected ============================
+=========================== 969 passed, 5 deselected ============================
 ```
 
 The suite is green with all dependencies installed (`PyQt6`/`qfluentwidgets`,
