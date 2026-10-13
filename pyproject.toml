@@ -45,6 +45,9 @@ dependencies = [
     "websockets>=12.0",
     "playwright>=1.45.0",
     "cryptography>=42.0.0",
+    # zoneinfo needs the IANA database as a wheel on Windows (CI/test runners):
+    # without it ZoneInfo() silently falls back and DST-aware offsets go stale.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

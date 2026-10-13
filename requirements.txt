@@ -14,6 +14,7 @@ rich>=13.7.0
 websockets>=12.0
 playwright>=1.45.0
 cryptography>=42.0.0
+tzdata>=2024.1  # zoneinfo IANA db wheel (Windows has no system tzdata) — keep in sync with pyproject
 # Test tooling: pyproject [tool.pytest.ini_options].addopts passes --timeout,
 # so pytest-timeout is required for `python -m pytest tests` (README Quick Start).
 pytest>=7.4.0  # keep in sync with pyproject [project.optional-dependencies].dev and pytest minversion
