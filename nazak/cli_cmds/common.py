@@ -289,40 +289,15 @@ def server_request(opt: GlobalOptions, method: str, path: str, **kwargs) -> Any:
 
 
 def mask_proxy_dict(d: dict) -> dict:
-    """Mask proxy credentials for CLI output.
+    """Mask proxy credentials for CLI output (fix F6: delegates to the shared masker).
 
-    Handles both documented shapes. The previous version only masked
-    ``user:pass@host:port``, so the equally documented ``host:port:user:pass``
-    form printed the real password in ``raw`` (and therefore into stdout, logs
-    and agent transcripts) while the ``password`` field looked masked.
+    Both documented shapes — ``user:pass@host`` and ``host:port:user:pass`` —
+    are handled by :func:`nazak.core.secret_masking.mask_proxy_fields`, the
+    single implementation shared with the API surface.
     """
-    out = dict(d)
-    if out.get("password"):
-        out["password"] = "***"
-    raw = out.get("raw")
-    if isinstance(raw, str) and raw:
-        out["raw"] = _mask_raw_proxy_string(raw)
-    if out.get("rotation_url"):
-        out["rotation_url"] = "***"
-    return out
+    from ..core.secret_masking import mask_proxy_fields
 
-
-def _mask_raw_proxy_string(raw: str) -> str:
-    """Replace the secret segment of a proxy string with ``***``."""
-    import re
-
-    if "@" in raw:
-        return re.sub(r":[^:@/]*@", ":***@", raw, count=1)
-    if "://" in raw:
-        # scheme://host:port — no credentials to hide
-        return raw
-    # host:port:user:pass  (the credentials are the trailing two segments)
-    parts = raw.split(":")
-    if len(parts) >= 4:
-        return ":".join([*parts[:-2], "***", "***"])
-    if len(parts) == 3:
-        return ":".join([*parts[:-1], "***"])
-    return raw
+    return mask_proxy_fields(d)
 
 
 def _strip_helper_keys(notes: dict) -> dict:

@@ -192,8 +192,6 @@ TIMEZONES = [
 
 
 def calculate_tz_offset(tz_name: str) -> int:
-    """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset()."""
-def calculate_tz_offset(tz_name: str) -> int:
     """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset().
 
     Always resolves the CURRENT (DST-aware) offset through zoneinfo. The static

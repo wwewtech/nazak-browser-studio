@@ -220,31 +220,21 @@ def validate_pid(profile_id: str) -> str:
 def _mask_raw_proxy_credentials(raw: str) -> str:
     """Mask the password inside a proxy URL, wherever it sits in the userinfo.
 
-    The previous implementation replaced the first substring equal to the
-    password, which leaked it whenever that substring also occurred in the
-    username: ``password="pw"`` with ``raw="http://pworker:pw@host"`` produced
-    ``http://***orker:pw@host`` — the real password stayed readable in the API
-    response (GET /api/profiles, /v1.0/browser_profiles).
+    Delegates to the shared masker (:mod:`nazak.core.secret_masking`), which
+    also understands the CLI's ``host:port:user:pass`` colon form — the two
+    surfaces used to implement masking twice and each had a gap the other
+    had closed.
     """
-    scheme, sep, rest = raw.partition("://") if "://" in raw else ("", "", raw)
-    if "@" not in rest:
-        return raw
-    userinfo, _, hostpart = rest.rpartition("@")
-    user, colon, _password = userinfo.rpartition(":")
-    masked_userinfo = f"{user}{colon}***" if colon else userinfo
-    return f"{scheme}{sep}{masked_userinfo}@{hostpart}"
+    from ..core.secret_masking import mask_raw_proxy_string
+
+    return mask_raw_proxy_string(raw)
 
 
 def _mask_proxy_for_api(proxy: ProxyConfig) -> dict:
-    data = proxy.model_dump()
-    if data.get("password"):
-        data["password"] = "***"
-    raw = data.get("raw")
-    if isinstance(raw, str) and raw:
-        data["raw"] = _mask_raw_proxy_credentials(raw)
-    if data.get("rotation_url"):
-        data["rotation_url"] = "***"
-    return data
+    """Mask proxy credentials for API payloads (shared implementation)."""
+    from ..core.secret_masking import mask_proxy_fields
+
+    return mask_proxy_fields(proxy.model_dump())
 
 
 def _mask_profile_secrets(profile: BrowserProfile) -> BrowserProfile:
