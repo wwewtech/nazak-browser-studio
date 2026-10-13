@@ -364,9 +364,17 @@ class ProfileService:
             )
 
             prof = BrowserProfile(name=name, group=group, proxy=proxy_conf, fingerprint=fp, google=g_settings)
-            saved = self.create(prof)
-            created_profiles.append(saved)
+            # Audit P2 (CI Windows timeout): create() persists the WHOLE store per
+            # profile, so a 200-profile batch rewrote profiles.json 200 times with
+            # a growing payload (O(n^2) writes; 30+ s on a slow CI disk and a
+            # pytest-timeout kill). Build and register in memory, persist once.
+            prof = self._prepare_for_write(prof, None)
+            with self._lock:
+                self.profiles[prof.id] = prof
+            created_profiles.append(prof)
 
+        with self._lock:
+            self.backend.save_all(self.profiles)
         return created_profiles
 
     # -- bundles --------------------------------------------------------
