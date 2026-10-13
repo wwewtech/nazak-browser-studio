@@ -193,6 +193,15 @@ TIMEZONES = [
 
 def calculate_tz_offset(tz_name: str) -> int:
     """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset()."""
+def calculate_tz_offset(tz_name: str) -> int:
+    """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset().
+
+    Always resolves the CURRENT (DST-aware) offset through zoneinfo. The static
+    table below is a last-resort fallback for environments without the IANA
+    database (no system tzdata and no tzdata wheel): there the offset can be a
+    standard-time value during a DST period, which is logged as a warning.
+    An unknown zone falls back to UTC (0) instead of an arbitrary US offset.
+    """
     try:
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -203,10 +212,17 @@ def calculate_tz_offset(tz_name: str) -> int:
         # In JS: UTC-5 (New York) is +300, UTC+3 (Moscow) is -180
         return int(-offset_sec / 60)
     except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "calculate_tz_offset: zoneinfo unavailable for %r (missing tzdata?) — "
+            "using a static offset; it may be wrong during DST",
+            tz_name,
+        )
         matching_tz = [t for t in TIMEZONES if t[0] == tz_name]
         if matching_tz:
             return matching_tz[0][1]
-        return 300
+        return 0  # unknown zone: UTC, not an arbitrary region
 
 
 def generate_random_fingerprint(
