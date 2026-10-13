@@ -2,11 +2,13 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — Anti-Detect Hardening (Behaviour, Consistency, Network)
+## v1.12.2 — Anti-Detect Hardening (Behaviour, Consistency, Network) (2026-10-13)
 
 Suite: **951 passed, 5 deselected** (974 collected; 18 `xfail`-marked open bugs).
+`ruff check`, `ruff format --check` and `mypy nazak` clean; CI green on all 12 jobs
+(Windows + Ubuntu × Python 3.10–3.13, each with a SQLite-backend leg).
 
-Three real anti-detect gaps, each fixed with regression tests:
+Four real anti-detect gaps, each fixed with regression tests:
 
 - **Behaviour — human cursor.** `HumanCursor.move_to` always converged monotonically on a
   symmetric cosine ease — a bot signature. Aimed moves (≥60 px) now overshoot the target and
@@ -17,16 +19,26 @@ Three real anti-detect gaps, each fixed with regression tests:
 - **Consistency — DST-honest timezone offsets.** The random fingerprint path copied the static
   table offset, so half the year a profile carried e.g. `Europe/Berlin` with −60 while the real
   current offset (and the injected `getTimezoneOffset`) is −120. Generation now always resolves
-  the current offset through zoneinfo.
+  the current offset through zoneinfo, and `tzdata` is declared explicitly: zoneinfo has no IANA
+  database on Windows, so without the wheel the DST resolution silently fell back to the static
+  table (caught by CI, not locally — Linux carries system tzdata).
 - **Network — trickle-ICE leak.** The SDP sanitizer covered `createOffer`/`setLocalDescription`
   only, so candidates delivered via trickle-ICE (`onicecandidate`/`addIceCandidate`) and the
   answering side (`createAnswer`) leaked host addresses. Both are now scrubbed with the same
-  `sanitizeSdp`.
+  `sanitizeSdp`, and the `RTCIceCandidate` constructor neutralises host candidates at
+  construction.
 - **Noise freshness.** Canvas, audio and rect jitter restarted their deterministic pattern on
   every read, so two reads of the same surface returned identical noise minus a constant — a
   checker diffs them and the noise cancels. All three now re-derive per-call state (LCG
   re-seeded from the profile seed plus a call counter), staying deterministic for the profile
   but varying per read. New suite `tests/test_noise_freshness.py`.
+
+Also fixed along the way (found by CI, not locally):
+
+- **`mass_generate` was O(n²) on writes.** Each of the up to 200 generated profiles went
+  through `create()`, which rewrites the whole `profiles.json`; on a slow CI disk the batch hit
+  the 30 s test timeout. The batch now registers profiles in memory and persists the store
+  **once** (measured: 200 profiles in 0.05 s instead of 30+ s).
 
 ## v1.12.1 — Security Fix Release (2026-10-12)
 
