@@ -177,7 +177,9 @@ def run_autopost_batch(
             prof.status = ProfileStatus.RUNNING
             prof.pid = pid_num
             profile_manager.update_profile(prof)
-            await asyncio.sleep(4)
+            # Poll the DevTools endpoint instead of a fixed 4 s sleep (fix F2):
+            # returns as soon as Chromium is actually reachable for CDP.
+            await browser_launcher.wait_for_cdp(pid, timeout_sec=6.0)
             if progress is not None:
                 progress((pid, "uploading", "Uploading Shorts to YouTube Studio..."))
 

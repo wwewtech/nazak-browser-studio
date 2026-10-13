@@ -35,6 +35,9 @@ class _FakeLauncher:
     def is_profile_running(self, pid):
         return pid in self.active_processes
 
+    async def wait_for_cdp(self, profile_id, timeout_sec=6.0):
+        return profile_id in self.active_processes
+
 
 @pytest.fixture()
 def mgr():

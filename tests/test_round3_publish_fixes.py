@@ -44,6 +44,9 @@ class _FakeLauncher:
     def is_profile_running(self, profile_id):
         return False
 
+    async def wait_for_cdp(self, _profile_id, timeout_sec=6.0):
+        return True
+
 
 class _FakeProfileManager:
     def __init__(self, profiles: dict):

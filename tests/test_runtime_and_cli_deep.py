@@ -133,6 +133,9 @@ class _FakeLauncher:
     def is_profile_running(self, _profile_id) -> bool:
         return False
 
+    async def wait_for_cdp(self, _profile_id, timeout_sec=6.0):
+        return True
+
 
 class _FakeProfileManager:
     """Profile manager double shared by the queue and process-monitor probes."""
@@ -344,7 +347,10 @@ def test_tasks_run_autopost_batch_progress_order_and_cancel_before_start(monkeyp
     assert [e[0] for e in events] == ["a"] * 4 + ["b"] * 4
     assert launcher.stopped == ["a", "b"], "the browser of a finished profile was left running"
     assert all(p.status is ProfileStatus.STOPPED and p.pid is None for p in pm.profiles.values())
-    assert 4 in slept and 3 in slept, "the launch/upload settle pauses disappeared"
+    # The fixed 4 s post-launch sleep is gone (replaced by the DevTools poll in
+    # _FakeLauncher.wait_for_cdp); the inter-profile settle pause remains.
+    assert 3 in slept, "the inter-profile settle pause disappeared"
+    assert 4 not in slept, "the fixed post-launch sleep(4) must be gone (poll instead)"
 
     # a cancel that arrives before the first profile must stop the batch at once
     cancelled_handle = TaskHandle(name="autopost")

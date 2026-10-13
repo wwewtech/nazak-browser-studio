@@ -351,7 +351,28 @@ class UploadQueueManager:
                     prof.status = ProfileStatus.RUNNING
                     prof.pid = pid_num
                     self.profile_manager.update_profile(prof)
-                    await asyncio.sleep(4)
+                    # Wait for the DevTools endpoint instead of a fixed sleep:
+                    # 4 s was either wasted time (endpoint up in ~0.5 s) or not
+                    # enough (slow disk), and the upload then failed to connect.
+                    if not await self.browser_launcher.wait_for_cdp(pid, timeout_sec=6.0):
+                        job.status = "failed"
+                        job.error = "DevTools endpoint did not come up in time"
+                        job.progress_message = "CDP endpoint timeout"
+                        await self.broadcast(
+                            "autopost_job_update", {"profile_id": pid, "status": "failed", "error": job.error}
+                        )
+                        # Sweep the browser we just launched (no Chrome leak).
+                        if launched_here:
+                            try:
+                                self.browser_launcher.stop(pid)
+                            except Exception:
+                                pass
+                            self._launched_here.discard(pid)
+                            launched_here = False
+                        prof.status = ProfileStatus.STOPPED
+                        prof.pid = None
+                        self.profile_manager.update_profile(prof)
+                        continue
 
                     job.status = "uploading"
                     target_label = "YouTube Studio" if platform_name == "youtube_shorts" else "Instagram"

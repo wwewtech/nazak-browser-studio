@@ -2,6 +2,7 @@
 Chrome Browser Process Launcher with Total Host Isolation & Flag Engineering.
 """
 
+import asyncio
 import ctypes
 import json
 import logging
@@ -10,6 +11,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -142,6 +144,13 @@ class BrowserLauncher:
     def __init__(self, profiles_dir: Path = PROFILES_DIR, extensions_dir: Path = EXTENSIONS_DIR):
         self.profiles_dir = profiles_dir
         self.extensions_dir = extensions_dir
+        # Registry of live browser sessions. All six dicts below are mutated
+        # from the GUI thread, TaskBridge worker threads, the API request
+        # pool and the process monitor concurrently, and is_profile_running()
+        # performs multi-step read-then-cleanup sequences — an unsynchronized
+        # dict race can drop a pid and leak the Chrome process. One RLock
+        # guards every access (fix F1).
+        self._registry_lock = threading.RLock()
         self.active_processes: dict[str, subprocess.Popen] = {}
         self.profile_pids: dict[str, int] = {}
         self.profile_cdp_ports: dict[str, int] = {}
@@ -157,25 +166,25 @@ class BrowserLauncher:
 
     def is_profile_running(self, profile_id: str) -> bool:
         """Checks if profile process is currently alive."""
-        if profile_id in self.active_processes:
-            proc = self.active_processes[profile_id]
-            if proc.poll() is None:
-                return True
-            else:
+        with self._registry_lock:
+            if profile_id in self.active_processes:
+                proc = self.active_processes[profile_id]
+                if proc.poll() is None:
+                    return True
                 self.active_processes.pop(profile_id, None)
 
-        if profile_id in self.profile_pids:
-            pid = self.profile_pids[profile_id]
-            if psutil.pid_exists(pid):
-                try:
-                    p = psutil.Process(pid)
-                    if p.is_running() and p.status() != psutil.STATUS_ZOMBIE:
-                        return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            self.profile_pids.pop(profile_id, None)
-        self.profile_cdp_ports.pop(profile_id, None)
-        self.profile_cdp_ws.pop(profile_id, None)
+            if profile_id in self.profile_pids:
+                pid = self.profile_pids[profile_id]
+                if psutil.pid_exists(pid):
+                    try:
+                        p = psutil.Process(pid)
+                        if p.is_running() and p.status() != psutil.STATUS_ZOMBIE:
+                            return True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                self.profile_pids.pop(profile_id, None)
+            self.profile_cdp_ports.pop(profile_id, None)
+            self.profile_cdp_ws.pop(profile_id, None)
         self._stop_injector(profile_id)
         self._stop_forwarder(profile_id)
         return False
@@ -274,20 +283,22 @@ class BrowserLauncher:
         return args, ext_path
 
     def _stop_injector(self, profile_id: str) -> None:
-        handle = self._injectors.pop(profile_id, None)
+        with self._registry_lock:
+            handle = self._injectors.pop(profile_id, None)
         if handle is not None:
             try:
                 handle.stop(timeout=2.0)
             except Exception:  # pragma: no cover - defensive
-                pass
+                logger.debug("injector stop failed for %s", profile_id, exc_info=True)
 
     def _stop_forwarder(self, profile_id: str) -> None:
-        forwarder = self._forwarders.pop(profile_id, None)
+        with self._registry_lock:
+            forwarder = self._forwarders.pop(profile_id, None)
         if forwarder is not None:
             try:
                 forwarder.stop()
             except Exception:  # pragma: no cover - defensive
-                pass
+                logger.debug("forwarder stop failed for %s", profile_id, exc_info=True)
 
     def set_event_sink(self, sink) -> None:
         """Register the synchronizer gesture sink (audit fix P0-2)."""
@@ -295,7 +306,8 @@ class BrowserLauncher:
 
     def get_stealth_status(self, profile_id: str) -> dict[str, Any] | None:
         """CDP stealth injector status (None when injector never started)."""
-        handle = self._injectors.get(profile_id)
+        with self._registry_lock:
+            handle = self._injectors.get(profile_id)
         return handle.status() if handle else None
 
     def launch(
@@ -362,13 +374,15 @@ class BrowserLauncher:
 
             proc = subprocess.Popen(args, **popen_kwargs)
 
-            self.active_processes[profile.id] = proc
-            self.profile_pids[profile.id] = proc.pid
+            with self._registry_lock:
+                self.active_processes[profile.id] = proc
+                self.profile_pids[profile.id] = proc.pid
+                if cdp_port:
+                    self.profile_cdp_ports[profile.id] = cdp_port
+                    # Attach the CDP stealth injector (resolves DevToolsActivePort
+                    # in its own thread once Chromium has opened the endpoint).
+                    self._stop_injector(profile.id)
             if cdp_port:
-                self.profile_cdp_ports[profile.id] = cdp_port
-                # Attach the CDP stealth injector (resolves DevToolsActivePort
-                # in its own thread once Chromium has opened the endpoint).
-                self._stop_injector(profile.id)
                 handle = start_stealth_injector(
                     fingerprint=profile.fingerprint,
                     proxy=profile.proxy,
@@ -379,7 +393,8 @@ class BrowserLauncher:
                     event_sink=self._event_sink,
                 )
                 if handle is not None:
-                    self._injectors[profile.id] = handle
+                    with self._registry_lock:
+                        self._injectors[profile.id] = handle
             return True, proc.pid, None
 
         except Exception as e:
@@ -408,6 +423,35 @@ class BrowserLauncher:
             time.sleep(0.1)
         return None, None
 
+    async def wait_for_cdp(self, profile_id: str, timeout_sec: float = 6.0) -> bool:
+        """Async-friendly wait until Chromium exposes its DevTools endpoint.
+
+        Replaces the old fixed ``await asyncio.sleep(4)`` after a launch: that
+        either slept too long (CDP up in 0.5 s) or too little (slow disk, the
+        endpoint appeared at 5 s and the upload already failed to connect).
+        Polls the DevToolsActivePort file (and the known CDP port as a second
+        signal) and returns as soon as the endpoint is reachable.
+        """
+        user_data_path = self.profiles_dir / profile_id
+        deadline = time.monotonic() + timeout_sec
+        port_file = user_data_path / "DevToolsActivePort"
+        while time.monotonic() < deadline:
+            if port_file.exists():
+                try:
+                    content = port_file.read_text(encoding="utf-8").strip()
+                    lines = [line.strip() for line in content.splitlines() if line.strip()]
+                    if len(lines) >= 2:
+                        return True
+                except Exception:
+                    pass
+            # Second signal: the assigned port answers /json/version.
+            with self._registry_lock:
+                port = self.profile_cdp_ports.get(profile_id)
+            if port and self.resolve_cdp_ws_url(port, timeout_sec=0.3):
+                return True
+            await asyncio.sleep(0.25)
+        return False
+
     def resolve_cdp_ws_url(self, port: int, timeout_sec: float = 5.0) -> str | None:
         """
         Queries Chromium's /json/version endpoint to obtain the WebSocket debugger URL.
@@ -431,14 +475,19 @@ class BrowserLauncher:
         """Returns CDP port and WebSocket URL if profile is running with CDP enabled."""
         if not self.is_profile_running(profile_id):
             return None
-        port = self.profile_cdp_ports.get(profile_id)
-        if not port:
-            return None
+        with self._registry_lock:
+            port = self.profile_cdp_ports.get(profile_id)
+            if not port:
+                return None
         user_data_path = self.profiles_dir / profile_id
         _, active_ws = self.read_devtools_active_port(user_data_path, timeout_sec=0.2)
-        ws = active_ws or self.profile_cdp_ws.get(profile_id) or self.resolve_cdp_ws_url(port, timeout_sec=1.0)
+        with self._registry_lock:
+            ws = active_ws or self.profile_cdp_ws.get(profile_id)
+        if not ws:
+            ws = self.resolve_cdp_ws_url(port, timeout_sec=1.0)
         if ws:
-            self.profile_cdp_ws[profile_id] = ws
+            with self._registry_lock:
+                self.profile_cdp_ws[profile_id] = ws
         ws_url = ws or f"ws://127.0.0.1:{port}/devtools/browser"
         stealth = self.get_stealth_status(profile_id)
         return {
@@ -473,8 +522,9 @@ class BrowserLauncher:
         if not ws_url:
             ws_url = f"ws://127.0.0.1:{final_port}/devtools/browser"
 
-        self.profile_cdp_ports[profile.id] = final_port
-        self.profile_cdp_ws[profile.id] = ws_url
+        with self._registry_lock:
+            self.profile_cdp_ports[profile.id] = final_port
+            self.profile_cdp_ws[profile.id] = ws_url
         return True, pid, final_port, ws_url, None
 
     def stop(self, profile_id: str) -> tuple[bool, str | None]:
@@ -483,13 +533,14 @@ class BrowserLauncher:
         """
         self._stop_injector(profile_id)
         self._stop_forwarder(profile_id)
-        proc = self.active_processes.get(profile_id)
-        pid = self.profile_pids.get(profile_id)
+        with self._registry_lock:
+            proc = self.active_processes.get(profile_id)
+            pid = self.profile_pids.get(profile_id)
 
-        if not proc and not pid:
-            self.profile_cdp_ports.pop(profile_id, None)
-            self.profile_cdp_ws.pop(profile_id, None)
-            return True, "Profile is not currently running"
+            if not proc and not pid:
+                self.profile_cdp_ports.pop(profile_id, None)
+                self.profile_cdp_ws.pop(profile_id, None)
+                return True, "Profile is not currently running"
 
         try:
             if pid and psutil.pid_exists(pid):
@@ -510,8 +561,9 @@ class BrowserLauncher:
                 except Exception:
                     pass
 
-        self.active_processes.pop(profile_id, None)
-        self.profile_pids.pop(profile_id, None)
-        self.profile_cdp_ports.pop(profile_id, None)
-        self.profile_cdp_ws.pop(profile_id, None)
+        with self._registry_lock:
+            self.active_processes.pop(profile_id, None)
+            self.profile_pids.pop(profile_id, None)
+            self.profile_cdp_ports.pop(profile_id, None)
+            self.profile_cdp_ws.pop(profile_id, None)
         return True, None
