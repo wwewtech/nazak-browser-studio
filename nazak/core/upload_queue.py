@@ -20,6 +20,39 @@ from .spintax import format_video_metadata
 from .video_uniquifier import VideoUniquifier
 from .youtube_uploader import YouTubeUploader
 
+# The uploader names above stay as module attributes: tests patch BOTH
+# "nazak.core.upload_queue.YouTubeUploader" (this module) and
+# "nazak.core.youtube_uploader.YouTubeUploader" (the source module). run_batch_upload
+# resolves the class at call time, honouring a patch on either module — a frozen
+# from-import binding made every such patch a silent no-op.
+_ORIGINAL_INSTAGRAM_UPLOADER = InstagramUploader
+_ORIGINAL_YOUTUBE_UPLOADER = YouTubeUploader
+
+
+def _resolve_uploader(platform_name: str, cdp_port: int):
+    """Late-bound uploader: honour a patch on either module.
+
+    ``globals()`` lookup sees a patch applied to *this* module's attribute;
+    comparing against the frozen original decides whether to fall back to the
+    source module (where a patch may have been applied instead).
+    """
+    if platform_name == "instagram_reels":
+        cls = globals().get("InstagramUploader")
+        if cls is None or cls is _ORIGINAL_INSTAGRAM_UPLOADER:
+            from . import instagram_uploader as _ig_mod
+
+            cls = getattr(_ig_mod, "InstagramUploader", cls)
+        assert cls is not None
+        return cls(f"http://127.0.0.1:{cdp_port}")
+    cls = globals().get("YouTubeUploader")
+    if cls is None or cls is _ORIGINAL_YOUTUBE_UPLOADER:
+        from . import youtube_uploader as _yt_mod
+
+        cls = getattr(_yt_mod, "YouTubeUploader", cls)
+    assert cls is not None
+    return cls(f"http://127.0.0.1:{cdp_port}")
+
+
 # Audit R3-round2: upper bound for the pause between accounts (1 hour). The value
 # arrives from the API/CLI, so it is clamped in the service layer as well, not only
 # in the pydantic model: otherwise a batch "fell asleep" for years while holding is_running=True.
@@ -339,7 +372,7 @@ class UploadQueueManager:
 
                     try:
                         if platform_name == "instagram_reels":
-                            uploader = InstagramUploader(f"http://127.0.0.1:{cdp_port}")
+                            uploader = _resolve_uploader("instagram_reels", cdp_port)
 
                             async def upload_task(
                                 video_path=out_path,
@@ -362,7 +395,7 @@ class UploadQueueManager:
                                 progress_callback=on_progress,
                             )
                         else:
-                            uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
+                            uploader = _resolve_uploader(platform_name, cdp_port)
 
                             async def upload_task(
                                 video_path=out_path,
@@ -418,8 +451,16 @@ class UploadQueueManager:
                             },
                         )
                     else:
-                        job.status = "failed"
-                        job.error = upload_err
+                        # A user cancel must survive the failure branch: cancel_all()
+                        # already set status='canceled', and overwriting it with
+                        # 'failed' made the same user action produce two different
+                        # job states depending on timing. A cancel is a deliberate
+                        # action, not a failure, so error stays unset.
+                        if self._cancel_requested and job.status == "canceled":
+                            pass
+                        else:
+                            job.status = "failed"
+                            job.error = upload_err
                         # Audit R3: the retry-forbidden message must not be lost
                         # (it used to be overwritten by the error text on this line).
                         if not is_publish_uncertain(upload_err) and not is_manual_action_error(upload_err):

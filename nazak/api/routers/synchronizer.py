@@ -20,11 +20,25 @@ async def start_synchronizer_endpoint(req: SynchronizerStartRequest):
         validate_pid(req.master_profile_id)
     except HTTPException as exc:
         raise HTTPException(status_code=400, detail=f"Invalid master_profile_id: {exc.detail}") from exc
+    if not req.worker_profile_ids:
+        raise HTTPException(status_code=400, detail="worker_profile_ids must contain at least one worker profile")
     for pid in req.worker_profile_ids:
         try:
             validate_pid(pid)
         except HTTPException as exc:
             raise HTTPException(status_code=400, detail=f"Invalid worker_profile_id '{pid}': {exc.detail}") from exc
+    # Parity with the CLI (cli_cmds/automation.py refuses both): starting a
+    # session with a missing master or an unknown worker used to answer
+    # 200 'active' — a live no-op session the caller could not tell from real.
+    # 400 (not 404): the request references entities that do not exist, which
+    # is a request-validation failure for this endpoint, same as the CLI's
+    # usage-error exit code.
+    profile_manager = deps.pm()
+    if profile_manager.get_profile(req.master_profile_id) is None:
+        raise HTTPException(status_code=400, detail=f"Master profile '{req.master_profile_id}' not found")
+    missing = [w for w in req.worker_profile_ids if profile_manager.get_profile(w) is None]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Worker profiles not found: {missing}")
     session = synchronizer_mgr.start_session(
         master_profile_id=req.master_profile_id,
         worker_profile_ids=req.worker_profile_ids,

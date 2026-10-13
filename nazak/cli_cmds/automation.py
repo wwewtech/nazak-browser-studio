@@ -16,6 +16,7 @@ from .common import (
     EXIT_NOT_FOUND,
     EXIT_OK,
     GlobalOptions,
+    UsageError,
     console,
     emit,
     emit_error,
@@ -215,7 +216,14 @@ def _find_scenario(scenario_id: str | None, scenario_file: str | None):
     from nazak.core.warmup_engine import BUILTIN_SCENARIOS, WarmupScenario
 
     if scenario_file:
-        data = json.loads(Path(scenario_file).read_text(encoding="utf-8"))
+        # A missing/unreadable/malformed scenario file is a usage error, not a
+        # conflict: OSError/JSONDecodeError used to escape raw with exit 4.
+        try:
+            data = json.loads(Path(scenario_file).read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise UsageError(f"scenario-file недоступен: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise UsageError(f"scenario-file не является корректным JSON: {exc}") from exc
         return WarmupScenario.from_dict(data), None
     if not scenario_id:
         return None, "Укажите --scenario или --scenario-file"
@@ -354,6 +362,14 @@ def cmd_sync_tile(args, opt: GlobalOptions) -> int:
 def cmd_sync_navigate(args, opt: GlobalOptions) -> int:
     if opt.server:
         return _via_server(opt, "POST", "/api/synchronizer/navigate", json={"url": args.url})
+    # Same allow-list as a profile launch: file:// and javascript: targets used
+    # to reach the worker browsers and the command still reported success.
+    from ..core.browser_launcher import sanitize_launch_url
+
+    try:
+        sanitize_launch_url(args.url)
+    except ValueError as exc:
+        return emit_error(f"URL: {exc}", opt)
     results = asyncio.run(_get_sync_mgr().mirror_navigation(args.url))
     emit({"success": True, "results": results}, opt)
     return EXIT_OK

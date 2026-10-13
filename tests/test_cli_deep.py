@@ -146,10 +146,6 @@ def test_seed_history_count_bounds():
         assert "5..100" in payload["error"]
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: --count 26..100 (валиден по CLI-границе 5..100) молча сеет только 25 записей и возвращает success",
-)
 def test_seed_history_honours_requested_count(make_profile):
     profile_id = make_profile("Deep Seed100")
     code, payload = run_json(["profile", "seed-history", profile_id, "--count", "100"])
@@ -164,10 +160,6 @@ def test_clear_cache_unknown_profile_reports_success():
     assert payload["success"] is False
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: небезопасный id в clear-cache даёт exit 4 с сырым ValueError вместо usage(2)/not-found(1)",
-)
 def test_clear_cache_invalid_id_is_not_a_conflict():
     code, payload = run_json(["profile", "clear-cache", "../evil"])
     assert code in (1, 2), f"path traversal id -> {code} {payload}"
@@ -184,10 +176,6 @@ def test_batch_launch_reports_missing_profiles_and_requires_selection():
     assert payload["results"][NO_PROXY_GHOST]["success"] is False
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: batch-stop по несуществующему id возвращает 'Остановлено: 1' и exit 0 (одиночный `profile stop` даёт exit 1)",
-)
 def test_batch_stop_unknown_profile_reports_false_success():
     code, payload = run_json(["profile", "batch-stop", "--profiles", NO_PROXY_GHOST])
     assert code == 1 or payload.get("stopped_count") == 0, f"ложная остановка: {code} {payload}"
@@ -259,10 +247,6 @@ def test_profile_get_does_not_leak_proxy_raw_password(make_profile):
     assert secret not in json.dumps(got, ensure_ascii=False), "пароль прокси утёк в вывод без --reveal"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: profile launch --url file://... отдаёт exit 4 (conflict) вместо usage(2) для недопустимой схемы",
-)
 def test_profile_launch_rejects_disallowed_url_scheme_as_usage_error(monkeypatch, make_profile):
     import nazak.core.browser_launcher as launcher
 
@@ -379,10 +363,6 @@ def test_cookie_export_formats_and_out_guards(tmp_path, make_profile):
     assert json.loads(out.read_text(encoding="utf-8"))[0]["name"] == "sid"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: `--profiles all` (значение из help) не раскрывается в список профилей: молча экспортируется 0",
-)
 def test_cookie_bulk_export_profiles_all_is_expanded(make_profile):
     profile_id = make_profile("Deep BulkAll")
     assert run_json(["cookie", "import", profile_id, VALID_COOKIES])[0] == 0
@@ -488,10 +468,6 @@ def test_automation_requires_targets(make_profile):
     assert code == 2  # обязательный --master
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: отсутствующий/битый --scenario-file даёт exit 4 с сырым OSError/JSONDecodeError вместо usage(2)",
-)
 def test_scenario_run_bad_scenario_file_is_usage_error(tmp_path, make_profile):
     profile_id = make_profile("Deep ScenFile")
 
@@ -506,10 +482,6 @@ def test_scenario_run_bad_scenario_file_is_usage_error(tmp_path, make_profile):
     assert code == 2, payload
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: sync navigate принимает file://javascript: URL и отвечает exit 0/success (URL валидируется только внутри воркера)",
-)
 def test_sync_navigate_rejects_non_http_urls():
     for url in ("file:///C:/Windows/win.ini", "javascript:alert(1)"):
         code, payload = run_json(["sync", "navigate", url])

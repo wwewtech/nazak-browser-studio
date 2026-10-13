@@ -141,9 +141,16 @@ def seed_chrome_history(
         cursor.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('version', '65')")
         cursor.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('last_compatible_version', '65')")
 
-        # Select sites to insert
-        sample_size = min(max(5, entries_count), len(HIGH_TRUST_SITES))
-        chosen_sites = random.sample(HIGH_TRUST_SITES, sample_size)
+        # Select sites to insert. random.sample() cannot pick more than the pool
+        # holds, so a requested count of 26..100 silently produced only 25
+        # entries while reporting success. Pick with replacement above the pool
+        # size (a human visits the same popular site many times anyway), and
+        # vary the timestamp per visit so repeats look organic.
+        target = max(5, int(entries_count))
+        if target <= len(HIGH_TRUST_SITES):
+            chosen_sites = random.sample(HIGH_TRUST_SITES, target)
+        else:
+            chosen_sites = [random.choice(HIGH_TRUST_SITES) for _ in range(target)]
 
         now_sec = time.time()
         inserted = 0

@@ -44,13 +44,20 @@ async def bulk_export_cookies_endpoint(req: BulkCookieExportRequest):
     for pid in req.profile_ids:
         validate_pid(pid)
     cookie_dict = profile_manager.export_all_cookies(req.profile_ids)
-    if req.format.lower() == "zip":
+    export_format = req.format.lower()
+    if export_format == "zip":
         zip_bytes = create_cookies_zip_archive(cookie_dict, format_type="json")
         return Response(
             content=zip_bytes,
             media_type="application/zip",
             headers={"Content-Disposition": "attachment; filename=nazak_cookies.zip"},
         )
+    if export_format == "netscape":
+        # The schema pattern accepts 'netscape', but the branch used to be missing:
+        # the parameter was silently ignored and the JSON payload came back.
+        # Mirrors the per-profile export contract (cookies_to_netscape content).
+        combined = "".join(cookies_to_netscape(cookies) for cookies in cookie_dict.values())
+        return {"format": "netscape", "content": combined, "profiles_count": len(cookie_dict)}
     return {"success": True, "cookies": cookie_dict, "profiles_count": len(cookie_dict)}
 
 

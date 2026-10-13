@@ -167,9 +167,14 @@ def _clamped_seconds(value: Any, default: float, *, lo: float = 0.5, hi: float =
 
 def generate_warmup_urls(queries: list[str]) -> list[str]:
     """Generates direct Google search URLs from query list."""
+    from urllib.parse import quote_plus
+
     urls = []
     for q in queries:
-        encoded = q.replace(" ", "+")
+        # quote_plus encodes every reserved character (&, =, +, spaces...): a
+        # bare space->'+' replace used to let 'headphones & speakers' split into
+        # two query parameters on the target page.
+        encoded = quote_plus(q)
         urls.append(f"https://www.google.com/search?q={encoded}&hl=en")
     return urls
 
@@ -330,7 +335,9 @@ class ScenarioExecutor:
                 url = step.params.get("url", "https://www.google.com")
             else:
                 query = str(step.params.get("query", "tech news 2026"))
-                url = f"https://www.google.com/search?q={query.replace(' ', '+')}&hl=en"
+                from urllib.parse import quote_plus
+
+                url = f"https://www.google.com/search?q={quote_plus(query)}&hl=en"
             if not self.browser_launcher.is_profile_running(profile_id):
                 ok, _, _ = self.browser_launcher.launch(prof, custom_url=url)
                 return ok

@@ -222,8 +222,12 @@ async def bulk_import_profiles(req: BulkImportRequest):
     if not lines:
         raise HTTPException(status_code=400, detail="No valid proxy lines provided")
     if len(lines) > MAX_BULK_IMPORT_LINES:
+        # 422: the request body violates the endpoint's documented bound
+        # (500 lines, same cap as schemas.MAX_PROFILE_IDS), not the input
+        # syntax — that keeps '400 = malformed content, 422 = request out of
+        # contract' distinguishable for API consumers.
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=f"Too many proxy lines: {len(lines)} (max {MAX_BULK_IMPORT_LINES})",
         )
     created_list = []

@@ -24,25 +24,33 @@ def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
     Also handles #HttpOnly_ domain prefix without skipping.
     """
     cookies = []
-    lines = text.strip().splitlines()
-    for line in lines:
-        line = line.strip()
-        if not line:
+    # Do NOT strip() the whole text: that eats the trailing space/tab of the
+    # last line, which is real VALUE content (round-trip fidelity).
+    lines = text.splitlines()
+    for raw_line in lines:
+        # Trim CR only — NOT spaces/tabs: trailing whitespace is real VALUE
+        # content (a trailing tab belongs to an empty value; a trailing space
+        # is part of "abc "). splitlines() already removed the newline.
+        line = raw_line.strip("\r")
+        if not line.strip():
             continue
 
         http_only = False
         if line.startswith("#HttpOnly_"):
             http_only = True
-            line = line[len("#HttpOnly_") :].strip()
+            line = line[len("#HttpOnly_") :].strip(" \r")
         elif line.startswith("#"):
             continue
 
-        # Split by tabs or multiple spaces
-        parts = re.split(r"\t+|\s{2,}", line)
-        if len(parts) < 7:
-            # Fallback single tab split
+        # Split on tabs FIRST (the canonical format): that keeps inner spaces in
+        # the VALUE intact. Only when a line has no tabs fall back to runs of
+        # 2+ spaces — and there with a maxsplit so the trailing value keeps
+        # its own spaces. The old unconditional `re.split(r"\t+|\s{2,}")`
+        # truncated values like "mode=dark  lang=ru" and dropped empty values.
+        if "\t" in line:
             parts = line.split("\t")
-
+        else:
+            parts = re.split(r"\s{2,}", line, maxsplit=6)
         if len(parts) >= 7:
             domain, include_subdomains, path, secure, expiration, name, value = parts[:7]
             try:
@@ -53,7 +61,9 @@ def parse_netscape_cookies(text: str) -> list[dict[str, Any]]:
             cookies.append(
                 {
                     "name": name.strip(),
-                    "value": value.strip(),
+                    # Preserve value whitespace fidelity: only a CR is trimmed.
+                    # A full strip() truncated values with inner/trailing spaces.
+                    "value": value.strip("\r"),
                     "domain": domain.strip(),
                     "path": path.strip() or "/",
                     "expires": exp_int,
@@ -88,7 +98,9 @@ def cookies_to_netscape(cookies: list[dict[str, Any]]) -> str:
             expires = "0"
 
         name = str(c.get("name", "")).strip()
-        value = str(c.get("value", "")).strip()
+        # Preserve the value byte-for-byte: a strip() here broke the round-trip
+        # fidelity (trailing/leading spaces in values never survived export).
+        value = str(c.get("value", ""))
 
         prefix = "#HttpOnly_" if c.get("httpOnly", False) else ""
         lines.append(f"{prefix}{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}")

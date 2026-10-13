@@ -86,6 +86,15 @@ async def check_all_profiles():
 )
 async def test_raw_proxy(req: ProxyTestRequest):
     proxy_config = ProxyConfig.parse(req.raw_proxy)
+    # Anti-detect invariant: a malformed string silently parsing into a DIRECT
+    # connection made /test-proxy report a "healthy" local link — the operator
+    # believes traffic goes through a proxy while the real IP is exposed.
+    # DIRECT is an explicit choice (the string "direct"), never a fallback.
+    if proxy_config.is_direct() and (req.raw_proxy or "").strip().lower() not in ("direct", "none", "null", ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid proxy string: it does not contain a usable host:port and would silently degrade to a DIRECT (no-proxy) connection",
+        )
     result = await check_proxy_health(proxy_config, profile_dir=None)
     return result
 

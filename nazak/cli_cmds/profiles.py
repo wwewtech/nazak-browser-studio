@@ -305,6 +305,16 @@ def cmd_launch(args, opt: GlobalOptions) -> int:
         return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/launch", json=body)
     from nazak.models.profile import ProfileStatus
 
+    # A disallowed URL scheme is a usage error (exit 2): the caller passed a bad
+    # argument. It used to surface as a generic launch failure (exit 4) after
+    # the sanitizer refused it deep inside the launcher.
+    if args.url:
+        from ..core.browser_launcher import sanitize_launch_url
+
+        try:
+            sanitize_launch_url(args.url)
+        except ValueError as exc:
+            return emit_error(f"URL: {exc}", opt)
     pm, bl = get_managers()
     p = pm.get_profile(args.profile_id)
     if not p:
@@ -374,13 +384,24 @@ def cmd_batch_stop(args, opt: GlobalOptions) -> int:
     from nazak.models.profile import ProfileStatus
 
     pm, bl = get_managers()
-    for pid in ids:
+    # Only count profiles that exist (and were therefore actually stoppable):
+    # every requested id used to be reported, so `batch-stop ghost` answered
+    # "stopped: 1" while `profile stop ghost` correctly says "not found".
+    known_ids = [pid for pid in ids if pm.get_profile(pid)]
+    missing = [pid for pid in ids if pid not in known_ids]
+    for pid in known_ids:
         bl.stop(pid)
         prof = pm.get_profile(pid)
         if prof:
             prof.status, prof.pid = ProfileStatus.STOPPED, None
             pm.update_profile(prof)
-    return emit_success(f"Остановлено: {len(ids)}", opt, {"stopped_count": len(ids)})
+    extra = {"stopped_count": len(known_ids), "missing": missing} if missing else {"stopped_count": len(known_ids)}
+    if not known_ids:
+        return emit_error(f"Профили не найдены: {missing}", opt, EXIT_NOT_FOUND)
+    if missing:
+        # Partial success: report both facts instead of a false full success.
+        return emit_success(f"Остановлено: {len(known_ids)} (не найдены: {missing})", opt, extra)
+    return emit_success(f"Остановлено: {len(known_ids)}", opt, extra)
 
 
 def cmd_bulk_import(args, opt: GlobalOptions) -> int:
@@ -464,6 +485,14 @@ def cmd_fingerprint(args, opt: GlobalOptions) -> int:
 def cmd_clear_cache(args, opt: GlobalOptions) -> int:
     if opt.server:
         return _via_server(opt, "POST", f"/api/profiles/{args.profile_id}/clear-cache")
+    from ..core.profiles.files import validate_id as _validate_profile_id
+
+    # An invalid id is a usage error (exit 2), not a conflict: validate_id's
+    # ValueError used to escape to the generic handler and answer exit 4.
+    try:
+        _validate_profile_id(args.profile_id)
+    except ValueError as exc:
+        return emit_error(f"Invalid profile ID: {exc}", opt)
     pm, bl = get_managers()
     if bl.is_profile_running(args.profile_id):
         return emit_error("Сначала остановите браузер (profile stop)", opt, EXIT_CONFLICT)

@@ -236,14 +236,6 @@ def test_totp_invalid_or_wrong_length_secrets_raise_instead_of_a_fake_code(monke
     assert len(good) == 6 and good.isdigit() and good != "000000"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: build_oauth_auth_url interpolates `state` without URL-encoding — 'a+b' is "
-        "decoded back by the callback's parse_qs as 'a b' (state mismatch => the flow is "
-        "rejected) and '&' injects extra query parameters"
-    ),
-)
 def test_build_oauth_auth_url_state_survives_a_url_round_trip():
     prov = provisioner.AccountProvisioner(None, None)
     for state in ("a+b", "st&response_type=token", "st#fragment", "tok en=1"):
@@ -397,14 +389,6 @@ def test_netscape_round_trip_keeps_flags_unicode_and_expiry():
     assert cookies_to_netscape(reparsed) == serialized
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: parse_netscape_cookies splits every line on runs of 2+ spaces and strips it — a "
-        "value with a double space is truncated ('a  b' -> 'a'), trailing spaces are lost, and "
-        "a cookie with an empty value collapses to 6 fields and is dropped entirely"
-    ),
-)
 def test_netscape_round_trip_preserves_value_whitespace_fidelity():
     double_space = [_cookie(name="pref", value="mode=dark  lang=ru", expires=1754000000)]
     reparsed = parse_netscape_cookies(cookies_to_netscape(double_space))
@@ -622,14 +606,6 @@ def test_check_proxy_health_timeouts_and_hostile_geo_payload(tmp_path, monkeypat
     assert sanitized.city == "ok"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: a SOCKS4 profile (a supported ProxyType) makes check_proxy_health raise "
-        "ValueError('Unknown scheme for proxy URL') from httpx.AsyncClient(proxy=...) instead "
-        "of returning a HealthCheckResult"
-    ),
-)
 def test_check_proxy_health_supports_socks4_proxy_type(tmp_path, monkeypatch):
     _install_ping(monkeypatch, 15.0)
     proxy = ProxyConfig(type=ProxyType.SOCKS4, host="203.0.113.9", port=1080)

@@ -545,15 +545,6 @@ def test_batch_pause_is_clamped_and_cancel_all_is_idempotent(monkeypatch, tmp_pa
     assert all(j.status == "canceled" for j in cancel_manager.jobs.values())
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: a job cancelled while its upload was in flight ends up as status 'failed'. cancel_all() marks "
-        "it 'canceled', then the cancel branch of _retryable_upload returns 'Upload canceled by user' and "
-        "run_batch_upload overwrites status/error with that string. Repro: call cancel_all() from inside the "
-        "uploader of the first profile -> jobs['a'].status == 'failed' (expected 'canceled')"
-    ),
-)
 def test_batch_cancel_midflight_keeps_job_canceled(monkeypatch, tmp_path):
     holder: dict = {}
 
@@ -980,16 +971,6 @@ def test_warmup_plan_bounds_and_determinism():
     assert first == second, "plan generation is not reproducible for a fixed seed"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: search queries are interpolated into the Google URL with a bare space->+ replace, so reserved "
-        "characters are injected into the query string. Repro: generate_warmup_urls(['headphones & speakers "
-        "cheap']) -> '...search?q=headphones+&+speakers+cheap&hl=en'; parse_qs() then reports "
-        "q='headphones ' and the rest of the term becomes a separate parameter. The google_search scenario "
-        "step builds the same URL."
-    ),
-)
 def test_generate_warmup_urls_encodes_query_parameters(monkeypatch):
     async def fake_sleep(_seconds):
         return None

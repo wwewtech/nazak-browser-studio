@@ -77,21 +77,20 @@ class SqliteProfileBackend(ProfileBackend):
             )
 
     def _migrate_from_json_if_needed(self) -> None:
-        """One-shot JSON -> SQLite import, decided by a persisted marker.
+        """One-shot JSON -> SQLite import + incremental catch-up.
 
-        The marker is the point: deciding by ``COUNT(*) == 0`` alone made the
-        import run again every time the table happened to be empty, so deleting
-        every profile under the SQLite backend resurrected the whole fleet from
-        the (deliberately kept) ``profiles.json`` on the next start.
+        The ``json_migration`` marker keeps the initial import one-shot (a
+        ``COUNT(*) == 0`` check alone re-imported the fleet after a full
+        delete). But the JSON file keeps receiving writes while the operator
+        is in json mode, so every open must also catch up profiles that are
+        NEW in the JSON file since the last sync — otherwise switching
+        json -> sqlite -> json -> create -> sqlite silently hid them.
+
+        Ownership rule: a profile already present in the DB is never
+        overwritten by the JSON copy (the DB is authoritative once migrated);
+        only ids missing from the DB are imported.
         """
         with self._lock:
-            if self._get_meta("json_migration") == "done":
-                return
-            count = self._conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
-            if count:
-                # The DB already owns data, so it must never import the JSON file.
-                self._set_meta("json_migration", "done")
-                return
             if not self.profiles_file.exists():
                 return
             try:
@@ -102,42 +101,69 @@ class SqliteProfileBackend(ProfileBackend):
                 elif isinstance(data, list):
                     items = data
                 else:
+                    items = []
+            except Exception as exc:
+                logger.debug("SQLite JSON catch-up skipped: %s", exc)
+                items = []
+
+            first_sync = self._get_meta("json_migration") != "done"
+            if first_sync:
+                count = self._conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0]
+                if count:
+                    # DB already owns data: mark done without importing.
+                    self._set_meta("json_migration", "done")
                     return
-                rows = []
-                for item in items:
-                    if not isinstance(item, dict) or not item.get("id"):
-                        continue
-                    try:
-                        BrowserProfile(**{**item, "proxy": unprotect_proxy_fields(item.get("proxy") or {})})
-                    except Exception:
-                        continue
-                    rows.append(
-                        (
-                            str(item["id"]),
-                            datetime.now(timezone.utc).isoformat(),
-                            json.dumps(item, ensure_ascii=False),
-                        )
+            if not items:
+                return
+
+            known = {str(row[0]) for row in self._conn.execute("SELECT id FROM profiles")}
+            tombstoned = self._tombstoned_ids()
+            rows = []
+            for item in items:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                pid = str(item["id"])
+                if pid in known:
+                    # The DB is authoritative for anything it already holds:
+                    # importing would resurrect profiles deleted in sqlite mode.
+                    continue
+                if pid in tombstoned:
+                    # Deleted here while the JSON copy still lists it: a deletion
+                    # must survive a store switch, so the id stays dead.
+                    continue
+                try:
+                    BrowserProfile(**{**item, "proxy": unprotect_proxy_fields(item.get("proxy") or {})})
+                except Exception:
+                    continue
+                rows.append(
+                    (
+                        pid,
+                        datetime.now(timezone.utc).isoformat(),
+                        json.dumps(item, ensure_ascii=False),
                     )
-                if not rows:
-                    return
-                with self._conn:
-                    self._conn.executemany(
-                        "INSERT OR REPLACE INTO profiles(id, updated_at, data) VALUES(?, ?, ?)", rows
-                    )
+                )
+            if not rows:
+                if first_sync:
+                    self._set_meta("json_migration", "done")
+                return
+            with self._conn:
+                self._conn.executemany("INSERT INTO profiles(id, updated_at, data) VALUES(?, ?, ?)", rows)
+                if first_sync:
                     # Marker written in the same transaction as the rows, so a
                     # crash can never leave imported data behind without the flag.
                     self._conn.execute(
                         "INSERT INTO meta(key, value) VALUES('json_migration', 'done') "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
                     )
+            if first_sync:
                 bak = self.profiles_file.with_name(f"profiles.pre-sqlite.{int(time.time())}.bak")
                 try:
                     shutil.copy2(self.profiles_file, bak)
                 except Exception:
                     pass
                 logger.info("Migrated %d profiles from JSON to SQLite (%s)", len(rows), self.db_path)
-            except Exception as exc:
-                logger.warning("SQLite migration skipped: %s", exc)
+            else:
+                logger.info("Caught up %d new JSON profiles into SQLite (%s)", len(rows), self.db_path)
 
     # -- backend contract -----------------------------------------------
     def load_all(self) -> dict[str, BrowserProfile]:
@@ -181,10 +207,32 @@ class SqliteProfileBackend(ProfileBackend):
                     json.dumps(item, ensure_ascii=False),
                 ),
             )
+            # An explicit re-create of the same id clears any tombstone: the
+            # operator recreated the profile on purpose, so the JSON catch-up
+            # must not treat it as deleted.
+            self._conn.execute("DELETE FROM meta WHERE key=?", (f"deleted:{profile.id}",))
+
+    def _delete_tombstone(self, profile_id: str) -> None:
+        """Record a deletion so the JSON catch-up can never resurrect it.
+
+        Called inside the caller's transaction.
+        """
+        self._conn.execute(
+            "INSERT INTO meta(key, value) VALUES(?, '1') ON CONFLICT(key) DO UPDATE SET value='1'",
+            (f"deleted:{profile_id}",),
+        )
+
+    def _tombstoned_ids(self) -> set[str]:
+        prefix = "deleted:"
+        return {
+            str(row[0])[len(prefix) :]
+            for row in self._conn.execute("SELECT key FROM meta WHERE key LIKE ?", (f"{prefix}%",))
+        }
 
     def delete_one(self, profile_id: str) -> None:
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
+            self._delete_tombstone(profile_id)
 
     def vacuum(self) -> None:
         with self._lock:

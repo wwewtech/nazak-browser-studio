@@ -405,10 +405,14 @@ class AccountProvisioner:
         When ``state`` is provided (recommended — obtain one via
         ``generate_oauth_state()`` or ``OAuthCallbackReceiver`` and pass the
         same value to ``listen_for_oauth_code(state=...)``) it is embedded as
-        the CSRF ``state`` parameter.
+        the CSRF ``state`` parameter, percent-encoded: a raw interpolation
+        made '+' decode back to a space and '&' split the query, so the
+        callback's state comparison always failed for such values.
         """
+        from urllib.parse import quote
+
         scope = "https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.upload"
-        state_suffix = f"&state={state}" if state else ""
+        state_suffix = f"&state={quote(state, safe='')}" if state else ""
         return (
             f"https://accounts.google.com/o/oauth2/v2/auth?"
             f"access_type=offline&prompt=consent&scope={scope}&"

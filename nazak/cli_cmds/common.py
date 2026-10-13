@@ -248,7 +248,11 @@ def get_managers():
 
 
 def resolve_ids(requested: list[str], allow_all: bool = False) -> list[str]:
-    if allow_all and (not requested or "all" in requested or "*" in requested):
+    # `--profiles all` is documented in the help text of every batch command,
+    # so the bare keyword must expand too — not only the separate --all flag
+    # (previously `--profiles all` selected nothing and reported 0 profiles).
+    effective = requested or []
+    if allow_all or "all" in effective or "*" in effective:
         pm, _ = get_managers()
         return [p.id for p in pm.list_profiles()]
     return requested

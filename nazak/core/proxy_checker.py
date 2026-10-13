@@ -123,6 +123,17 @@ async def check_proxy_health(
                 )
                 return result
 
+        # httpx has no socks4 scheme support: a SOCKS4 profile raised
+        # ValueError('Unknown scheme for proxy URL') at AsyncClient construction,
+        # so a supported ProxyType crashed the health check instead of
+        # producing a HealthCheckResult. Report it as an unsupported transport.
+        if getattr(proxy, "type", None) and str(proxy.type.value).lower() == "socks4":
+            result.status = HealthStatus.ERROR
+            result.error_message = (
+                "SOCKS4 proxies are not supported by the health checker "
+                "(no socks4 transport in httpx); use SOCKS5 or HTTP"
+            )
+            return result
         proxy_url = proxy.to_httpx_url()
 
     headers = {

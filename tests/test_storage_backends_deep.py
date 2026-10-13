@@ -347,15 +347,6 @@ def test_sqlite_delete_unknown_save_one_and_save_all_stay_consistent(tmp_path):
     backend.close()
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "BUG: profiles created while NAZAK_PROFILE_STORE=json after a one-shot SQLite migration are "
-        "never imported again - the JSON->SQLite migration only runs when the DB is empty - so switching "
-        "json -> sqlite -> json -> save -> sqlite silently hides them (repro: create 'json_third' with a "
-        "non-empty profiles.db present; it is missing from ProfileManager.list_profiles() in sqlite mode)"
-    ),
-)
 def test_profile_store_switching_between_json_and_sqlite_loses_nothing(tmp_path, monkeypatch):
     """Rolling back to JSON and forward to SQLite again must never drop a profile."""
     pfile = tmp_path / "profiles.json"

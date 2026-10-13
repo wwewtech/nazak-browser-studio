@@ -161,11 +161,6 @@ def test_bulk_export_zip_archive_and_profile_export_formats(client: TestClient):
         _drop(profile_id)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: /api/cookies/bulk-export accepts format='netscape' (schema pattern) but silently "
-    "returns the JSON payload - the parameter is ignored unless it is 'zip'",
-)
 def test_bulk_export_netscape_format_is_honoured(client: TestClient):
     profile_id = "deep_netscape_prof"
     _create_profile(profile_id)
@@ -236,11 +231,6 @@ def test_synchronizer_start_validates_ids_and_normalises_payload(client: TestCli
     assert start.call_args.kwargs["delay_range_ms"] == (2000, 1000)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: /api/synchronizer/start answers 200 'active' for an empty worker list and for "
-    "profile ids that do not exist (the CLI refuses both), so the client sees a live no-op session",
-)
 def test_synchronizer_start_must_reject_empty_workers_and_unknown_ids(client: TestClient):
     def _start(**kwargs: Any) -> SynchronizerSession:
         return SynchronizerSession(**kwargs)
@@ -333,11 +323,6 @@ def test_test_proxy_forwards_parsed_config_to_health_checker(client: TestClient)
     assert huge.status_code == 422
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: a malformed proxy string (hostless URL / garbage) is silently downgraded to DIRECT "
-    "by ProxyConfig.parse, so test-proxy 'successfully' tests the local connection and reports a healthy proxy",
-)
 def test_test_proxy_malformed_input_must_fail_loudly(client: TestClient):
     async def fake_check(proxy: ProxyConfig, profile_dir: Any = None, **_kwargs: Any) -> HealthCheckResult:
         return HealthCheckResult(status=HealthStatus.HEALTHY, ping_ms=1.0, ip="127.0.0.1")
@@ -606,15 +591,12 @@ def test_launch_profile_url_validation_unknown_and_failure_paths(client: TestCli
         _drop(profile_id)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: /api/profiles/{id}/clear-cache answers 200 {'success': true, 'message': 'Cache cleared "
-    "successfully'} for a profile id that does not exist (siblings return 404)",
-)
 def test_clear_cache_unknown_profile_must_404(client: TestClient):
     resp = client.post("/api/profiles/deep_missing_profile/clear-cache")
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Profile not found"
+    # The message names the missing profile (more useful than a bare string).
+    assert "deep_missing_profile" in resp.json()["detail"]
+    assert "not found" in resp.json()["detail"]
 
 
 def test_mass_generate_bounds_and_masks_proxy_secrets(client: TestClient):
@@ -668,11 +650,6 @@ def test_bundle_export_unknown_404_and_zip_payload(client: TestClient):
         _drop(profile_id)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="BUG: /api/profiles/bulk-import has no line-count bound: a single request creates one profile "
-    "per line (no MAX_PROFILE_IDS / mass-generate cap), which is an unbounded farm-creation DoS",
-)
 def test_bulk_import_profiles_must_bound_created_count(client: TestClient):
     fake_manager = MagicMock()
     fake_manager.list_profiles.return_value = []
