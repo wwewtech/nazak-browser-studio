@@ -2,7 +2,7 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — All 18 documented bugs fixed (zero xfail)
+## v1.12.3 — All 18 Documented Bugs Fixed, Zero xfail (2026-10-13)
 
 Suite: **969 passed, 5 deselected** (974 collected; **0 `xfail`** — every previously documented
 open bug is now fixed). `ruff check`, `ruff format --check` and `mypy nazak` clean.
