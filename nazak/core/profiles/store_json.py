@@ -73,14 +73,23 @@ class JsonProfileBackend(ProfileBackend):
                         prof.pid = None
                         loaded[prof.id] = prof
                 except Exception:
+                    # A single corrupt record must not lose the whole store,
+                    # but the operator has to know the profile was dropped:
+                    # a silent skip made "where did my profile go?" undebuggable.
+                    logger.warning(
+                        "profiles.json: skipping unreadable record id=%r: %s",
+                        (item or {}).get("id") if isinstance(item, dict) else "?",
+                        exc_info=True,
+                    )
                     continue
             return loaded
         except Exception:
+            logger.error("profiles.json unreadable — starting empty (backup kept)", exc_info=True)
             try:
                 bak_file = self.profiles_file.with_name(f"profiles.corrupt.{int(time.time())}.bak")
                 shutil.copy2(self.profiles_file, bak_file)
             except Exception:
-                pass
+                logger.error("corrupt-backup copy failed for %s", self.profiles_file, exc_info=True)
             return {}
 
     # -- save -----------------------------------------------------------

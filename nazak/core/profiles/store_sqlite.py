@@ -244,7 +244,7 @@ class SqliteProfileBackend(ProfileBackend):
                 self._conn.commit()
                 self._conn.close()
         except Exception:
-            pass
+            logger.warning("SQLite backend close failed (uncommitted data may be lost)", exc_info=True)
 
 
 def backend_for(profiles_file: Path, profiles_dir: Path) -> ProfileBackend:

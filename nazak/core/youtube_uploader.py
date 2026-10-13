@@ -5,6 +5,7 @@ natural keystroke typing, and automatic YouTube Studio workflow execution.
 """
 
 import asyncio
+import logging
 import math
 import random
 from collections.abc import Callable
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from .publish_status import publish_uncertain
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_async_playwright():
@@ -260,6 +263,7 @@ class YouTubeUploader:
                 # 10. Extract the published URL: poll briefly — the info link
                 # can appear with a delay after the publish dialog closes.
                 video_url = None
+                last_url_error: Exception | None = None
                 for _ in range(10):  # up to ~20s
                     try:
                         url_elem = page.locator("a.ytcp-video-info, a.ytcp-video-metadata-info").first
@@ -267,8 +271,8 @@ class YouTubeUploader:
                             video_url = await url_elem.get_attribute("href")
                             if video_url:
                                 break
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        last_url_error = exc
                     await asyncio.sleep(2)
 
                 await asyncio.sleep(1)
@@ -280,6 +284,9 @@ class YouTubeUploader:
                 if video_url:
                     await notify_progress(progress_callback, f"Successfully published! URL: {video_url}")
                 else:
+                    # Leave a trace for the "why is there no URL" support case.
+                    if last_url_error is not None:
+                        logger.debug("published-video URL extraction failed: %s", last_url_error)
                     await notify_progress(progress_callback, "Published (URL not captured yet; check YouTube Studio)")
                 return True, video_url, None
 

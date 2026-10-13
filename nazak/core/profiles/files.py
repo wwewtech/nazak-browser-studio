@@ -144,7 +144,7 @@ def load_cookies(profiles_dir: Path, profile_id: str) -> list[dict[str, Any]]:
         try:
             return json.loads(json_file.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            logger.warning("cookies.json unreadable for %s; falling back to cookies.txt", profile_id, exc_info=True)
     txt_file = path / "cookies.txt"
     if txt_file.exists():
         try:
@@ -152,7 +152,7 @@ def load_cookies(profiles_dir: Path, profile_id: str) -> list[dict[str, Any]]:
 
             return parse_netscape_cookies(txt_file.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            logger.warning("cookies.txt unreadable for %s; returning no cookies", profile_id, exc_info=True)
     return []
 
 

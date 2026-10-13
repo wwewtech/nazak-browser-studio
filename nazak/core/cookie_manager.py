@@ -5,10 +5,13 @@ Handles #HttpOnly_ prefixes, float expiration dates, whitespace tolerances, and 
 
 import io
 import json
+import logging
 import re
 import zipfile
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Audit R3-round2: limits for the cookie ZIP (the archive arrives from the user
 # through the GUI/CLI; without bounds a 100-kilobyte archive was unpacked into memory).
@@ -137,7 +140,10 @@ def parse_any_cookies(raw_text: str) -> list[dict[str, Any]]:
                 if sanitized:
                     return sanitized
         except Exception:
-            pass
+            # Fall through to the Netscape parser, but leave a trace: a JSON
+            # cookie payload that fails to parse silently looked like "0 cookies
+            # imported" with no hint why.
+            logger.warning("cookie payload looked like JSON but failed to parse; trying Netscape", exc_info=True)
     return parse_netscape_cookies(text)
 
 

@@ -73,7 +73,7 @@ class _PageSession:
                 try:
                     await (closer.close() if closer is self._browser else closer.stop())
                 except Exception:
-                    pass
+                    logger.debug("warmup session cleanup step failed", exc_info=True)
         self._browser = None
         self._pw = None
         self.page = None
