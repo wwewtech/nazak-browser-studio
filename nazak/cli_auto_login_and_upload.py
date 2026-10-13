@@ -125,13 +125,20 @@ async def run_live_flow():
 
     print("🌐 Launching an isolated browser with a hardware fingerprint...")
 
+    # Viewport must come from the profile's fingerprint (fix F7): a hardcoded
+    # 1280x800 contradicted the spoofed screen metrics (screen.width /
+    # devicePixelRatio from the fingerprint), which a consistency check reads
+    # in one line.
+    fp_screen = getattr(target_prof.fingerprint, "screen_width", None) or 1280
+    fp_height = getattr(target_prof.fingerprint, "screen_height", None) or 800
+
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             executable_path=chrome_exe,
             headless=False,
             args=extra_args,
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": int(fp_screen), "height": int(fp_height)},
         )
 
         page = context.pages[0] if context.pages else await context.new_page()
