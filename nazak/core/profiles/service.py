@@ -87,6 +87,11 @@ class ProfileService:
                     raise ValueError(f"Profile with id '{profile.id}' already exists")
             profile = self._prepare_for_write(profile, None)
             self.profiles[profile.id] = profile
+            # C-01: an explicit re-create clears any delete tombstone so the
+            # JSON merge keeps the profile from now on.
+            forget_deleted = getattr(self.backend, "forget_deleted", None)
+            if callable(forget_deleted):
+                forget_deleted(profile.id)
             self.backend.save_all(self.profiles)
             return profile
 
@@ -114,6 +119,11 @@ class ProfileService:
                 return False
             self.profiles.pop(profile_id, None)
             backend = self.backend
+            # C-01: record the deliberate delete so the cross-process merge in
+            # the JSON backend never resurrects this id from a foreign write.
+            note_deleted = getattr(backend, "note_deleted", None)
+            if callable(note_deleted):
+                note_deleted(profile_id)
             delete_one = getattr(backend, "delete_one", None)
             if callable(delete_one):
                 delete_one(profile_id)

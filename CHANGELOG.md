@@ -8,7 +8,7 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1010 passed, 5 deselected** (1015 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1013 passed, 5 deselected** (1018 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -29,6 +29,17 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   are recognised, and the port now survives the split (it used to degrade to 8080).
 - **Trailing separator (P-05).** `host:1080|` left the pipe in the port segment ("1080|"),
   silently degrading the port to the default; trailing `|`/`#` are now stripped.
+
+### Concurrency & storage (hunt round 3)
+
+- **Cross-process lost update (C-01).** Two ProfileManager instances over one
+  `profiles.json` (GUI open + CLI `profile create`, two windows, a script) silently erased
+  each other's work: instance A saved last and clobbered every profile instance B had
+  written since A's read. The JSON backend now remembers the store state (mtime+size) it
+  last saw; when a save detects a foreign rewrite it reloads the on-disk state and merges
+  unknown ids before writing — with a delete-tombstone set so a merge never resurrects a
+  profile this instance deliberately deleted (an explicit re-create clears the tombstone).
+  Thread-level concurrency was verified loss-free under a 4×20 hammer.
 
 ### Bundle & cookie round-trip (same hunting round)
 

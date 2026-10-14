@@ -48,11 +48,22 @@ class JsonProfileBackend(ProfileBackend):
         self.profiles_file = profiles_file
         self.profiles_dir = profiles_dir
         self._write_lock = threading.RLock()
+        # Hunt C-01: remember the store state we last SAW (mtime+size) so a
+        # save can detect that another PROCESS (GUI + CLI, two windows)
+        # rewrote profiles.json in the meantime and merge instead of
+        # clobbering their work — a classic lost-update.
+        self._seen_stat: tuple[float, int] | None = None
+        # Ids deleted through THIS instance: the merge must never resurrect
+        # them (a foreign process still holding them would otherwise undo our
+        # delete on every save).
+        self._deleted_ids: set[str] = set()
 
     # -- load -----------------------------------------------------------
     def load_all(self) -> dict[str, BrowserProfile]:
         if not self.profiles_file.exists():
+            self._seen_stat = None
             return {}
+        self._seen_stat = self._stat()
         try:
             with open(self.profiles_file, encoding="utf-8") as f:
                 data = json.load(f)
@@ -95,8 +106,43 @@ class JsonProfileBackend(ProfileBackend):
     # -- save -----------------------------------------------------------
     # NOTE: on-disk format stays a bare JSON list (compat with 725 tests and
     # existing installs). The versioned envelope is accepted on load only.
+    def _stat(self) -> tuple[float, int] | None:
+        try:
+            st = self.profiles_file.stat()
+            return (st.st_mtime, st.st_size)
+        except OSError:
+            return None
+
+    def note_deleted(self, profile_id: str) -> None:
+        """Record a deliberate delete (C-01): the merge must not resurrect it."""
+        self._deleted_ids.add(profile_id)
+
+    def forget_deleted(self, profile_id: str) -> None:
+        """An explicit re-create of the same id clears the tombstone."""
+        self._deleted_ids.discard(profile_id)
+
     def save_all(self, profiles: dict[str, BrowserProfile]) -> None:
         with self._write_lock:
+            # Hunt C-01 (lost update): if another PROCESS rewrote profiles.json
+            # after we last read it (GUI open + CLI profile create, two
+            # windows, a script...), a plain save would silently erase their
+            # work. Reload the foreign state and merge: foreign ids we do not
+            # hold are kept; our ids win (we are the newer intent) EXCEPT ids
+            # this instance deliberately deleted (a merge must not resurrect
+            # our own deletes — the same id recreated later wins normally).
+            foreign_wrote = self._seen_stat is not None and self._stat() != self._seen_stat
+            if foreign_wrote:
+                foreign = self._load_raw_for_merge()
+                merged_foreign = 0
+                for pid, prof in foreign.items():
+                    if pid not in profiles and pid not in self._deleted_ids:
+                        profiles = {**profiles, pid: prof}
+                        merged_foreign += 1
+                if merged_foreign:
+                    logger.info(
+                        "profiles.json changed on disk by another process; merged %d foreign profile(s)",
+                        merged_foreign,
+                    )
             self.profiles_file.parent.mkdir(parents=True, exist_ok=True)
             tmp_file = self.profiles_file.with_name(f"{self.profiles_file.name}.{uuid.uuid4().hex}.tmp")
             try:
@@ -120,6 +166,7 @@ class JsonProfileBackend(ProfileBackend):
                                 tmp_file.unlink(missing_ok=True)
                             except Exception:
                                 pass
+                self._seen_stat = self._stat()
                 self._rotate_backups()
             finally:
                 if tmp_file.exists():
@@ -127,6 +174,31 @@ class JsonProfileBackend(ProfileBackend):
                         tmp_file.unlink(missing_ok=True)
                     except Exception:
                         pass
+
+    def _load_raw_for_merge(self) -> dict[str, BrowserProfile]:
+        """Load the on-disk state for merging (no corrupt-backup side effects)."""
+        try:
+            with open(self.profiles_file, encoding="utf-8") as f:
+                data = json.load(f)
+            items = data.get("profiles", []) if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                return {}
+            loaded: dict[str, BrowserProfile] = {}
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    if isinstance(item.get("proxy"), dict):
+                        item["proxy"] = unprotect_proxy_fields(item["proxy"])
+                    prof = BrowserProfile(**item)
+                    prof.status = ProfileStatus.STOPPED
+                    prof.pid = None
+                    loaded[prof.id] = prof
+                except Exception:
+                    continue
+            return loaded
+        except Exception:
+            return {}
 
     def _rotate_backups(self) -> None:
         try:
