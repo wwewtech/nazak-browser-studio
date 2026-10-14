@@ -169,9 +169,22 @@ def test_media_devices_types():
 
 
 def test_battery_spoof_config_defaults():
+    # F-19: battery states vary like real laptops (plugged in, draining,
+    # mid-charge) — a farm of always-charging/always-full batteries is a
+    # statistical outlier. Sanity: a plausible level, never 0 or >1.
     fp = generate_random_fingerprint("windows")
-    assert fp.battery.charging is True
-    assert fp.battery.level >= 0.9
+    assert 0.0 < fp.battery.level <= 1.0
+    if fp.battery.charging:
+        assert fp.battery.level > 0.05
+    else:
+        assert fp.battery.charging_time >= 0
+    # Across a sample the states must actually vary (the old behaviour was
+    # charging=True + level in {0.95, 0.98, 1.0} for every profile).
+    states = set()
+    for _ in range(40):
+        b = generate_random_fingerprint("windows").battery
+        states.add((b.charging, round(b.level, 2)))
+    assert len(states) > 5, f"battery states did not vary: {sorted(states)[:10]}"
 
 
 def test_webrtc_policy_is_set():
