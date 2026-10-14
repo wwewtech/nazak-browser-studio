@@ -196,10 +196,13 @@ with sync_playwright() as p:
 
 ---
 
-## 🗂 Project Layout (v1.12.0)
+## 🗂 Project Layout (v1.13.0)
 
-The v1.12.0 release decomposed the two monoliths and gave the GUI one task runner.
-Compatibility is preserved: every old import path and `patch()` target still works.
+The v1.13.0 tree keeps the decomposed layout introduced in v1.12.0 (two former
+monoliths split into routers and a profiles package, one task runner for the GUI)
+and layers a shared secret masker (`nazak/core/secret_masking.py`) used by both
+the API and the CLI. Compatibility is preserved: every old import path and
+`patch()` target still works.
 
 | Area | Where it lives now |
 |---|---|
@@ -298,9 +301,16 @@ busy-guard, cancel, error, progress) and `tests/test_p1_platform_hardening.py`
 version consistency across the release artefacts, documentation links and
 English-only docs).
 
-Anti-detect hardening (unreleased): `tests/test_human_cursor.py` (cursor overshoot rate,
+Anti-detect hardening (v1.12.2): `tests/test_human_cursor.py` (cursor overshoot rate,
 asymmetric speed peak, no teleport jumps) and `tests/test_noise_freshness.py` (per-call
 reseed of canvas/audio/rect noise, all hooks intact).
+
+Reliability & anti-detect cleanup (v1.13.0): `tests/test_launcher_registry_concurrency.py`
+(thread-hammer stop/is_running, 50 parallel registrations vs a sweeping monitor, RLock
+reentrancy, DevTools-poll early return), `tests/test_frozen_build_contract.py` (every
+nazak module reachable from main.py via static imports; spec excludes never shadow a
+module), `tests/test_secret_masking.py` (one masking contract for the CLI and API
+surfaces) and `tests/test_synchronizer_stop_contract.py` (pump-join on stop/restart).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 

@@ -35,8 +35,8 @@ NazakBrowserStudio.exe list                           # the legacy alias works t
 
 | Group | Commands | GUI source |
 |---|---|---|
-| `profile` | `list [--group] · get <id> · create --name --group --proxy --os --target-page --tags · update <id> [--name/--group/--proxy] · delete <id> · clone <id> [--new-name] · launch <id> [--url --cdp-port] · stop <id> · batch-launch/batch-stop --profiles --all · bulk-import [--file/stdin] --group --target-page · mass-generate --count 1..200 --os-mix --tags --file --notes · fingerprint --os · clear-cache <id> · seed-history <id> --count 5..100 · bundle-export <id> [--out] · bundle-import <file> [--new-name]` | ProfilesView + dialogs |
-| `cookie` | `import <id> [--file/stdin] · export <id> --format json\|netscape [--out] · bulk-import [--file/stdin] --group [--no-autocreate] · bulk-export --profiles/--all --format json\|zip [--out]` | BatchCookieDialog, CookieManagerDialog |
+| `profile` | `list [--group] · get <id> · create --name --group --proxy --os --target-page --tags · update <id> [--name/--group/--proxy] · delete <id> · clone <id> [--new-name] · launch <id> [--url --cdp-port] · stop <id> · batch-launch/batch-stop --profiles <CSV\|all> [--all] · bulk-import [--file/stdin] --group --target-page · mass-generate --count 1..200 --os-mix --tags --file --notes · fingerprint --os · clear-cache <id> · seed-history <id> --count 5..100 · bundle-export <id> [--out] · bundle-import <file> [--new-name]` | ProfilesView + dialogs |
+| `cookie` | `import <id> [--file/stdin] · export <id> --format json\|netscape [--out] · bulk-import [--file/stdin] --group [--no-autocreate] · bulk-export --profiles <CSV\|all>/--all --format json\|zip\|netscape [--out]` | BatchCookieDialog, CookieManagerDialog |
 | `proxy` | `check <id> · check-all · test <raw\|@file> · rotate <id>` | ProxiesView |
 | `warmup` | `plan <id> --niche ecommerce\|finance\|tech\|travel\|crypto --steps · launch <id> ...` | WarmupView |
 | `scenario` | `list · run --scenario <id\|alias> [--scenario-file] --profiles/--all --concurrency --wait` (aliases: `ecommerce_trust_booster`, `youtube_shorts_warmup`, `crypto_web3_farming`, `finance_high_cpc_banking`) | WarmupView + API |
@@ -186,6 +186,10 @@ glance. The plan to make SQLite the default is in [CHANGELOG.md](../CHANGELOG.md
 - GUI background: `nazak/gui/task_bridge.py` (`TaskBridge`: one QThread, busy-guard,
   `cancel()`, headless inline for tests) + `nazak/gui/tasks.py` (Qt-free
   tasks); `nazak/gui/workers.py` — adapters with the same signals as before.
+- Secret masking: `nazak/core/secret_masking.py` — the single implementation
+  shared by the CLI (`mask_proxy_dict`) and the API
+  (`security._mask_proxy_for_api`); masks `password`, the password segment of
+  `raw` in both documented forms and `rotation_url`.
 
 ## 6. Exit Codes and Errors
 

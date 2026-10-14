@@ -236,7 +236,7 @@ Provides a compatible subset of the Dolphin{anty} v1.0 local automation protocol
 ### Endpoints:
 
 #### `GET /v1.0/browser_profiles`
-Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags. Proxy credentials are always masked in responses: `password`, `raw` and `rotation_url` become `"***"` (the `user:pass@` part of `raw` is redacted too) — credentials never leave the machine in plaintext. Echoing a masked body back to `PUT /api/profiles/{id}` keeps the stored value instead of overwriting it.
+Retrieves the list of all profiles with their live execution statuses, attached proxies, CDP endpoints, and tags. Proxy credentials are always masked in responses: `password`, `raw` and `rotation_url` become `"***"` — the password is redacted from `raw` positionally in both documented shapes (`user:pass@host` and `host:port:user:pass`; one shared masker, `nazak/core/secret_masking.py`, serves this API and the CLI) — credentials never leave the machine in plaintext. Echoing a masked body back to `PUT /api/profiles/{id}` keeps the stored value instead of overwriting it.
 - **Response `200 OK`**:
 ```json
 {

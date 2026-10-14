@@ -108,7 +108,7 @@ exact repros; this pass closed every one of them:
 ## v1.12.2 — Anti-Detect Hardening (Behaviour, Consistency, Network) (2026-10-13)
 
 Suite: **951 passed, 5 deselected** (974 collected at release time; the 18 `xfail`-marked
-open bugs listed here were fixed in the next pass — see the Unreleased entry above).
+open bugs listed here were fixed in the next pass — see the v1.12.3/v1.13.0 entries above).
 `ruff check`, `ruff format --check` and `mypy nazak` clean; CI green on all 12 jobs
 (Windows + Ubuntu × Python 3.10–3.13, each with a SQLite-backend leg).
 
@@ -318,7 +318,7 @@ for one release — `build_oauth_auth_url` state encoding; `parse_netscape_cooki
 fidelity; `check_proxy_health` on SOCKS4; `generate_warmup_urls` query encoding; mid-flight
 batch cancel; `bulk-export` netscape; `synchronizer/start` validation; `test-proxy` DIRECT
 degradation; and the CLI exit-code classes. **All 18 were fixed in the following pass** —
-see the Unreleased entry at the top of this changelog.
+see the v1.13.0 entry at the top of this changelog.
 
 
 
