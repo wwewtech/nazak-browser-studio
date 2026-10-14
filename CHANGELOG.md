@@ -2,6 +2,57 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## Unreleased — Reliability & Anti-Detect Cleanup (9 fixes)
+
+Suite: **985 passed, 5 deselected** (990 collected; 0 `xfail`). `ruff check`,
+`ruff format --check` and `mypy nazak` clean. The opt-in **live Chromium smoke
+job ran for the first time and is green** (real-browser stealth + XSS probes).
+
+- **Thread-safe browser registry (F1).** All six launcher state dicts
+  (processes, pids, CDP ports/WS, injectors, forwarders) are mutated by the GUI
+  thread, TaskBridge workers, the API pool and the process monitor at once, and
+  `is_profile_running()` does multi-step read-then-pop sequences that could
+  silently drop a pid and leak a Chrome process. One `RLock` now guards every
+  access; `tests/test_launcher_registry_concurrency.py` hammers stop/is_running
+  from four threads and pins the invariants.
+- **DevTools polling instead of `sleep(4)` (F2).** New async
+  `BrowserLauncher.wait_for_cdp()` returns as soon as `DevToolsActivePort`
+  appears (or the assigned port answers `/json/version`): the fixed 4 s pause
+  after launch wasted time when CDP was up in 0.5 s and raced a slow disk. The
+  upload queue and the GUI autopost task use it; a CDP timeout now fails the
+  job loudly AND sweeps the launched browser instead of leaking it.
+- **Swallowed failures now leave a trace (F3).** Audited every bare
+  `except Exception: pass` (41 suspicious of 121). Business-level swallows now
+  log: a corrupt profile record skipped from `profiles.json` (with the dropped
+  id), an unreadable cookie payload, a failed SQLite commit-on-close, the
+  "why no URL" case after a published upload. Best-effort cleanup keeps its
+  silent pass on purpose.
+- **Frozen-build contract tests (F4).** Every `nazak/*.py` module must be
+  reachable from `nazak/main.py` through static imports — a dynamically
+  imported module would be silently missing from the frozen exe. The walk
+  found one real orphan: `gui/views/secrets_mode_card.py`, a leftover
+  superseded by the inline SettingsView card, imported nowhere — removed.
+- **Timezone fallback sanity (F5).** Without tzdata, `calculate_tz_offset`
+  fell back to a static table that could return a winter offset in summer —
+  now logged as a warning, and an unknown zone falls back to UTC (0) instead
+  of an arbitrary America/New_York (+300).
+- **One shared secret masker (F6).** `mask_proxy_dict` (CLI) and
+  `_mask_proxy_for_api` (API) implemented the same masking twice, and each
+  had a gap the other had closed. Both now delegate to
+  `nazak.core.secret_masking` (positional password masking for URL and colon
+  forms); `tests/test_secret_masking.py` pins the contract and asserts the
+  surfaces cannot drift apart.
+- **Auto-login viewport from the fingerprint (F7).** The standalone
+  auto-login flow hardcoded 1280×800 while the stealth layer spoofed the
+  profile's screen metrics — window size contradicted `screen.width`, a
+  one-line consistency tell. The viewport now comes from the fingerprint.
+- **Synchronizer stop contract pinned (F8).** `stop_session()` already joined
+  the pump thread (Playwright objects are thread-affine); two contract tests
+  now guard the join and the restart path so it cannot regress.
+- **Live Chromium smoke ran (F9).** The opt-in `live-browser-smoke` CI job
+  executed for the first time and passed: real Chromium launches with the
+  stealth layer applied, synchronizer replication and dashboard XSS probes.
+
 ## v1.12.3 — All 18 Documented Bugs Fixed, Zero xfail (2026-10-13)
 
 Suite: **969 passed, 5 deselected** (974 collected; **0 `xfail`** — every previously documented

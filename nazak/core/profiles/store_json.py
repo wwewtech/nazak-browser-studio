@@ -77,7 +77,7 @@ class JsonProfileBackend(ProfileBackend):
                     # but the operator has to know the profile was dropped:
                     # a silent skip made "where did my profile go?" undebuggable.
                     logger.warning(
-                        "profiles.json: skipping unreadable record id=%r: %s",
+                        "profiles.json: skipping unreadable record id=%r",
                         (item or {}).get("id") if isinstance(item, dict) else "?",
                         exc_info=True,
                     )
