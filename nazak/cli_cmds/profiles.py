@@ -422,8 +422,14 @@ def cmd_bulk_import(args, opt: GlobalOptions) -> int:
     pm, _ = get_managers()
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     created = 0
+    skipped: list[str] = []
     for idx, line in enumerate(lines, start=len(pm.list_profiles()) + 1):
-        proxy = ProxyConfig.parse(line)
+        try:
+            proxy = ProxyConfig.parse(line)
+        except ValueError as exc:
+            # P-03: an explicitly invalid port fails this line loudly.
+            skipped.append(f"{line[:60]} ({exc})")
+            continue
         fp = generate_random_fingerprint(os_type="windows")
         prof = BrowserProfile(
             name=f"Profile {idx:02d} ({proxy.host or 'Direct'})",
@@ -434,7 +440,13 @@ def cmd_bulk_import(args, opt: GlobalOptions) -> int:
         )
         pm.create_profile(prof)
         created += 1
-    return emit_success(f"Импортировано профилей: {created}", opt, {"created_count": created})
+    extra: dict = {"created_count": created}
+    if skipped:
+        console.print(f"[yellow]Пропущено строк с некорректным портом: {len(skipped)}[/yellow]")
+        for s in skipped[:5]:
+            console.print(f"[dim]  {s}[/dim]")
+        extra["skipped"] = skipped
+    return emit_success(f"Импортировано профилей: {created}", opt, extra)
 
 
 def cmd_mass_generate(args, opt: GlobalOptions) -> int:

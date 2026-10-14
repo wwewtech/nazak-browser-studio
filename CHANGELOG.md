@@ -8,9 +8,27 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **985 passed, 5 deselected** (990 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **988 passed, 5 deselected** (993 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Proxy parser correctness (found by the second hunting round)
+
+- **Colon-form password with `@` (P-02).** `host:port:user:p@ss` was captured by the
+  `'@'`-branch first: rsplit made `host='ss'` and `password='8080:user:p'` — a "working"
+  ProxyConfig pointing at a garbage host. A colon form whose first two segments are
+  `host:digits` now wins over the `'@'` heuristic.
+- **Silent port substitution (P-03).** An explicitly out-of-range port (`99999`, `0`) was
+  silently replaced with the default — the operator inserted a typo and got a "working"
+  proxy on the wrong port. Out-of-range digits now raise `ValueError`; bulk import and
+  mass-generate skip the broken line with a report instead of killing the batch, and the
+  PUT merge path keeps the stored proxy (merge, never destroy).
+- **`#rotation=` separator (P-04).** Only a literal `#http` was recognised, so the common
+  `host:port#rotation=http://…` spelling fell through and the rotation tail was mis-parsed
+  as credentials — destroying host, port and rotation at once. `#rotation=`/`#rotate=`/`#url=`
+  are recognised, and the port now survives the split (it used to degrade to 8080).
+- **Trailing separator (P-05).** `host:1080|` left the pipe in the port segment ("1080|"),
+  silently degrading the port to the default; trailing `|`/`#` are now stripped.
 
 ### Cluster signatures (the farm tells — fixed first)
 

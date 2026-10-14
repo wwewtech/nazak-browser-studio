@@ -20,13 +20,24 @@ class ProxyType(str, Enum):
 
 
 def sanitize_port(port_val: Any, default: int = 8080) -> int:
+    """Normalize a port value.
+
+    Bug fix (P-03): an EXPLICITLY given but out-of-range port (`99999`, `0`)
+    used to be silently replaced with the default — the operator inserted a
+    typo and got a "working" proxy pointing at the wrong port. Out-of-range
+    digits now raise ValueError (the caller decides how to report it);
+    a missing or non-numeric port still falls back to the default because
+    "host without a port" is a legitimate shorthand.
+    """
+    if port_val is None or (isinstance(port_val, str) and not port_val.strip()):
+        return default
     try:
         p = int(port_val)
-        if 1 <= p <= 65535:
-            return p
     except (ValueError, TypeError):
-        pass
-    return default
+        return default
+    if not (1 <= p <= 65535):
+        raise ValueError(f"Invalid proxy port {port_val!r}: must be 1..65535")
+    return p
 
 
 class ProxyConfig(BaseModel):
@@ -66,14 +77,21 @@ class ProxyConfig(BaseModel):
         rotation_url = None
 
         # Check for rotation URL delimiter (| or # or :http/https)
+        # Bug fix (P-04): the hash-branch only recognised a literal "#http",
+        # so the equally common `host:port#rotation=http://…` and
+        # `#rotate=`/`#url=` spellings fell through and were mis-parsed as
+        # credentials (user='//rot.example'), destroying the host/port too.
         if "|" in text and ("http://" in text or "https://" in text):
             p_part, r_part = text.split("|", 1)
             text = p_part.strip()
             rotation_url = r_part.strip()
-        elif "#http" in text:
+        elif re.search(r"#(?:https?://|rotation=|rotate=|url=)", text):
             p_part, r_part = text.split("#", 1)
             text = p_part.strip()
             rotation_url = r_part.strip()
+            # Normalise the "rotation=" style so downstream gets a plain URL.
+            if "=" in rotation_url and not rotation_url.lower().startswith(("http://", "https://")):
+                rotation_url = rotation_url.split("=", 1)[1].strip()
         else:
             # Check for colon-separated rotation URL (e.g. host:port:u:p:http://...)
             # Find the last occurrence of http:// or https:// if it's preceded by a colon or space
@@ -85,6 +103,10 @@ class ProxyConfig(BaseModel):
                     break
 
         text = text.rstrip("/").lstrip(":")
+        # A trailing separator with no URL behind it (e.g. "host:1080|") used
+        # to survive into the port segment ("1080|") and silently degrade the
+        # port to the default.
+        text = text.rstrip("|#")
         scheme = None
 
         # Check for scheme prefix (http://, socks5://, etc)
@@ -116,26 +138,36 @@ class ProxyConfig(BaseModel):
                 )
 
         # Case 1: user:pass@host:port
+        # Bug fix (P-02): the colon form `host:port:user:p@ss` (a password
+        # containing '@') used to be captured by the '@'-branch first:
+        # rsplit('@') made host='ss' and password='8080:user:p' — a "working"
+        # ProxyConfig pointing at a garbage host. A colon form whose FIRST TWO
+        # segments are host:digits must win over the '@' heuristic.
         if "@" in text:
-            auth_part, net_part = text.rsplit("@", 1)
-            u_parts = auth_part.split(":", 1)
-            username = unquote(u_parts[0])
-            password = unquote(u_parts[1]) if len(u_parts) > 1 else ""
+            head = text.split(":", 1)[0]
+            head_is_hostish = bool(re.match(r"^[A-Za-z0-9._\-\[\]]+$", head))
+            second_seg = text.split(":")[1] if ":" in text else ""
+            second_is_port = second_seg.isdigit()
+            if not (head_is_hostish and second_is_port):
+                auth_part, net_part = text.rsplit("@", 1)
+                u_parts = auth_part.split(":", 1)
+                username = unquote(u_parts[0])
+                password = unquote(u_parts[1]) if len(u_parts) > 1 else ""
 
-            host_parts = net_part.split(":")
-            host = host_parts[0]
-            port = sanitize_port(
-                host_parts[1] if len(host_parts) > 1 else None, 1080 if default_scheme == ProxyType.SOCKS5 else 8080
-            )
-            return cls(
-                type=default_scheme,
-                host=host,
-                port=port,
-                username=username,
-                password=password,
-                rotation_url=rotation_url,
-                raw=raw_str,
-            )
+                host_parts = net_part.split(":")
+                host = host_parts[0]
+                port = sanitize_port(
+                    host_parts[1] if len(host_parts) > 1 else None, 1080 if default_scheme == ProxyType.SOCKS5 else 8080
+                )
+                return cls(
+                    type=default_scheme,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    rotation_url=rotation_url,
+                    raw=raw_str,
+                )
 
         # Case 2: Multi-part colon separated (host:port, host:port:user:pass, user:pass:host:port, host:port:user)
         parts = text.split(":")

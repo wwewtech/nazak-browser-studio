@@ -2,6 +2,7 @@
 Profiles router (P0 refactor). Moved verbatim from nazak/api/server.py.
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -22,6 +23,8 @@ from ..security import (
     _require_launch_url,
     validate_pid,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Profiles"])
 
@@ -231,9 +234,17 @@ async def bulk_import_profiles(req: BulkImportRequest):
             detail=f"Too many proxy lines: {len(lines)} (max {MAX_BULK_IMPORT_LINES})",
         )
     created_list = []
+    skipped: list[dict] = []
 
     for idx, line in enumerate(lines, start=len(profile_manager.list_profiles()) + 1):
-        proxy_conf = ProxyConfig.parse(line)
+        try:
+            proxy_conf = ProxyConfig.parse(line)
+        except ValueError as exc:
+            # P-03: an explicit invalid port must fail LOUDLY for this line —
+            # the operator sees exactly which entry is broken — but not kill
+            # the rest of the batch.
+            skipped.append({"line": line[:80], "error": str(exc)})
+            continue
         fp = generate_random_fingerprint(os_type="windows")
         google_set = GoogleSettings(auto_open_page=req.target_page, tags=["Bulk Import", req.group])
         prof = BrowserProfile(
@@ -247,7 +258,11 @@ async def bulk_import_profiles(req: BulkImportRequest):
         created_list.append(saved)
 
     await deps.broadcast_coro("profiles_bulk_created", {"count": len(created_list)})
-    return {"created_count": len(created_list)}
+    result: dict = {"created_count": len(created_list)}
+    if skipped:
+        result["skipped"] = skipped
+        logger.warning("bulk-import skipped %d malformed proxy line(s)", len(skipped))
+    return result
 
 
 @router.post("/api/profiles/mass-generate", summary="1-Click mass profile generator (1-100+ farm)")

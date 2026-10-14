@@ -39,20 +39,27 @@ def merge_proxy(incoming: ProxyConfig, stored: ProxyConfig, fields_set: set[str]
         raw = (incoming.raw or "").strip()
         if not raw or raw.lower() in ("direct", "none", "null"):
             return ProxyConfig(type=ProxyType.DIRECT, raw=raw or None)
-        if MASK in raw:
-            parsed = ProxyConfig.parse(raw)
-            merged.host = parsed.host if parsed.host is not None else stored.host
-            merged.port = parsed.port if parsed.port is not None else stored.port
-            merged.username = parsed.username if parsed.username not in (None, "", MASK) else stored.username
-            merged.password = stored.password if parsed.password in (None, "", MASK) else parsed.password
-            merged.type = parsed.type
-            merged.rotation_url = stored.rotation_url if parsed.rotation_url is None else parsed.rotation_url
-            merged.raw = raw_from_proxy(merged)
-        else:
-            parsed = ProxyConfig.parse(raw)
-            if parsed.rotation_url is None and "rotation_url" not in fields_set:
-                parsed.rotation_url = stored.rotation_url
-            merged = parsed
+        try:
+            if MASK in raw:
+                parsed = ProxyConfig.parse(raw)
+                merged.host = parsed.host if parsed.host is not None else stored.host
+                merged.port = parsed.port if parsed.port is not None else stored.port
+                merged.username = parsed.username if parsed.username not in (None, "", MASK) else stored.username
+                merged.password = stored.password if parsed.password in (None, "", MASK) else parsed.password
+                merged.type = parsed.type
+                merged.rotation_url = stored.rotation_url if parsed.rotation_url is None else parsed.rotation_url
+                merged.raw = raw_from_proxy(merged)
+            else:
+                parsed = ProxyConfig.parse(raw)
+                if parsed.rotation_url is None and "rotation_url" not in fields_set:
+                    parsed.rotation_url = stored.rotation_url
+                merged = parsed
+        except ValueError:
+            # P-03: an explicitly invalid port in the incoming raw string.
+            # The PUT contract is "merge, never destroy": a broken replacement
+            # value keeps the stored proxy instead of failing the whole update
+            # (the caller still sees the old raw, not a half-written one).
+            pass
 
     for field in fields_set - {"raw"}:
         if field not in ProxyConfig.model_fields:

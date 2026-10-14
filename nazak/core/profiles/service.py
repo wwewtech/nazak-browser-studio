@@ -335,7 +335,17 @@ class ProfileService:
         count = max(1, min(int(count), MAX_MASS_GENERATE_COUNT))
 
         created_profiles: list[BrowserProfile] = []
-        proxies_parsed = [ProxyConfig.parse(p) for p in (proxy_list or []) if p and p.strip()]
+        # P-03: an explicitly invalid port raises ValueError from parse —
+        # such pool entries are skipped with a log instead of killing the
+        # whole mass-generate batch.
+        proxies_parsed = []
+        for p in proxy_list or []:
+            if not (p and p.strip()):
+                continue
+            try:
+                proxies_parsed.append(ProxyConfig.parse(p))
+            except ValueError as exc:
+                logger.warning("mass-generate: skipping bad proxy line %r: %s", p[:80], exc)
 
         os_types = ["windows"]
         if os_mix == "mac":
