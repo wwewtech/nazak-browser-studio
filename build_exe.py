@@ -36,7 +36,7 @@ ISS_FILE = ROOT_DIR / "installer.iss"
 
 # Dynamically extract version from package
 # Audit R3: fallback обновляется вместе с версией пакета (был "1.9.1", затем "1.10.0").
-_FALLBACK_VERSION = "1.12.3"
+_FALLBACK_VERSION = "1.13.0"
 try:
     import re
 

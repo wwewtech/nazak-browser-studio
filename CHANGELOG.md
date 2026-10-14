@@ -2,7 +2,7 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — Reliability & Anti-Detect Cleanup (9 fixes)
+## v1.13.0 — Reliability & Anti-Detect Cleanup (2026-10-14)
 
 Suite: **985 passed, 5 deselected** (990 collected; 0 `xfail`). `ruff check`,
 `ruff format --check` and `mypy nazak` clean. The opt-in **live Chromium smoke
