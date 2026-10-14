@@ -101,6 +101,14 @@ def cookies_to_netscape(cookies: list[dict[str, Any]]) -> str:
             expires = "0"
 
         name = str(c.get("name", "")).strip()
+        # Hunt H-10: a tab inside the name makes the entry UNREPRESENTABLE in
+        # the tab-separated Netscape format — it would silently corrupt the
+        # row (the parser reads a mangled name back). Such cookies are
+        # skipped with an explicit marker line instead of being lost quietly;
+        # the JSON export path preserves them.
+        if "\t" in name or "\t" in str(c.get("value", "")):
+            lines.append(f"# SKIPPED (tab in name/value is not representable in Netscape): {name[:60]}")
+            continue
         # Preserve the value byte-for-byte: a strip() here broke the round-trip
         # fidelity (trailing/leading spaces in values never survived export).
         value = str(c.get("value", ""))

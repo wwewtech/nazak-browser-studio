@@ -85,6 +85,31 @@ def export_bundle(
     return out_file
 
 
+_WIN_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+
+
+def _safe_extract_name(rel_path: Path) -> bool:
+    """Hunt H-12: reject names Windows silently mangles or swallows.
+
+    - `CON.txt` / `NUL.bin` etc. open a DEVICE (or vanish) on Windows — the
+      entry was silently lost while the bundle reported success.
+    - A trailing dot/space (`trailing. `) is stripped by Win32: the file on
+      disk no longer matches its archive name.
+    - Names with control characters are never legitimate profile data.
+    """
+    for part in rel_path.parts:
+        stem = part.split(".")[0].upper()
+        if stem in _WIN_RESERVED_NAMES:
+            return False
+        if part != part.rstrip(". "):
+            return False
+        if any(ord(ch) < 0x20 for ch in part):
+            return False
+    return True
+
+
 def import_bundle(profiles_dir: Path, bundle_path: Path, new_name: str | None = None) -> BrowserProfile | None:
     if not bundle_path.exists():
         return None
@@ -94,6 +119,24 @@ def import_bundle(profiles_dir: Path, bundle_path: Path, new_name: str | None = 
     target_dir = None
     try:
         with zipfile.ZipFile(bundle_path, "r") as zf:
+            # Hunt H-12: pre-validate EVERY data/ entry name BEFORE extracting.
+            # A Windows-reserved device name silently swallowed the file while
+            # the bundle still reported success; a trailing dot/space produced a
+            # file whose on-disk name differs from the archive entry.
+            for info in zf.infolist():
+                name = info.filename
+                if not name.startswith("data/"):
+                    continue
+                if info.is_dir() or name.endswith("/"):
+                    continue
+                rel_sub = name[len("data/") :]
+                if not rel_sub:
+                    continue
+                rel_path = Path(rel_sub)
+                if rel_path.is_absolute() or rel_path.drive or ".." in rel_path.parts:
+                    continue
+                if not _safe_extract_name(rel_path):
+                    raise ValueError(f"bundle entry {name!r} uses a name that Windows cannot store faithfully")
             infos = zf.infolist()
             max_entries = _limit("MAX_BUNDLE_ENTRIES")
             max_total = _limit("MAX_BUNDLE_TOTAL_BYTES")
@@ -177,6 +220,12 @@ def import_bundle(profiles_dir: Path, bundle_path: Path, new_name: str | None = 
                 if len(cookie_blob) > _limit("MAX_BUNDLE_ENTRY_BYTES"):
                     raise ValueError("cookies.json in bundle is too large")
                 cookies = json.loads(cookie_blob.decode("utf-8"))
+                # Hunt H-12: a non-list cookies.json (e.g. an object) used to be
+                # written through as-is — the profile then silently lost its
+                # cookies on load (the JSON reader expects a list). Reject the
+                # bundle instead of importing a broken profile.
+                if not isinstance(cookies, list):
+                    raise ValueError("cookies.json in bundle must be a JSON array of cookies")
                 from ..cookie_manager import cookies_to_netscape
 
                 (target_dir / "cookies.json").write_text(json.dumps(cookies, indent=2), encoding="utf-8")

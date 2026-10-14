@@ -8,7 +8,7 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **988 passed, 5 deselected** (993 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1010 passed, 5 deselected** (1015 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -29,6 +29,24 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   are recognised, and the port now survives the split (it used to degrade to 8080).
 - **Trailing separator (P-05).** `host:1080|` left the pipe in the port segment ("1080|"),
   silently degrading the port to the default; trailing `|`/`#` are now stripped.
+
+### Bundle & cookie round-trip (same hunting round)
+
+- **Hostile bundle entries (H-12).** `data/CON.txt` / `data/NUL.bin` (Windows device
+  names) were silently swallowed during extraction while the bundle reported success —
+  data lost with an "imported" checkmark; a trailing dot/space entry (`trailing. `)
+  produced an on-disk file whose name no longer matched its archive entry. Every `data/`
+  entry name is now validated up front (reserved device stems, trailing `.`/` `,
+  control characters) and the bundle is rejected with a precise message before anything
+  is written; a rejection leaves no partial directory.
+- **`cookies.json` shape (H-12b).** A bundle whose `cookies.json` was a JSON *object*
+  (not an array) was imported happily: the file was written through as-is, the profile
+  then silently lost its cookies on load (the reader expects a list). Non-list
+  `cookies.json` now rejects the bundle.
+- **Netscape tabs (H-10).** A tab inside a cookie name/value is unrepresentable in the
+  tab-separated Netscape format — the export used to emit a row the parser reads back
+  mangled. Such cookies are now skipped with an explicit `# SKIPPED` marker line instead
+  of being silently corrupted.
 
 ### Cluster signatures (the farm tells — fixed first)
 
