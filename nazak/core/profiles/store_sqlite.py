@@ -48,6 +48,10 @@ class SqliteProfileBackend(ProfileBackend):
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        # Hunt C-05: ids this instance has LOADED; save_all deletes only
+        # those of them that disappeared from the snapshot (never foreign
+        # rows another process committed after our load).
+        self._loaded_ids: set[str] = set()
         self._ensure_schema()
         self._migrate_from_json_if_needed()
 
@@ -180,18 +184,49 @@ class SqliteProfileBackend(ProfileBackend):
                     out[prof.id] = prof
                 except Exception:
                     continue
+            # C-05: remember what WE saw — save_all may delete only these ids.
+            self._loaded_ids = set(out)
             return out
 
     def save_all(self, profiles: dict[str, BrowserProfile]) -> None:
+        """Upsert the snapshot WITHOUT wiping rows written by other processes.
+
+        Hunt C-05 (the SQLite twin of the JSON lost update): save_all used to
+        be `DELETE FROM profiles` + a full re-insert. A second process holding
+        its own connection (GUI + CLI, two windows) lost everything it had
+        committed since our load — our stale snapshot erased their rows.
+
+        Now: every profile in the snapshot is upserted (except ids tombstoned
+        in the SHARED meta table — a delete by another process must win over
+        our stale snapshot), and the ids this instance LOADED (and no longer
+        holds) are deleted individually. Rows that appeared on disk after our
+        load are foreign work and survive. A delete tombstone is still
+        written per removed id, matching delete_one, so a later JSON
+        catch-up cannot resurrect them.
+        """
         rows = []
         now = datetime.now(timezone.utc).isoformat()
+        tombstoned = self._tombstoned_ids()
         for p in profiles.values():
+            if p.id in tombstoned:
+                # Deleted by ANOTHER process (or by us): the tombstone in the
+                # shared meta table is the cross-process source of truth —
+                # our stale snapshot must not resurrect the row.
+                continue
             item = p.model_dump()
             item["proxy"] = protect_proxy_fields(item.get("proxy") or {})
             rows.append((p.id, p.updated_at or now, json.dumps(item, ensure_ascii=False)))
+        removed = sorted(self._loaded_ids - set(profiles))
         with self._lock, self._conn:
-            self._conn.execute("DELETE FROM profiles")
-            self._conn.executemany("INSERT INTO profiles(id, updated_at, data) VALUES(?, ?, ?)", rows)
+            self._conn.executemany(
+                "INSERT INTO profiles(id, updated_at, data) VALUES(?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, data=excluded.data",
+                rows,
+            )
+            for pid in removed:
+                self._conn.execute("DELETE FROM profiles WHERE id=?", (pid,))
+                self._delete_tombstone(pid)
+        self._loaded_ids = set(profiles)
 
     def save_one(self, profile: BrowserProfile) -> None:
         """Single-row upsert (avoids full-table rewrite on every keystroke)."""
@@ -221,6 +256,16 @@ class SqliteProfileBackend(ProfileBackend):
             "INSERT INTO meta(key, value) VALUES(?, '1') ON CONFLICT(key) DO UPDATE SET value='1'",
             (f"deleted:{profile_id}",),
         )
+
+    def forget_deleted(self, profile_id: str) -> None:
+        """An explicit re-create clears the tombstone (cross-process).
+
+        Mirrors the JSON backend contract: service.create calls this so a
+        deliberate re-create of a previously deleted id wins over the
+        shared tombstone in meta.
+        """
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM meta WHERE key=?", (f"deleted:{profile_id}",))
 
     def _tombstoned_ids(self) -> set[str]:
         prefix = "deleted:"

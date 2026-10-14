@@ -8,7 +8,7 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1013 passed, 5 deselected** (1018 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1015 passed, 5 deselected** (1020 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -40,6 +40,13 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   unknown ids before writing — with a delete-tombstone set so a merge never resurrects a
   profile this instance deliberately deleted (an explicit re-create clears the tombstone).
   Thread-level concurrency was verified loss-free under a 4×20 hammer.
+- **The SQLite twin of the same bug (C-05).** `save_all` used to `DELETE FROM profiles` and
+  re-insert the caller's snapshot — a second connection (another window/process) lost
+  everything it had committed since our load. `save_all` now upserts only the snapshot's
+  rows and deletes just the ids this instance previously loaded; rows that appeared after
+  our load are foreign work and survive. Ids tombstoned in the shared `meta` table are
+  skipped (a delete by another process wins over our stale snapshot), and an explicit
+  re-create clears the tombstone (`forget_deleted`, mirroring the JSON backend contract).
 
 ### Bundle & cookie round-trip (same hunting round)
 
