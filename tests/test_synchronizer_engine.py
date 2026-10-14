@@ -11,10 +11,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from nazak.core.synchronizer import (
-    SYNC_CLIENT_JS,
     SynchronizerManager,
     SynchronizerSession,
     _jittered_point,
+    sync_client_js,
     tile_windows_win32,
 )
 
@@ -122,15 +122,26 @@ def test_jittered_point_bounds_and_identity():
 def test_sync_client_js_has_install_guard():
     # audit R3-round2: брендовые имена убраны (страница могла определить Nazak),
     # но guard от двойной установки и нейтральное имя binding'а остались.
-    from nazak.core.cdp_injector import SYNC_BINDING_NAME
+    # Anti-detect F-05: имя binding'а теперь рандомизировано на профиль,
+    # шаблон подставляет его при установке.
+    from nazak.core.cdp_injector import SYNC_BINDING_NAME, random_sync_binding_name
 
-    assert "__nazakSyncInstalled" not in SYNC_CLIENT_JS
-    assert "__nazak" not in SYNC_CLIENT_JS
-    assert "__nse_c" in SYNC_CLIENT_JS
-    assert SYNC_BINDING_NAME == "__nse_ev"
-    assert SYNC_BINDING_NAME in SYNC_CLIENT_JS
+    client = sync_client_js(SYNC_BINDING_NAME)
+    assert "__nazakSyncInstalled" not in client
+    assert "__nazak" not in client
+    assert "__nse_c" in client
+    assert SYNC_BINDING_NAME in client
     for etype in ("click", "keydown", "scroll", "input"):
-        assert f"'{etype}'" in SYNC_CLIENT_JS or f'"{etype}"' in SYNC_CLIENT_JS
+        assert f"'{etype}'" in client or f'"{etype}"' in client
+
+    # F-05: two profiles must never share the same binding name.
+    names = {random_sync_binding_name() for _ in range(50)}
+    assert len(names) == 50
+    assert all(n.startswith("__nse_ev_") for n in names)
+    # ...and the rendered client contains the per-profile name, not a constant.
+    specific = sync_client_js("__nse_ev_abc123def456")
+    assert "__nse_ev_abc123def456" in specific
+    assert SYNC_BINDING_NAME in specific or "__nse_ev" in specific
 
 
 def test_submit_event_routing():

@@ -42,7 +42,15 @@ TRANSITION_POOL = [
     PAGE_TRANSITION_RELOAD,
 ]
 
+# Anti-detect (audit F-02): the original pool held exactly 25 URLs, and
+# random.sample picks min(N, 25) of them — so every profile in a farm carried
+# an (almost) identical host-set in its history. A farm of 100 profiles whose
+# Chromium histories share the same 25 domains is a one-line cluster
+# signature. The pool is now ~4x bigger with realistic weights: popular
+# services appear often (pop list), long-tail sites give every profile a
+# unique host-set (tail list).
 HIGH_TRUST_SITES = [
+    # --- popular core (appear on most real machines) ---
     ("https://www.google.com/", "Google", "search"),
     (
         "https://www.google.com/search?q=weather+forecast+this+week",
@@ -54,25 +62,112 @@ HIGH_TRUST_SITES = [
     ("https://en.wikipedia.org/wiki/Main_Page", "Wikipedia, the free encyclopedia", "organic"),
     ("https://en.wikipedia.org/wiki/Computer_science", "Computer science - Wikipedia", "organic"),
     ("https://en.wikipedia.org/wiki/Artificial_intelligence", "Artificial intelligence - Wikipedia", "organic"),
+    ("https://www.youtube.com/", "YouTube", "video"),
+    ("https://www.youtube.com/feed/trending", "Trending - YouTube", "video"),
+    ("https://www.reddit.com/", "Reddit - Dive into anything", "social"),
+    ("https://www.reddit.com/r/technology/", "Technology - Reddit", "social"),
     ("https://github.com/", "GitHub: Let’s build from here", "tech"),
     ("https://github.com/trending", "Trending repositories on GitHub today", "tech"),
     ("https://stackoverflow.com/", "Stack Overflow - Where Developers Learn, Share, & Build Careers", "tech"),
-    ("https://developer.mozilla.org/en-US/", "MDN Web Docs", "tech"),
-    ("https://www.reddit.com/", "Reddit - Dive into anything", "social"),
-    ("https://www.reddit.com/r/technology/", "Technology - Reddit", "social"),
-    ("https://www.reddit.com/r/news/", "Real-Time News - Reddit", "social"),
-    ("https://www.youtube.com/", "YouTube", "video"),
-    ("https://www.youtube.com/feed/trending", "Trending - YouTube", "video"),
+    ("https://www.amazon.com/", "Amazon.com. Spend less. Smile more.", "ecommerce"),
     ("https://news.ycombinator.com/", "Hacker News", "tech"),
     ("https://www.bbc.com/news", "BBC News - World", "news"),
+    ("https://developer.mozilla.org/en-US/", "MDN Web Docs", "tech"),
+    # --- long tail (profile-unique host-sets come from here) ---
     ("https://www.cnn.com/", "CNN - Breaking News, Latest News and Videos", "news"),
-    ("https://www.amazon.com/", "Amazon.com. Spend less. Smile more.", "ecommerce"),
-    ("https://www.cloudflare.com/", "Cloudflare - The Web Performance & Security Company", "tech"),
+    ("https://www.theguardian.com/international", "The Guardian - News", "news"),
+    ("https://www.reuters.com/", "Reuters - Breaking News", "news"),
+    ("https://apnews.com/", "AP News", "news"),
+    ("https://www.nytimes.com/", "The New York Times", "news"),
+    ("https://www.washingtonpost.com/", "The Washington Post", "news"),
+    ("https://www.aljazeera.com/", "Al Jazeera English", "news"),
+    ("https://www.dw.com/", "DW - Breaking news", "news"),
     ("https://medium.com/", "Medium – Where good ideas find you.", "reading"),
     ("https://www.quora.com/", "Quora - A place to share knowledge", "social"),
     ("https://twitter.com/", "X", "social"),
+    ("https://x.com/", "X", "social"),
     ("https://www.linkedin.com/", "LinkedIn: Log In or Sign Up", "business"),
+    ("https://www.facebook.com/", "Facebook - log in or sign up", "social"),
+    ("https://www.instagram.com/", "Instagram", "social"),
+    ("https://www.pinterest.com/", "Pinterest", "social"),
+    ("https://www.twitch.tv/", "Twitch", "video"),
+    ("https://netflix.com/", "Netflix", "video"),
+    ("https://www.hulu.com/", "Hulu", "video"),
+    ("https://www.disneyplus.com/", "Disney+", "video"),
+    ("https://www.spotify.com/", "Spotify - Web Player", "music"),
+    ("https://music.apple.com/", "Apple Music", "music"),
+    ("https://soundcloud.com/", "SoundCloud", "music"),
+    ("https://www.ebay.com/", "Electronics, Cars, Fashion, Collectibles & More | eBay", "ecommerce"),
+    ("https://www.etsy.com/", "Etsy - Shop for handmade", "ecommerce"),
+    ("https://www.aliexpress.com/", "AliExpress", "ecommerce"),
+    ("https://www.bestbuy.com/", "Best Buy", "ecommerce"),
+    ("https://www.walmart.com/", "Walmart.com", "ecommerce"),
+    ("https://www.target.com/", "Target.com", "ecommerce"),
+    ("https://www.booking.com/", "Booking.com", "travel"),
+    ("https://www.airbnb.com/", "Airbnb", "travel"),
+    ("https://www.expedia.com/", "Expedia Travel", "travel"),
+    ("https://www.tripadvisor.com/", "Tripadvisor", "travel"),
+    ("https://www.kayak.com/", "KAYAK", "travel"),
+    ("https://www.paypal.com/", "PayPal", "finance"),
+    ("https://www.chase.com/", "Chase.com", "finance"),
+    ("https://www.bankofamerica.com/", "Bank of America", "finance"),
+    ("https://www.wellsfargo.com/", "Wells Fargo", "finance"),
+    ("https://www.fidelity.com/", "Fidelity Investments", "finance"),
+    ("https://www.investopedia.com/", "Investopedia", "finance"),
+    ("https://weather.com/", "The Weather Channel", "weather"),
+    ("https://www.accuweather.com/", "AccuWeather", "weather"),
+    ("https://mail.proton.me/", "Proton Mail", "email"),
+    ("https://mail.google.com/", "Gmail", "email"),
+    ("https://outlook.live.com/", "Outlook", "email"),
+    ("https://www.dropbox.com/", "Dropbox", "cloud"),
+    ("https://drive.google.com/", "Google Drive", "cloud"),
+    ("https://onedrive.live.com/", "Microsoft OneDrive", "cloud"),
+    ("https://www.cloudflare.com/", "Cloudflare - The Web Performance & Security Company", "tech"),
+    ("https://aws.amazon.com/", "Amazon Web Services", "tech"),
+    ("https://azure.microsoft.com/", "Microsoft Azure", "tech"),
+    ("https://www.digitalocean.com/", "DigitalOcean", "tech"),
+    ("https://www.heroku.com/", "Heroku", "tech"),
+    ("https://codepen.io/", "CodePen", "tech"),
+    ("https://jsfiddle.net/", "JSFiddle", "tech"),
+    ("https://replit.com/", "Replit", "tech"),
+    ("https://www.jetbrains.com/", "JetBrains", "tech"),
+    ("https://code.visualstudio.com/", "Visual Studio Code", "tech"),
+    ("https://www.notion.so/", "Notion", "productivity"),
+    ("https://trello.com/", "Trello", "productivity"),
+    ("https://asana.com/", "Asana", "productivity"),
+    ("https://slack.com/", "Slack", "productivity"),
+    ("https://discord.com/", "Discord", "social"),
+    ("https://zoom.us/", "Zoom", "productivity"),
+    ("https://www.canva.com/", "Canva", "design"),
+    ("https://www.figma.com/", "Figma", "design"),
+    ("https://dribbble.com/", "Dribbble", "design"),
+    ("https://www.behance.net/", "Behance", "design"),
+    ("https://unsplash.com/", "Unsplash", "photo"),
+    ("https://www.pexels.com/", "Pexels", "photo"),
+    ("https://flickr.com/", "Flickr", "photo"),
+    ("https://www.imdb.com/", "IMDb", "entertainment"),
+    ("https://www.rottentomatoes.com/", "Rotten Tomatoes", "entertainment"),
+    ("https://www.metacritic.com/", "Metacritic", "entertainment"),
+    ("https://www.goodreads.com/", "Goodreads", "reading"),
+    ("https://archive.org/", "Internet Archive", "reading"),
+    ("https://www.gutenberg.org/", "Project Gutenberg", "reading"),
+    ("https://www.coursera.org/", "Coursera", "education"),
+    ("https://www.udemy.com/", "Udemy", "education"),
+    ("https://www.khanacademy.org/", "Khan Academy", "education"),
+    ("https://www.duolingo.com/", "Duolingo", "education"),
+    ("https://www.allrecipes.com/", "Allrecipes", "food"),
+    ("https://www.foodnetwork.com/", "Food Network", "food"),
+    ("https://www.healthline.com/", "Healthline", "health"),
+    ("https://www.webmd.com/", "WebMD", "health"),
+    ("https://www.mayoclinic.org/", "Mayo Clinic", "health"),
+    ("https://www.espn.com/", "ESPN", "sports"),
+    ("https://www.bbc.com/sport", "BBC Sport", "sports"),
+    ("https://www.nba.com/", "NBA", "sports"),
 ]
+
+# Weighted sampling core: the first entries above are what nearly every real
+# browsing history contains; the tail gives per-profile uniqueness.
+_POPULAR_CORE_COUNT = 18
 
 
 def datetime_to_webkit_microsec(dt: datetime) -> int:
@@ -146,11 +241,29 @@ def seed_chrome_history(
         # entries while reporting success. Pick with replacement above the pool
         # size (a human visits the same popular site many times anyway), and
         # vary the timestamp per visit so repeats look organic.
+        #
+        # Anti-detect (audit F-02): a farm whose profiles all carry the SAME
+        # host-set is a cluster signature. The popular core (sites every real
+        # machine has) is mixed with a per-profile random slice of the long
+        # tail, so two profiles share the core but differ in the tail.
         target = max(5, int(entries_count))
+        popular = HIGH_TRUST_SITES[:_POPULAR_CORE_COUNT]
+        tail = HIGH_TRUST_SITES[_POPULAR_CORE_COUNT:]
         if target <= len(HIGH_TRUST_SITES):
-            chosen_sites = random.sample(HIGH_TRUST_SITES, target)
+            core_take = min(len(popular), max(1, int(target * 0.5)))
+            chosen_sites = random.sample(popular, core_take)
+            remaining = target - len(chosen_sites)
+            if remaining > 0 and tail:
+                chosen_sites += random.sample(tail, min(remaining, len(tail)))
+            # Fill any shortfall with weighted repeats of popular sites.
+            while len(chosen_sites) < target:
+                chosen_sites.append(random.choice(popular))
         else:
-            chosen_sites = [random.choice(HIGH_TRUST_SITES) for _ in range(target)]
+            core_take = min(len(popular), max(1, int(len(HIGH_TRUST_SITES) * 0.4)))
+            chosen_sites = random.sample(popular, core_take)
+            chosen_sites += random.sample(tail, len(tail))
+            while len(chosen_sites) < target:
+                chosen_sites.append(random.choice(popular + tail))
 
         now_sec = time.time()
         inserted = 0

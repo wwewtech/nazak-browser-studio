@@ -155,22 +155,25 @@ SCREEN_RESOLUTIONS: list[dict[str, float]] = [
     {"width": 1366, "height": 768, "avail_w": 1366, "avail_h": 728, "dpr": 1.0},
 ]
 
+# Anti-detect (audit F-10): the pool reflected Chrome 130-133 while the real
+# stable channel moved on; a version share that no longer exists in the wild
+# is suspicious by itself. The pool now spans a ~1-year window of the stable
+# channel. At launch, _fingerprint_with_runtime_chrome_version() additionally
+# rebuilds the UA/brands from the REAL installed Chrome build, so the spoofed
+# identity always matches the binary that actually renders the page.
+_CHROME_UA_VERSIONS = ["142", "141", "140", "139", "138", "137", "136"]
+
 USER_AGENTS_WINDOWS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{v}.0.0.0 Safari/537.36"
+    for v in _CHROME_UA_VERSIONS
 ]
-
 USER_AGENTS_LINUX = [
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+    f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{v}.0.0.0 Safari/537.36"
+    for v in _CHROME_UA_VERSIONS
 ]
-
 USER_AGENTS_MAC = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{v}.0.0.0 Safari/537.36"
+    for v in _CHROME_UA_VERSIONS
 ]
 
 # IANA zone names with their STANDARD-time offsets in JS getTimezoneOffset() sign
@@ -223,6 +226,94 @@ def calculate_tz_offset(tz_name: str) -> int:
         return 0  # unknown zone: UTC, not an arbitrary region
 
 
+# Anti-detect (audit F-04): real machines carry wildly different audio/video
+# peripherals, and enumerateDevices() exposes the kind+label set even without
+# permission. A farm where every profile reports the SAME three labels is a
+# one-line cluster signature. Pools model the actual market distribution.
+MICROPHONE_LABELS = [
+    "Microphone (High Definition Audio Device)",
+    "Microphone (Realtek(R) Audio)",
+    "Microphone (Intel Smart Sound Technology for Digital Microphones)",
+    "Microphone Array (Intel Smart Sound Technology)",
+    "Microphone (NVIDIA Virtual Audio Device Wave Extensible) (WDM)",
+    "Mikrofon (2- USB Audio Device)",
+    "Mikrofon (Realtek(R) Audio)",
+    "Default - Microphone (Realtek High Definition Audio)",
+]
+SPEAKER_LABELS = [
+    "Speakers (Realtek High Definition Audio)",
+    "Lautsprecher (Realtek(R) Audio)",
+    "Speakers (High Definition Audio Device)",
+    "Headphones (Realtek High Definition Audio Audio)",
+    "Digital Output (S/PDIF) (High Definition Audio Device)",
+    "Headset Earphone (2- Hands-Free AG Audio)",
+]
+CAMERA_LABELS = [
+    "HD WebCam Pro",
+    "Integrated Webcam",
+    "Integrated Camera",
+    "USB2.0 HD UVC WebCam",
+    "Logitech BRIO",
+    "HD Camera",
+    "Front Full HD Camera",
+    "FaceTime HD Camera",
+]
+# Fraction of desktops with no camera at all (anti-detect audit F-04): a farm
+# where every profile has exactly one webcam is itself unusual.
+CAMERA_ABSENT_PROBABILITY = 0.08
+
+
+def _pick_media_devices() -> list[MediaDeviceInfo]:
+    """A plausible per-profile device set (kind+label hashed by detectors)."""
+    devices: list[MediaDeviceInfo] = []
+    devices.append(
+        MediaDeviceInfo(
+            kind="audioinput",
+            label=random.choice(MICROPHONE_LABELS),
+            device_id=uuid.uuid4().hex,
+            group_id=uuid.uuid4().hex,
+        )
+    )
+    devices.append(
+        MediaDeviceInfo(
+            kind="audiooutput",
+            label=random.choice(SPEAKER_LABELS),
+            device_id=uuid.uuid4().hex,
+            group_id=uuid.uuid4().hex,
+        )
+    )
+    if random.random() >= CAMERA_ABSENT_PROBABILITY:
+        devices.append(
+            MediaDeviceInfo(
+                kind="videoinput",
+                label=random.choice(CAMERA_LABELS),
+                device_id=uuid.uuid4().hex,
+                group_id=uuid.uuid4().hex,
+            )
+        )
+    return devices
+
+
+def _pick_battery() -> BatterySpoofConfig:
+    """Battery state varies like a real laptop (audit F-19).
+
+    A farm of 100 permanently-charged (charging=True, level~1.0) laptops is a
+    statistical outlier: real devices discharge during use. Mix in discharged
+    and mid-charge states with realistic times.
+    """
+    if random.random() < 0.55:
+        # Plugged in, mostly full.
+        return BatterySpoofConfig(charging=True, level=random.choice([0.95, 0.98, 1.0]), charging_time=0)
+    if random.random() < 0.5:
+        # On battery, mid-charge and draining.
+        level = random.choice([0.23, 0.41, 0.52, 0.64, 0.77, 0.85])
+        return BatterySpoofConfig(charging=False, level=level, charging_time=random.randint(30, 240))
+    # Charging from a low state.
+    return BatterySpoofConfig(
+        charging=True, level=random.choice([0.15, 0.28, 0.36]), charging_time=random.randint(40, 160)
+    )
+
+
 def generate_random_fingerprint(
     os_type: str = "windows", target_timezone: str | None = None, language: str = "en-US,en;q=0.9"
 ) -> FingerprintConfig:
@@ -260,39 +351,28 @@ def generate_random_fingerprint(
 
     langs_list = [lang.strip().split(";")[0] for lang in language.split(",") if lang.strip()]
 
-    # Extract chrome version
-    c_ver = "133"
+    # Extract chrome version (F-10: fallback tracks the pool's newest entry)
+    c_ver = _CHROME_UA_VERSIONS[0]
     if "Chrome/" in ua:
         try:
             c_ver = ua.split("Chrome/")[1].split(".")[0]
         except Exception:
             pass
 
+    # Anti-detect (audit F-09): the GREASE brand version is keyed to the
+    # browser major version the way real Chrome does it (Not(A:Brand;v=99
+    # belongs to the 1xx series; 12x+ ships v=8/24/99 depending on build).
+    major = int(c_ver) if str(c_ver).isdigit() else 133
+    grease_version = "99" if major < 120 else random.choice(["8", "24", "99"])
+    grease_brand = random.choice(["Not(A:Brand", "Not A(Brand", "Not?A?Brand"])
     brands = [
-        {"brand": "Not(A:Brand", "version": "99"},
+        {"brand": grease_brand, "version": grease_version},
         {"brand": "Google Chrome", "version": c_ver},
         {"brand": "Chromium", "version": c_ver},
     ]
 
-    media_devs = [
-        MediaDeviceInfo(
-            kind="audioinput",
-            label="Microphone (High Definition Audio Device)",
-            device_id=uuid.uuid4().hex,
-            group_id=uuid.uuid4().hex,
-        ),
-        MediaDeviceInfo(
-            kind="audiooutput",
-            label="Speakers (Realtek High Definition Audio)",
-            device_id=uuid.uuid4().hex,
-            group_id=uuid.uuid4().hex,
-        ),
-        MediaDeviceInfo(
-            kind="videoinput", label="HD WebCam Pro", device_id=uuid.uuid4().hex, group_id=uuid.uuid4().hex
-        ),
-    ]
-
-    battery = BatterySpoofConfig(charging=True, level=random.choice([0.95, 0.98, 1.0]), charging_time=0)
+    media_devs = _pick_media_devices()
+    battery = _pick_battery()
 
     return FingerprintConfig(
         user_agent=ua,

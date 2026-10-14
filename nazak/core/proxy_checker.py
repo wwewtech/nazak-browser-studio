@@ -148,33 +148,33 @@ async def check_proxy_health(
 
     async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout, follow_redirects=True, headers=headers) as client:
         # 2. IP & Geo Location Check
+        # Anti-detect (audit F-14): the geo lookup used plain HTTP through the
+        # user's proxy — the intermediary itself could rewrite the answer and
+        # feed a fake geo into the profile. HTTPS endpoints only.
         try:
             geo_resp = await client.get(
-                "http://ip-api.com/json/?fields=status,message,country,countryCode,regionName,city,isp,as,query,timezone,lat,lon"
+                "https://ipwho.is/?fields=ip,success,country,country_code,city,region,timezone,latitude,longitude,connection"
             )
             if geo_resp.status_code == 200:
                 geo_data = geo_resp.json()
-                if geo_data.get("status") == "success":
-                    # Audit R3-round2: the response arrives over plain HTTP through
-                    # the user's proxy, i.e. it is fully controlled by the
-                    # intermediary. Previously the values were written into the profile
-                    # as-is: strings of any length (memory/logs/DOM) and non-finite
-                    # numbers (json.loads accepts Infinity/NaN -> the pydantic models
-                    # and the stealth.js generator received inf/nan).
-                    result.ip = _safe_text(geo_data.get("query"), 64)
+                if geo_data.get("success") is not False:
+                    # Audit R3-round2: values from the network are untrusted; the
+                    # same sanitising rules as before apply.
+                    conn = geo_data.get("connection") or {}
+                    result.ip = _safe_text(geo_data.get("ip"), 64)
                     result.country = _safe_text(geo_data.get("country"), 128)
-                    result.country_code = _safe_text(geo_data.get("countryCode"), 8)
+                    result.country_code = _safe_text(geo_data.get("country_code"), 8)
                     result.city = _safe_text(geo_data.get("city"), 128)
-                    result.region = _safe_text(geo_data.get("regionName"), 128)
-                    result.isp = _safe_text(geo_data.get("isp"), 256)
-                    result.asn = _safe_text(geo_data.get("as"), 128)
+                    result.region = _safe_text(geo_data.get("region"), 128)
+                    result.isp = _safe_text(conn.get("isp"), 256)
+                    result.asn = _safe_text(str(conn.get("asn", "")), 128)
                     result.timezone_name = _safe_timezone(geo_data.get("timezone"))
-                    result.latitude = _finite_or_none(geo_data.get("lat"), -90.0, 90.0)
-                    result.longitude = _finite_or_none(geo_data.get("lon"), -180.0, 180.0)
+                    result.latitude = _finite_or_none(geo_data.get("latitude"), -90.0, 90.0)
+                    result.longitude = _finite_or_none(geo_data.get("longitude"), -180.0, 180.0)
                 else:
-                    result.error_message = _safe_text(geo_data.get("message", "Geo lookup returned fail status"), 512)
+                    result.error_message = _safe_text(geo_data.get("message", "Geo lookup failed"), 512)
         except Exception as e:
-            # Fallback to ipify if ip-api is throttled
+            # Fallback to ipify if the primary is throttled
             try:
                 ip_resp = await client.get("https://api.ipify.org?format=json")
                 if ip_resp.status_code == 200:
@@ -231,5 +231,19 @@ async def check_proxy_health(
     else:
         result.status = HealthStatus.DEAD if not proxy.is_direct() else HealthStatus.ERROR
         result.error_message = "Google services unreachable through this connection"
+
+    # Anti-detect (audit F-11): the geo timezone (MaxMind-style checks compare
+    # it server-side) must not contradict the profile's spoofed timezone — a
+    # Tokyo profile exiting from a German IP is a one-request tell. Record
+    # the mismatch on the result so callers/GUI can align the fingerprint.
+    if result.timezone_name and profile_dir is not None:
+        try:
+            prefs_path = profile_dir.parent / "timezone.txt"
+            if prefs_path.exists():
+                fp_tz = prefs_path.read_text(encoding="utf-8").strip()
+                if fp_tz and fp_tz != result.timezone_name:
+                    result.timezone_mismatch = f"{fp_tz} (profile) != {result.timezone_name} (IP geo)"
+        except OSError:
+            pass
 
     return result

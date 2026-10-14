@@ -176,7 +176,7 @@ def test_r3b_binding_requires_main_frame_default_context():
     inj._contexts[11] = ("F2", True)  # main world субфрейма
     inj._contexts[12] = ("F1", False)  # изолированный мир
     payload = json.dumps({"type": "click", "x": 1, "y": 2})
-    base = {"name": ci.SYNC_BINDING_NAME, "payload": payload}
+    base = {"name": inj._binding_name, "payload": payload}
 
     assert inj.binding_event_allowed({**base, "executionContextId": 10}, "sess1") == (True, "")
     assert inj.binding_event_allowed({**base, "executionContextId": 11}, "sess1")[0] is False
@@ -200,15 +200,14 @@ def test_r3b_binding_rejects_oversized_payload_and_sinkless_injector():
     inj._contexts[1] = ("F", True)
     big = json.dumps({"type": "click", "value": "x" * (ci.MAX_BINDING_PAYLOAD_BYTES + 10)})
     assert (
-        inj.binding_event_allowed({"name": ci.SYNC_BINDING_NAME, "payload": big, "executionContextId": 1}, "s")[0]
-        is False
+        inj.binding_event_allowed({"name": inj._binding_name, "payload": big, "executionContextId": 1}, "s")[0] is False
     )
     no_sink = _injector(event_sink=None)
     no_sink._session_is_page["s"] = True
     no_sink._main_frame["s"] = "F"
     no_sink._contexts[1] = ("F", True)
     assert (
-        no_sink.binding_event_allowed({"name": ci.SYNC_BINDING_NAME, "payload": "{}", "executionContextId": 1}, "s")[0]
+        no_sink.binding_event_allowed({"name": no_sink._binding_name, "payload": "{}", "executionContextId": 1}, "s")[0]
         is False
     )
 
@@ -224,7 +223,7 @@ def test_r3b_binding_rate_limit_and_acceptance_counters():
     # Детерминированный лимитер: без пополнения, чтобы тест не зависел от времени.
     inj._binding_bucket = ci._TokenBucket(rate_per_sec=0.0, burst=3.0)
     params = {
-        "name": ci.SYNC_BINDING_NAME,
+        "name": inj._binding_name,
         "payload": json.dumps({"type": "click", "x": 1, "y": 1}),
         "executionContextId": 1,
     }
@@ -254,9 +253,11 @@ def test_r3b_token_bucket_is_pure_and_refills():
 
 
 def test_r3b_no_branded_page_visible_markers_anywhere():
-    injected = sync.SYNC_CLIENT_JS
+    # F-05: the client is rendered per profile with its own binding name.
+    from nazak.core.synchronizer import sync_client_js
+
+    injected = sync_client_js(ci.SYNC_BINDING_NAME)
     assert "__nazak" not in injected
-    assert ci.SYNC_BINDING_NAME == "__nse_ev"
     assert "__nazak" not in ci.SYNC_BINDING_NAME
     # флаг идемпотентности виден лишь при явном перечислении свойств
     assert "__nse_c" in injected

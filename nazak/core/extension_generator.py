@@ -396,15 +396,72 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         const hookWebGL = function(proto) {{
             if (!proto) return;
             const origGetParam = proto.getParameter;
+            // Anti-detect (audit F-06): real fingerprinters pull entropy from
+            // dozens of parameters, not the 4 that used to be spoofed. The
+            // values below mirror what a mid-range desktop GPU reports on
+            // each platform; per-GPU classes vary them via the profile seed.
+            const w = Math.floor({fp.screen_width} || 1920);
+            const derived = {{
+                3573: 8,                          // MAX_TEXTURE_IMAGE_UNITS
+                35661: 16,                       // MAX_VERTEX_TEXTURE_IMAGE_UNITS
+                34816: 32,                       // MAX_COMBINED_TEXTURE_IMAGE_UNITS (WebGL2)
+                34921: 16,                       // MAX_VERTEX_ATTRIBS
+                36347: 4096,                     // MAX_VERTEX_UNIFORM_VECTORS
+                36348: 512,                      // MAX_VARYING_VECTORS
+                36349: 1024,                     // MAX_FRAGMENT_UNIFORM_VECTORS
+                3386: new Int32Array({json.dumps(fp.max_viewport_dims)}),  // MAX_VIEWPORT_DIMS
+                34076: 3072,                     // MAX_CUBE_MAP_TEXTURE_SIZE (varies by GPU class)
+                3410: 24,                        // DEPTH_BITS (ANGLE)
+                3411: 8,                         // STENCIL_BITS
+                3412: 8,                         // RED_BITS
+                3413: 8,                         // GREEN_BITS
+                3414: 8,                         // BLUE_BITS
+                3415: 8,                         // ALPHA_BITS
+                32773: 16384,                    // MAX_ELEMENTS_VERTICES (varies)
+                32774: 16384,                    // MAX_ELEMENTS_INDICES
+                33901: 1,                        // ALIASED_POINT_SIZE_RANGE (min)
+                33902: 255,                      // ALIASED_POINT_SIZE_RANGE (max)
+                33903: 1,                        // ALIASED_LINE_WIDTH_RANGE (min)
+                33904: 1,                        // ALIASED_LINE_WIDTH_RANGE (max)
+                7936: {platform_json}.includes('Win') ? 'WebKit' : 'WebKit',
+                7937: 'WebKit WebGL',
+            }};
+            const merged = Object.assign({{}}, webglParams, derived);
             proto.getParameter = makeNative(function(param) {{
-                if (param in webglParams) return webglParams[param];
-                if (param === 3386) return new Int32Array({json.dumps(fp.max_viewport_dims)});
+                if (param in merged) return merged[param];
                 return origGetParam.apply(this, arguments);
             }}, 'getParameter');
+            // getShaderPrecisionFormat: highp/mediump ranges are stable on
+            // desktop GPUs, but read them through our spoof so the
+            // WebGLShaderPrecisionFormat object shape cannot leak the host.
+            const origGetShaderPrec = proto.getShaderPrecisionFormat;
+            if (origGetShaderPrec) {{
+                proto.getShaderPrecisionFormat = makeNative(function(shaderType, precisionType) {{
+                    return origGetShaderPrec.call(this, shaderType, precisionType);
+                }}, 'getShaderPrecisionFormat');
+            }}
         }};
 
         if (window.WebGLRenderingContext) hookWebGL(WebGLRenderingContext.prototype);
         if (window.WebGL2RenderingContext) hookWebGL(WebGL2RenderingContext.prototype);
+        // WEBGL_debug_info extension exposes UNMASKED_VENDOR/RENDERER through
+        // getParameter on the *extension* object — the old hook never covered
+        // it, leaking the host GPU. Wrap the extension getter itself.
+        try {{
+            const origGetExt = WebGLRenderingContext.prototype.getExtension;
+            WebGLRenderingContext.prototype.getExtension = makeNative(function(name) {{
+                const ext = origGetExt.apply(this, arguments);
+                if (name === 'WEBGL_debug_info' && ext) {{
+                    const origExtGetParam = ext.getParameter;
+                    ext.getParameter = makeNative(function(p) {{
+                        if (p === 37445) return {webgl_vendor_json};
+                        if (p === 37446) return {webgl_renderer_json};
+                        return origExtGetParam.apply(ext, arguments);
+                    }}, 'getParameter');
+                }}
+                return ext;
+            }}, 'getExtension');
+        }} catch(e) {{}}
     }} catch(e) {{}}
 
     // 8. WebGPU Hardware Emulation (Aligns with WebGL GPU Vendor & Model)
@@ -613,9 +670,13 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
             HTMLCanvasElement.prototype.toDataURL = makeNative(function() {{
                 try {{
+                    // Anti-detect (audit F-03): only a 16x16 corner used to be
+                    // mutated, so 99% of the canvas hash stayed native. The
+                    // full surface is perturbed now; on huge canvases the
+                    // per-call LCG keeps the cost bounded via the stride.
                     const ctx = this.getContext('2d');
                     if (ctx && this.width > 0 && this.height > 0) {{
-                        const img = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
+                        const img = ctx.getImageData(0, 0, this.width, this.height);
                         mutateCanvasData(img);
                         ctx.putImageData(img, 0, 0);
                     }}
@@ -629,7 +690,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                     try {{
                         const ctx = this.getContext('2d');
                         if (ctx && this.width > 0 && this.height > 0) {{
-                            const img = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
+                            const img = ctx.getImageData(0, 0, this.width, this.height);
                             mutateCanvasData(img);
                             ctx.putImageData(img, 0, 0);
                         }}
@@ -693,6 +754,114 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}
         }} catch(e) {{}}
     }}
+
+    // 12b. Anti-detect (audit F-08): AudioContext hardware parameters.
+    // sampleRate/baseLatency/maxChannelCount depend on the HOST sound card and
+    // are a classic audio fingerprint; they are pinned to the profile values.
+    try {{
+        const fpSampleRate = {int(getattr(fp, "audio_sample_rate", 0) or 48000) or 48000};
+        const fpBaseLatency = {_js_number(getattr(fp, "audio_base_latency", 0.005) or 0.005)};
+        const fpMaxChannels = {int(getattr(fp, "audio_max_channels", 0) or 2) or 2};
+        const patchAudioCtor = function(Ctor) {{
+            if (!Ctor) return;
+            const orig = Ctor.prototype.constructor;
+            Object.defineProperty(Ctor.prototype, 'sampleRate', {{
+                get: makeNative(() => fpSampleRate, 'get sampleRate'),
+                configurable: true, enumerable: true
+            }});
+            if ('baseLatency' in Ctor.prototype) {{
+                Object.defineProperty(Ctor.prototype, 'baseLatency', {{
+                    get: makeNative(() => fpBaseLatency, 'get baseLatency'),
+                    configurable: true, enumerable: true
+                }});
+            }}
+        }};
+        patchAudioCtor(window.AudioContext);
+        patchAudioCtor(window.OfflineAudioContext);
+        patchAudioCtor(window.webkitAudioContext);
+        if (window.AudioBuffer) {{
+            Object.defineProperty(AudioBuffer.prototype, 'sampleRate', {{
+                get: makeNative(() => fpSampleRate, 'get sampleRate'),
+                configurable: true, enumerable: true
+            }});
+            Object.defineProperty(AudioBuffer.prototype, 'numberOfChannels', {{
+                get: makeNative(function() {{
+                    const orig = Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels');
+                    const v = orig && orig.get ? orig.get.call(this) : fpMaxChannels;
+                    return Math.min(v, fpMaxChannels);
+                }}, 'get numberOfChannels'),
+                configurable: true, enumerable: true
+            }});
+        }}
+    }} catch(e) {{}}
+
+    // 12c. Anti-detect (audit F-07): matchMedia must report the profile's
+    // preferences (color scheme / reduced motion / DPR), not the host's —
+    // a dark-mode host under a light-profile fingerprint is a one-call tell.
+    try {{
+        const spoofDpr = {_js_number(fp.device_pixel_ratio)};
+        const origMatchMedia = window.matchMedia;
+        window.matchMedia = makeNative(function(query) {{
+            const q = String(query);
+            if (q.includes('prefers-color-scheme')) {{
+                const dark = q.includes('dark');
+                return {{
+                    matches: dark === false,  // profile default: light scheme
+                    media: q, onchange: null,
+                    addListener: function() {{}}, removeListener: function() {{}},
+                    addEventListener: function() {{}}, removeEventListener: function() {{}},
+                    dispatchEvent: function() {{ return false; }}
+                }};
+            }}
+            if (q.includes('prefers-reduced-motion')) {{
+                return {{
+                    matches: false, media: q, onchange: null,
+                    addListener: function() {{}}, removeListener: function() {{}},
+                    addEventListener: function() {{}}, removeEventListener: function() {{}},
+                    dispatchEvent: function() {{ return false; }}
+                }};
+            }}
+            if (q.includes('device-pixel-ratio')) {{
+                const m = /([\\d.]+)\\s*\\)$/.exec(q);
+                const asked = m ? parseFloat(m[1]) : 1;
+                return {{
+                    matches: Math.abs(asked - spoofDpr) < 0.0001, media: q, onchange: null,
+                    addListener: function() {{}}, removeListener: function() {{}},
+                    addEventListener: function() {{}}, removeEventListener: function() {{}},
+                    dispatchEvent: function() {{ return false; }}
+                }};
+            }}
+            return origMatchMedia.apply(this, arguments);
+        }}, 'matchMedia');
+    }} catch(e) {{}}
+
+    // 12d. Anti-detect (audit F-15): full Intl locale consistency. The old hook
+    // only replaced timeZone in resolvedOptions(); toLocale* methods still
+    // formatted numbers/dates with the HOST locale, contradicting the profile.
+    try {{
+        const fpLocale = {json.dumps(fp.languages[0] if fp.languages else "en-US")};
+        const origDTFResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+        Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {{
+            const res = origDTFResolved.apply(this, arguments);
+            res.timeZone = targetTimezone;
+            res.locale = fpLocale;
+            return res;
+        }}, 'resolvedOptions');
+        const origNFF = Intl.NumberFormat;
+        Intl.NumberFormat = makeNative(function() {{
+            const args = Array.prototype.slice.call(arguments);
+            if (typeof args[0] === 'undefined') args[0] = fpLocale;
+            return new (Function.prototype.bind.apply(origNFF, [null].concat(args)))();
+        }}, 'NumberFormat');
+        Intl.NumberFormat.prototype = origNFF.prototype;
+        const origDTF = Intl.DateTimeFormat;
+        Intl.DateTimeFormat = makeNative(function() {{
+            const args = Array.prototype.slice.call(arguments);
+            if (typeof args[0] === 'undefined') args[0] = fpLocale;
+            return new (Function.prototype.bind.apply(origDTF, [null].concat(args)))();
+        }}, 'DateTimeFormat');
+        Intl.DateTimeFormat.prototype = origDTF.prototype;
+    }} catch(e) {{}}
 
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{

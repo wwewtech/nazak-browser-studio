@@ -255,11 +255,17 @@ def test_two_hundred_fingerprints_are_unique_on_the_important_axes():
     dumps = {json.dumps(fp.model_dump(mode="json"), sort_keys=True) for _os, fp in samples}
     assert len(dumps) == 200
 
+    # F-04: media sets vary per profile (mic+speakers always; a camera may be
+    # absent the way real desktops without webcams are). Device/group ids
+    # stay unique across whatever set each profile carries.
     device_ids = [device.device_id for _os, fp in samples for device in fp.media_devices]
     group_ids = [device.group_id for _os, fp in samples for device in fp.media_devices]
-    assert len(device_ids) == 600
-    assert len(set(device_ids)) == 600
-    assert len(set(group_ids)) == 600
+    assert all(2 <= len(fp.media_devices) <= 3 for _os, fp in samples)
+    assert len(set(device_ids)) == len(device_ids)
+    assert len(set(group_ids)) == len(group_ids)
+    # the (kind, label) set varies across a farm — that is the point of F-04
+    label_sets = {tuple(sorted((d.kind, d.label) for d in fp.media_devices)) for _os, fp in samples}
+    assert len(label_sets) > 20, f"only {len(label_sets)} distinct device label sets across 200 profiles"
 
     noise_pairs = {(fp.canvas_noise_seed, fp.audio_noise_seed) for _os, fp in samples}
     assert len(noise_pairs) == 200
@@ -338,11 +344,15 @@ def test_fingerprint_screens_locales_and_required_fields_are_sane():
         assert fp.canvas_noise is True and fp.audio_noise is True and fp.client_rects_noise is True
         assert 10_000 <= fp.canvas_noise_seed <= 999_999
         assert 0.0 < fp.audio_noise_seed < 1.0
-        assert fp.battery.charging is True and fp.battery.level in (0.95, 0.98, 1.0)
+        # F-19: battery states vary like real laptops (plugged, draining,
+        # mid-charge) instead of a farm of permanently-full ones.
+        assert 0.0 < fp.battery.level <= 1.0
         assert fp.geolocation.enabled is True
         assert fp.webrtc_policy == "disable_non_proxied_udp"
         assert fp.block_port_scanning is True and fp.block_sensors is True
-        assert {device.kind for device in fp.media_devices} == {"audioinput", "audiooutput", "videoinput"}
+        # F-04: mic+speakers always; a webcam may be absent (real desktops too).
+        assert {"audioinput", "audiooutput"} <= {device.kind for device in fp.media_devices}
+        assert {device.kind for device in fp.media_devices} <= {"audioinput", "audiooutput", "videoinput"}
 
     # A DST-free zone must yield its real offset when a timezone is requested.
     tokyo = generate_random_fingerprint(target_timezone="Asia/Tokyo")
@@ -500,21 +510,20 @@ def test_check_proxy_health_direct_mode_shapes(tmp_path, monkeypatch):
     direct = ProxyConfig(type=ProxyType.DIRECT, raw="direct")
 
     def reachable(url):
-        if "ip-api.com" in url:
+        if "ipwho.is" in url:
             return _FakeResponse(
                 200,
                 {
-                    "status": "success",
-                    "query": "203.0.113.5",
+                    "success": True,
+                    "ip": "203.0.113.5",
                     "country": "Netherlands",
-                    "countryCode": "NL",
+                    "country_code": "NL",
                     "city": "Amsterdam",
-                    "regionName": "NH",
-                    "isp": "ISP",
-                    "as": "AS1",
+                    "region": "NH",
                     "timezone": "Europe/Amsterdam",
-                    "lat": 52.3,
-                    "lon": 4.9,
+                    "latitude": 52.3,
+                    "longitude": 4.9,
+                    "connection": {"isp": "ISP", "asn": 1},
                 },
             )
         return _FakeResponse(204)
@@ -561,7 +570,7 @@ def test_check_proxy_health_timeouts_and_hostile_geo_payload(tmp_path, monkeypat
     proxy = ProxyConfig(type=ProxyType.HTTP, host="203.0.113.9", port=8080)
 
     def geo_timeout(url):
-        if "ip-api.com" in url:
+        if "ipwho.is" in url:
             raise httpx.TimeoutException("geo lookup timed out")
         if "ipify" in url:
             return _FakeResponse(200, {"ip": "198.51.100.7"})
@@ -586,13 +595,13 @@ def test_check_proxy_health_timeouts_and_hostile_geo_payload(tmp_path, monkeypat
     assert "refused" in (unreachable.error_message or "")
 
     def hostile_geo(url):
-        if "ip-api.com" in url:
+        if "ipwho.is" in url:
             return _FakeResponse(
                 200,
                 json.loads(
-                    '{"status":"success","query":"1.2.3.4","country":"'
+                    '{"success":true,"ip":"1.2.3.4","country":"'
                     + "C" * 400
-                    + '","timezone":"../../etc/passwd","lat":Infinity,"lon":NaN,"city":"\\u0000ok"}'
+                    + '","timezone":"../../etc/passwd","latitude":Infinity,"longitude":NaN,"city":"\\u0000ok"}'
                 ),
             )
         return _FakeResponse(204)

@@ -209,6 +209,30 @@ class BrowserLauncher:
             except Exception:
                 pass
 
+    def _random_window_position(self, fp) -> str:
+        """A plausible per-launch window position (anti-detect audit F-01).
+
+        Every real user's window lands slightly differently (taskbar side,
+        drag habits, monitor layout); a farm that opens every browser at the
+        same pixel position is a one-line cluster signature. The position is
+        randomized inside the spoofed screen, biased toward the top-left
+        quadrant where humans usually leave their window, and never lets the
+        window extend past the spoofed screen bounds.
+        """
+        import random as _random
+
+        try:
+            screen_w = int(getattr(fp, "screen_width", 0) or 1920)
+            screen_h = int(getattr(fp, "screen_height", 0) or 1080)
+        except Exception:
+            screen_w, screen_h = 1920, 1080
+        # Window chrome/borders allowance so the window stays on-screen.
+        margin_x = max(0, (screen_w - int(screen_w * 0.8)) // 2)
+        margin_y = max(0, (screen_h - int(screen_h * 0.8)) // 2)
+        x = _random.randint(8, max(8, margin_x + 120))
+        y = _random.randint(8, max(8, margin_y + 80))
+        return f"{x},{y}"
+
     def build_chrome_args(
         self, profile: BrowserProfile, chrome_exe: str, custom_url: str | None = None, cdp_port: int | None = None
     ) -> tuple[list[str], str | None]:
@@ -239,7 +263,11 @@ class BrowserLauncher:
             f"--force-webrtc-ip-handling-policy={fp.webrtc_policy}",
             "--enforce-webrtc-ip-permission-check",
             f"--window-size={fp.screen_width},{fp.screen_height}",
-            "--window-position=40,40",
+            # Anti-detect (audit F-01): a fixed 40,40 opening position is a
+            # pixel-identical cluster signature across a whole farm — every
+            # real user drags their window differently. Randomized per launch,
+            # kept inside the spoofed screen so screenX/screenY stay plausible.
+            f"--window-position={self._random_window_position(fp)}",
             f"--user-agent={launch_ua}",
             "--password-store=basic",
             "--use-mock-keychain",

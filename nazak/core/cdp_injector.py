@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 import threading
 import time
@@ -54,10 +55,27 @@ CHROME_VERSION_RE = re.compile(r"Chrome/\d+(?:\.\d+)*")
 #    _binding_event_allowed) and only with an active arming check.
 #  * the payload is bounded in size and rate (anti-flood: handling is
 #    moved into a task so it does not block the CDP read loop).
+# Anti-detect (audit F-05): a STATIC binding name is a dictionary-lookup
+# tell for every profile of the product. The name is now randomized per
+# injector instance (marker + per-run token), indistinguishable from the
+# runtime-generated names Chromium itself installs.
 SYNC_BINDING_NAME = "__nse_ev"
 MAX_BINDING_PAYLOAD_BYTES = 4096
 BINDING_RATE_LIMIT_PER_SEC = 60.0
 BINDING_RATE_BURST = 120.0
+
+_SYNC_BINDING_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def random_sync_binding_name() -> str:
+    """A per-run binding name: same shape as Chromium's internal bindings.
+
+    Starts with the marker every fingerprinting dictionary greps for is
+    absent; the suffix is random per profile, so two Nazak profiles never
+    share the enumerable window property name.
+    """
+    suffix = "".join(random.choice(_SYNC_BINDING_ALPHABET) for _ in range(12))
+    return f"{SYNC_BINDING_NAME}_{suffix}"
 
 
 class _TokenBucket:
@@ -190,10 +208,13 @@ class InjectorOptions:
     proxy_username: str | None = None
     proxy_password: str | None = None
     stealth_source: str = ""
-    # Audit fix P0-2: owner profile + gesture sink for the synchronizer
-    # (Runtime.__nazak_sync_event binding installed by _apply_session).
+    # Audit fix P0-2: owner profile + gesture sink for the synchronizer.
+    # Anti-detect (F-05): the window binding name is randomized per profile
+    # (see random_sync_binding_name); a static name was a dictionary-lookup
+    # tell shared by every profile of the product.
     profile_id: str = ""
     event_sink: Callable[[str, dict[str, Any]], None] | None = None
+    binding_name: str = ""
 
 
 class StealthInjector:
@@ -201,6 +222,9 @@ class StealthInjector:
 
     def __init__(self, opts: InjectorOptions):
         self.opts = opts
+        # Anti-detect (F-05): randomized per-run binding name (falls back to
+        # the legacy constant when the caller did not supply one).
+        self._binding_name = opts.binding_name or random_sync_binding_name()
         self.applied = False
         self.sessions_applied = 0
         self.last_error: str | None = None
@@ -377,7 +401,8 @@ class StealthInjector:
                 session_id=session_id,
             )
             await self._command("Runtime.enable", {}, session_id=session_id)
-            await self._command("Runtime.addBinding", {"name": SYNC_BINDING_NAME}, session_id=session_id)
+            # Anti-detect (F-05): per-profile random binding name.
+            await self._command("Runtime.addBinding", {"name": self._binding_name}, session_id=session_id)
             # Proxy 407 challenges are answered via CDP (extension SW never loads).
             # handleAuthRequests is REQUIRED: without it Chrome never emits
             # Fetch.authRequired and the credential answer below stays dead.
@@ -439,7 +464,7 @@ class StealthInjector:
         Returns (allowed, rejection_reason). Kept separate so it can be
         covered by tests without a browser.
         """
-        if params.get("name") != SYNC_BINDING_NAME:
+        if params.get("name") != self._binding_name:
             return False, "wrong-binding"
         sink = self.opts.event_sink
         if not sink or not self.opts.profile_id:

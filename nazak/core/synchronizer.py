@@ -44,35 +44,43 @@ def _clamp_delay_range(delay_range_ms: Any) -> tuple[int, int]:
 # Audit R3-round2: this used to hold `window.__nazakSyncInstalled = true` and
 # `window.__nazak_sync_event` — any page could identify Nazak with a single
 # line. The idempotency flag is now invisible under ordinary enumeration
-# (non-enumerable property), and the binding name is neutral (SYNC_BINDING_NAME).
-SYNC_CLIENT_JS = """
-(() => {
+# (non-enumerable property).
+# Anti-detect (audit F-05): the CDP binding name is randomized PER PROFILE
+# (cdp_injector.random_sync_binding_name) and substituted into this script at
+# install time, so no two profiles expose the same window property.
+SYNC_CLIENT_JS_TEMPLATE = """
+(() => {{
   if (window.__nse_c) return;
-  Object.defineProperty(window, '__nse_c', {value: true, configurable: false, enumerable: false});
-  const send = (type, data) => {
-    try {
-      if (typeof window.__nse_ev === 'function') {
-        window.__nse_ev(JSON.stringify(Object.assign({type}, data)));
-      }
-    } catch (e) {}
-  };
-  document.addEventListener('click', (e) => {
-    send('click', {x: e.clientX, y: e.clientY, button: e.button === 2 ? 'right' : 'left'});
-  }, true);
-  document.addEventListener('keydown', (e) => send('keydown', {key: e.key}), true);
+  Object.defineProperty(window, '__nse_c', {{value: true, configurable: false, enumerable: false}});
+  const send = (type, data) => {{
+    try {{
+      if (typeof window.{binding} === 'function') {{
+        window.{binding}(JSON.stringify(Object.assign({{type}}, data)));
+      }}
+    }} catch (e) {{}}
+  }};
+  document.addEventListener('click', (e) => {{
+    send('click', {{x: e.clientX, y: e.clientY, button: e.button === 2 ? 'right' : 'left'}});
+  }}, true);
+  document.addEventListener('keydown', (e) => send('keydown', {{key: e.key}}), true);
   let lastScroll = 0;
-  document.addEventListener('scroll', () => {
+  document.addEventListener('scroll', () => {{
     const now = Date.now();
     if (now - lastScroll < 250) return;
     lastScroll = now;
-    send('scroll', {x: window.scrollX, y: window.scrollY});
-  }, {capture: true, passive: true});
-  document.addEventListener('input', (e) => {
+    send('scroll', {{x: window.scrollX, y: window.scrollY}});
+  }}, {{capture: true, passive: true}});
+  document.addEventListener('input', (e) => {{
     const el = e.target;
-    send('input', {value: (el && 'value' in el) ? String(el.value).slice(-64) : ''});
-  }, true);
-})();
+    send('input', {{value: (el && 'value' in el) ? String(el.value).slice(-64) : ''}});
+  }}, true);
+}})();
 """
+
+
+def sync_client_js(binding_name: str) -> str:
+    """Render the sync client for a specific per-profile binding name."""
+    return SYNC_CLIENT_JS_TEMPLATE.format(binding=binding_name)
 
 
 def _jittered_point(x: float, y: float, jitter_px: int) -> tuple[int, int]:
@@ -295,6 +303,15 @@ class SynchronizerManager:
                 "synchronizer: master %s has no CDP endpoint; gesture capture unavailable", master_profile_id
             )
             return
+        # Anti-detect (F-05): render the client with the SAME per-profile
+        # binding name the injector installed (read from its options).
+        binding_name = "__nse_ev"
+        with getattr(self.browser_launcher, "_registry_lock", __import__("contextlib").nullcontext()):
+            handle = getattr(self.browser_launcher, "_injectors", {}).get(master_profile_id)
+        injector = getattr(handle, "injector", None) if handle else None
+        if injector is not None:
+            binding_name = getattr(injector, "_binding_name", binding_name)
+        client_js = sync_client_js(binding_name)
         import asyncio
 
         async def _install() -> None:
@@ -311,7 +328,7 @@ class SynchronizerManager:
                 for context in browser.contexts:
                     for page in context.pages:
                         try:
-                            await page.evaluate(SYNC_CLIENT_JS)
+                            await page.evaluate(client_js)
                         except Exception:
                             pass
                 await browser.close()
@@ -554,6 +571,18 @@ class SynchronizerManager:
             if etype == "click":
                 x, y = _jittered_point(float(event.get("x", 0)), float(event.get("y", 0)), jitter)
                 button = str(event.get("button", "left"))
+                # Anti-detect (audit F-13): a click without a prior mouse move is
+                # a "teleport click" — the pointer lands at coordinates it never
+                # travelled to, which behavioural ML flags instantly. Walk a few
+                # interpolation steps toward the target before pressing.
+                try:
+                    steps = 5
+                    for i in range(1, steps + 1):
+                        t = i / steps
+                        page.mouse.move(int(x * t), int(y * t))
+                        time.sleep(0.004)
+                except Exception:
+                    pass
                 page.mouse.click(int(x), int(y), button=button if button in ("left", "right", "middle") else "left")
                 return True
             if etype == "scroll":

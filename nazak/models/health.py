@@ -45,6 +45,10 @@ class HealthCheckResult(BaseModel):
     isp: str | None = None
     asn: str | None = None
     timezone_name: str | None = None
+    # Anti-detect (audit F-11): set when the IP-geo timezone contradicts the
+    # profile's spoofed timezone ("Asia/Tokyo (profile) != Europe/Berlin (IP)").
+    # Callers surface it so the operator can align the fingerprint.
+    timezone_mismatch: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     google: GoogleReachability = Field(default_factory=GoogleReachability)
