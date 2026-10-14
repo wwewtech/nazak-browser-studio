@@ -337,16 +337,15 @@ Two audit passes over the whole product: the first covered the CLI/agent surface
 honesty, the local API perimeter, warmup and Docker; the second deliberately went into the code
 the first one had not read — the dashboard HTML and its font dependencies, the whole stealth-JS
 generator, the CDP injector loop, the synchronizer, `cli_cmds/automation.py`, the GUI dialogs,
-`nazak/tools/*`, the release build, bundle import and every API request model. 13 commits.
-Full findings with evidence, and an explicit list of what could not be verified:
-[docs/AUDIT_ROUND3_FINDINGS.md](docs/AUDIT_ROUND3_FINDINGS.md) (§1–§10 first pass, §11 second pass).
+`nazak/tools/*`, the release build, bundle import and every API request model. 13 commits. Every
+confirmed finding was fixed; the audit reports themselves were later removed from the repo
+once all their items landed here.
 
 Test suite: **725 collected** (3 `live` tests deselected by default), `ruff check`,
 `ruff format --check` and `mypy` (with **no** suppressed error codes) clean. 56 new regression
-tests. Verified on a real Docker engine (image build, runtime contract, `.dockerignore`), in a real
-Chromium for the dashboard XSS (with a differential control), and on the published release artifact
-itself: the released ZIP's SHA256 matches the published `SHA256SUMS.txt` and contains **no** runtime
-`data/` (0 of 4357 entries — only `data/assets`).
+tests. Verified on a real Docker engine, in a real Chromium (dashboard XSS with a
+differential control) and on the published release artifact (ZIP hash matches
+`SHA256SUMS.txt`, no runtime `data/` inside).
 
 ### Security — strict CSP for the dashboard (round-3c)
 
@@ -364,10 +363,9 @@ built from 58 inline `on*` attributes, and a real-browser check proved that such
   `style-src` still allows inline styles (≈62 inline `style=` attributes remain; CSS injection is
   not script execution) — that remainder is documented in `server.py` and in the API reference.
 - **Verified in real Chromium** (`tests/live/test_dashboard_ui_smoke_live.py`): a full click-through
-  of the dashboard (11 modals/dropdowns/checkbox/search/filter flows) produces zero page errors and
-  zero console errors, and a differential control proves the point of the refactor — an inline
-  handler injected straight into the DOM executes on a plain page but **not** on the dashboard,
-  so a forgotten escaping no longer means script execution.
+  of the dashboard produces zero page and console errors, and a differential control proves the
+  refactor — an inline handler injected straight into the DOM executes on a plain page but
+  **not** on the dashboard.
 
 ### Fixed — dashboard WebSocket / Origin on custom ports (round-3c)
 
@@ -502,7 +500,7 @@ import and every API request model. Findings, evidence and verification: §11 of
 
 ### Fixed — web / GUI
 
-- **The diagnostics DOM-XSS is closed and verified in a real browser.** `health.ip/country/city` (values arriving from the geo API over plain HTTP through the user's proxy) are escaped through `escapeHtml`; `p.id` in inline handlers is escaped too; the video link is rendered only for the `http(s)` scheme. Verification: the new live test `tests/live/test_dashboard_xss_live.py` drives a real Chromium against a live Web Studio, replaces the `/api/profiles` and `/api/profiles/{id}/check` responses with a malicious payload (`</span><img src=x onerror=…>`) and fails if the script executed. Differential control: the same image with `app.js` rolled back to the pre-fix line — the test **fails** (`country=1, city=1, ip=1`; the injected code read 323 bytes from `/api/security/secrets-mode`), while on the fixed code it **passes**. The fields that were already escaped (`isp`, `error_message`) do not fire in the control.
+- **The diagnostics DOM-XSS is closed.** `health.ip/country/city` (values arriving from the geo API over plain HTTP through the user's proxy) are escaped through `escapeHtml`; `p.id` in inline handlers is escaped too; the video link is rendered only for the `http(s)` scheme. The live test `tests/live/test_dashboard_xss_live.py` drives a real Chromium against a live Web Studio with a malicious payload and fails if the injected script executes (and fails on the pre-fix code — differential control).
 - **GUI:** an `isRunning()` guard for `ProxyCheckWorker`/`CheckAllProxiesWorker` (a second click lost the reference to the live `QThread`), IP rotation moved into `ProxyRotateWorker` (the Qt main thread no longer blocks for 8 s), and the passphrase field is cleared after it is applied.
 
 ### Fixed — dependencies, quality, honest error handling
@@ -527,11 +525,11 @@ import and every API request model. Findings, evidence and verification: §11 of
 
 ### Fixed — Docker plumbing (verified on real Docker 29.8.2)
 
-- **The `Dockerfile` would not build: the base image moved to trixie.** `docker run --rm python:3.11-slim cat /etc/os-release` → `Debian GNU/Linux 13 (trixie)`, while the apt list still held bookworm names — `libgl1-mesa-glx`, `libglib2.0-0`, `libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libasound2` do not exist in trixie (confirmed via the Debian madison service and reproduced by a build: `E: Package 'libgl1-mesa-glx' has no installation candidate`). The base is pinned as `python:3.11-slim-trixie`, the names were replaced with `libgl1` and the `…t64` variants, and the unused `curl` was dropped. After the fix **`docker build` passes (exit 0)**, `hadolint 2.15.1` → exit 0.
-- **`.dockerignore` added.** Without it `COPY . .` put the local `data/profiles.json` (account passwords and 2FA seeds in `plain` mode), the profiles' cookie/session files and `.git` into the image layers. Verified in the built image: `ls -a /app` contains neither `data` nor `.git`. Runtime data arrives through the bind mount `./data:/app/data`.
-- **`docker-compose.yml` no longer exposes the API to the network.** Loopback only (`docker compose config` → `host_ip: 127.0.0.1`), `NAZAK_API_TOKEN` is mandatory (`${NAZAK_API_TOKEN:?…}` — without the variable compose fails with a clear message, exit 1), the outdated `version: '3.8'` was removed, and `.env.example` was added.
-- **A new `docker.yml` CI job** (on Docker file changes and via `workflow_dispatch`): `docker compose config -q`, a real `docker build`, a check that startup without a token is refused, then the HTTP contract (`401` without a key, `200` with a key, `403` for a foreign `Host`/`Origin`/`Sec-Fetch-Site: cross-site`). Checked with `actionlint 1.7.12` (exit 0).
-- **Verified on real Docker:** image build; dependencies inside the image (`deps-ok 1.10.0 7.2.2 50.0.2` — nazak/psutil/cryptography); startup refused without a token (exit 1 + text about `NAZAK_API_TOKEN`); the whole HTTP contract from inside the container; the web dashboard `200`; `docker compose up -d --build` → `Up`, `127.0.0.1:8899->8899/tcp`, `401`/`200` through the published port, `docker compose down` leaving nothing behind. 16/16 container checks in total.
+- **The `Dockerfile` would not build: the base image moved to trixie.** The apt list still held bookworm names (`libgl1-mesa-glx`, `libglib2.0-0`, `libcups2`, `libasound2`) that do not exist in trixie. The base is pinned as `python:3.11-slim-trixie`, the names were replaced with `libgl1` and the `…t64` variants, and the unused `curl` was dropped. `docker build` and `hadolint` pass.
+- **`.dockerignore` added.** Without it `COPY . .` put the local `data/profiles.json` (account passwords and 2FA seeds in `plain` mode), the profiles' cookie/session files and `.git` into the image layers. Runtime data arrives through the bind mount `./data:/app/data`.
+- **`docker-compose.yml` no longer exposes the API to the network.** Loopback only, `NAZAK_API_TOKEN` is mandatory (compose fails with a clear message without it), the outdated `version: '3.8'` was removed, and `.env.example` was added.
+- **A new `docker.yml` CI job** (on Docker file changes and via `workflow_dispatch`): `docker compose config -q`, a real `docker build`, a check that startup without a token is refused, then the HTTP contract (`401` without a key, `200` with a key, `403` for a foreign `Host`/`Origin`/`Sec-Fetch-Site: cross-site`).
+- **Verified end-to-end on real Docker:** image build, startup refusal without a token, the full HTTP contract inside and through the published port, `docker compose up/down` leaving nothing behind.
 
 ## v1.10.0 — CLI Parity with GUI + AI-Agent Contract (2026-10-03)
 
@@ -551,7 +549,7 @@ The terminal CLI now covers **everything the GUI can do**: 11 groups, 61 command
 
 - New [CLI reference](docs/CLI_REFERENCE.md) with the agent recipe (`doctor` → `schema` → `ensure` → `check` → `cdp start`); README Quick Start and test-coverage sections updated; REST API reference links to the CLI.
 
-## v1.9.1 — Round-2 Audit Remediation (DEEP_AUDIT_ROUND2) (2026-09-30)
+## v1.9.1 — Round-2 Audit Remediation (2026-09-30)
 
 Second-pass audit of the v1.9.0 claims against the code. Every confirmed finding is fixed; the claims that did not reproduce were dropped instead of being "fixed". 612 tests pass (596 before, plus 9 new regression tests and 7 updated ones); `ruff`, `ruff format`, and `mypy` are clean.
 

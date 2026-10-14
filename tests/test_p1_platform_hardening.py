@@ -407,7 +407,6 @@ def test_documentation_references_existing_test_files():
     docs = [
         REPO_ROOT / "README.md",
         REPO_ROOT / "CHANGELOG.md",
-        REPO_ROOT / "docs" / "AUDIT_ROUND3_FINDINGS.md",
     ]
     ref_re = re.compile(r"tests/(test_[a-z0-9_]+\.py)")
     missing: dict[str, list[str]] = {}
