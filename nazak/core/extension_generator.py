@@ -130,7 +130,10 @@ def _fingerprint_with_runtime_chrome_version(fp, chrome_version: str):
 
 
 def generate_profile_extension(
-    profile: BrowserProfile, extensions_base_dir: Path, chrome_version: str | None = None
+    profile: BrowserProfile,
+    extensions_base_dir: Path,
+    chrome_version: str | None = None,
+    cdp_port: int | None = None,
 ) -> str | None:
     """
     Creates an unpacked Chrome extension for the profile with total hardware isolation and proxy auth.
@@ -138,6 +141,11 @@ def generate_profile_extension(
     When ``chrome_version`` is provided (the *real* installed Chrome build), the
     generated stealth source is rebuilt with a matching UA / Client-Hints version
     so the extension shields cannot contradict the runtime UA (audit fix P0-1).
+
+    ``cdp_port`` (audit F-18) bakes the profile's DevTools port into the
+    fetch shield so a page cannot probe the local CDP endpoint — the old
+    shield only allowed the API port 8899 and left every other local port
+    (including the debugging endpoint) reachable by the page.
     """
     ext_dir = extensions_base_dir / profile.id
     if ext_dir.exists():
@@ -148,6 +156,9 @@ def generate_profile_extension(
     if chrome_version:
         fp = _fingerprint_with_runtime_chrome_version(fp, chrome_version)
     proxy = profile.proxy
+    # F-18: block ALL loopback fetches from the page except the local API
+    # port (8899). The CDP port is rejected like any other probe target.
+    fetch_allow_ports_js = json.dumps([8899])
 
     manifest = {
         "manifest_version": 3,
@@ -511,6 +522,94 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         }}
     }} catch(e) {{}}
 
+    // 9b. Plugin Array & MimeType Consistency (anti-detect audit F-12)
+    // A real desktop Chrome ships exactly 5 PDF plugin entries with 2 mime
+    // types each; `navigator.plugins.length === 0` (the headless signature)
+    // or a mismatched plugins/mimeTypes count is a classic automation tell.
+    try {{
+        const makeMimeType = function(type, suffixes, description) {{
+            return {{
+                type: type, suffixes: suffixes, description: description,
+                enabledPlugin: null,
+                toJSON: function() {{ return this; }}
+            }};
+        }};
+        const pluginSpecs = [
+            {{ name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
+              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
+            {{ name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
+              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
+            {{ name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
+              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
+            {{ name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
+              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
+            {{ name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
+              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
+        ];
+        const mimeObjs = pluginSpecs.flatMap(function(spec, idx) {{
+            return spec.mimes.map(function(mt) {{
+                const m = makeMimeType(mt, 'pdf', 'Portable Document Format');
+                const fake = Object.create(Plugin.prototype || Object.prototype);
+                fake.name = spec.name;
+                fake.filename = spec.filename;
+                fake.description = spec.description;
+                fake.length = spec.mimes.length;
+                fake.item = makeNative(function(i) {{ return spec.mimes[i] ? m : null; }}, 'item');
+                fake.namedItem = makeNative(function(n) {{ return n === 'application/pdf' || n === 'text/pdf' ? m : null; }}, 'namedItem');
+                fake.toJSON = function() {{ return this; }};
+                m.enabledPlugin = fake;
+                return m;
+            }});
+        }});
+        const pluginArray = pluginSpecs.map(function(spec, idx) {{
+            const mimes = spec.mimes.map(function(mt) {{
+                return mimeObjs.find(function(m) {{ return m.type === mt && m.enabledPlugin && m.enabledPlugin.name === spec.name; }}) || makeMimeType(mt, 'pdf', '');
+            }});
+            const fake = Object.create(Plugin.prototype || Object.prototype);
+            fake.name = spec.name;
+            fake.filename = spec.filename;
+            fake.description = spec.description;
+            fake.length = mimes.length;
+            fake.item = makeNative(function(i) {{ return mimes[i] || null; }}, 'item');
+            fake.namedItem = makeNative(function(n) {{ return mimes.find(function(m) {{ return m.type === n; }}) || null; }}, 'namedItem');
+            fake.toJSON = function() {{ return this; }};
+            mimes.forEach(function(m, i) {{
+                Object.defineProperty(fake, String(i), {{value: m, enumerable: true}});
+            }});
+            mimes.forEach(function(m) {{
+                Object.defineProperty(fake, m.type, {{value: m, enumerable: true}});
+            }});
+            return fake;
+        }});
+        const pluginsFake = Object.create(PluginArray.prototype || Object.prototype);
+        pluginsFake.length = pluginArray.length;
+        pluginsFake.item = makeNative(function(i) {{ return pluginArray[i] || null; }}, 'item');
+        pluginsFake.namedItem = makeNative(function(n) {{ return pluginArray.find(function(p) {{ return p.name === n; }}) || null; }}, 'namedItem');
+        pluginsFake.refresh = makeNative(function() {{}}, 'refresh');
+        pluginsFake.toJSON = function() {{ return this; }};
+        pluginArray.forEach(function(p, i) {{
+            Object.defineProperty(pluginsFake, String(i), {{value: p, enumerable: true}});
+            Object.defineProperty(pluginsFake, p.name, {{value: p, enumerable: true}});
+        }});
+        const mimeTypesFake = Object.create(MimeTypeArray.prototype || Object.prototype);
+        mimeTypesFake.length = mimeObjs.length;
+        mimeTypesFake.item = makeNative(function(i) {{ return mimeObjs[i] || null; }}, 'item');
+        mimeTypesFake.namedItem = makeNative(function(n) {{ return mimeObjs.find(function(m) {{ return m.type === n; }}) || null; }}, 'namedItem');
+        mimeTypesFake.toJSON = function() {{ return this; }};
+        mimeObjs.forEach(function(m, i) {{
+            Object.defineProperty(mimeTypesFake, String(i), {{value: m, enumerable: true}});
+            Object.defineProperty(mimeTypesFake, m.type, {{value: m, enumerable: true}});
+        }});
+        Object.defineProperty(Navigator.prototype, 'plugins', {{
+            get: makeNative(() => pluginsFake, 'get plugins'),
+            configurable: true, enumerable: true
+        }});
+        Object.defineProperty(Navigator.prototype, 'mimeTypes', {{
+            get: makeNative(() => mimeTypesFake, 'get mimeTypes'),
+            configurable: true, enumerable: true
+        }});
+    }} catch(e) {{}}
+
     // 10. Battery API Shield
     try {{
         if (navigator.getBattery) {{
@@ -596,26 +695,76 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     }} catch(e) {{}}
 
     // 10.2 SpeechSynthesis Voices Matching Platform
+    // Anti-detect (audit F-20): a real Windows 10/11 box ships 10+ SAPI
+    // voices, macOS ~70, desktop Linux (speech-dispatcher/espeak) 4-8; a
+    // three-voice "Windows" is not a machine anyone owns. Pools now match
+    // the real distributions, and a per-profile subset varies the set.
     try {{
         if (window.speechSynthesis && window.speechSynthesis.getVoices) {{
             const osPlatform = {platform_json}.toLowerCase();
-            let voicesData = [];
+            const mk = function(name, lang, isDefault) {{
+                return {{ name: name, lang: lang, default: !!isDefault, localService: true, voiceURI: name }};
+            }};
+            const winPool = [
+                mk("Microsoft David - English (United States)", "en-US", false),
+                mk("Microsoft Zira - English (United States)", "en-US", false),
+                mk("Microsoft Mark - English (United States)", "en-US", false),
+                mk("Microsoft Guy - English (United States)", "en-US", false),
+                mk("Microsoft Aria - English (United States)", "en-US", false),
+                mk("Microsoft Jenny - English (United States)", "en-US", false),
+                mk("Microsoft Anika - English (United Kingdom)", "en-GB", false),
+                mk("Microsoft Ryan - English (United Kingdom)", "en-GB", false),
+                mk("Microsoft Heera - English (India)", "en-IN", false),
+                mk("Microsoft Katja - German (Germany)", "de-DE", false),
+                mk("Microsoft Paulina - Polish (Poland)", "pl-PL", false),
+                mk("Microsoft Ayumi - Japanese (Japan)", "ja-JP", false)
+            ];
+            const macPool = [
+                mk("Samantha", "en-US", false),
+                mk("Alex", "en-US", false),
+                mk("Victoria", "en-US", false),
+                mk("Daniel", "en-GB", false),
+                mk("Karen", "en-AU", false),
+                mk("Moira", "en-IE", false),
+                mk("Tessa", "en-ZA", false),
+                mk("Fiona", "en-GB", false),
+                mk("Allison", "en-US", false),
+                mk("Ava", "en-US", false),
+                mk("Susan", "en-US", false),
+                mk("Yuna", "ko-KR", false)
+            ];
+            const linuxPool = [
+                mk("English (America)+default", "en-US", false),
+                mk("English (Great Britain)", "en-GB", false),
+                mk("German (Germany)", "de-DE", false),
+                mk("French (France)", "fr-FR", false),
+                mk("Spanish (Spain)", "es-ES", false),
+                mk("Italian (Italy)", "it-IT", false),
+                mk("Russian (Russia)", "ru-RU", false),
+                mk("Polish (Poland)", "pl-PL", false)
+            ];
+            // Per-profile deterministic subset (seeded shuffle) so two
+            // profiles never report the identical voice list.
+            const shuffleSeed = ({fp.canvas_noise_seed} >>> 0) || 1;
+            const pickSubset = function(pool, keep) {{
+                const out = pool.slice();
+                for (let i = out.length - 1; i > 0; i--) {{
+                    let s = (shuffleSeed ^ (i * 2654435761)) >>> 0;
+                    s = (s * 1664525 + 1013904223) >>> 0;
+                    const j = s % (i + 1);
+                    const tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+                }}
+                const chosen = out.slice(0, keep);
+                chosen[0] = Object.assign({{}}, chosen[0], {{ default: true }});
+                return chosen;
+            }};
+            let voicesData;
             if (osPlatform.includes('win')) {{
-                voicesData = [
-                    {{ name: "Microsoft David - English (United States)", lang: "en-US", default: true, localService: true, voiceURI: "Microsoft David - English (United States)" }},
-                    {{ name: "Microsoft Zira - English (United States)", lang: "en-US", default: false, localService: true, voiceURI: "Microsoft Zira - English (United States)" }},
-                    {{ name: "Microsoft Mark - English (United States)", lang: "en-US", default: false, localService: true, voiceURI: "Microsoft Mark - English (United States)" }}
-                ];
+                voicesData = pickSubset(winPool, 8 + (shuffleSeed % 5));
             }} else if (osPlatform.includes('mac')) {{
-                voicesData = [
-                    {{ name: "Samantha", lang: "en-US", default: true, localService: true, voiceURI: "Samantha" }},
-                    {{ name: "Alex", lang: "en-US", default: false, localService: true, voiceURI: "Alex" }},
-                    {{ name: "Victoria", lang: "en-US", default: false, localService: true, voiceURI: "Victoria" }}
-                ];
+                voicesData = pickSubset(macPool, 6 + (shuffleSeed % 5));
             }} else {{
-                voicesData = [
-                    {{ name: "English (America)+default", lang: "en-US", default: true, localService: true, voiceURI: "default" }}
-                ];
+                voicesData = pickSubset(linuxPool, 4 + (shuffleSeed % 4));
             }}
             const voiceObjects = voicesData.map(v => Object.assign(Object.create(window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype), v));
             window.speechSynthesis.getVoices = makeNative(function() {{
@@ -863,6 +1012,33 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         Intl.DateTimeFormat.prototype = origDTF.prototype;
     }} catch(e) {{}}
 
+    // 12e. Anti-detect (audit F-16): performance.now() timing entropy.
+    // The native timer carries host hardware entropy (timer resolution +
+    // the exact sub-microsecond offsets a machine's scheduler produces);
+    // two profiles on the same host therefore produce correlated timings.
+    // A per-profile deterministic sub-microsecond jitter decorrelates them
+    // while keeping the values monotonic (required by the spec).
+    try {{
+        const perfSeedBase = ({fp.canvas_noise_seed} >>> 0) || 1;
+        let perfCallCount = 0;
+        const origNow = PerformancePrototype = (window.performance && performance.now) ? performance.now.bind(performance) : null;
+        if (origNow) {{
+            Object.defineProperty(performance, 'now', {{
+                value: makeNative(function() {{
+                    const native = origNow();
+                    perfCallCount = (perfCallCount + 1) >>> 0;
+                    let s = (perfSeedBase ^ (perfCallCount * 2654435761)) >>> 0;
+                    s = (s * 1664525 + 1013904223) >>> 0;
+                    // jitter in [-0.04, +0.04] ms: well below any visible
+                    // threshold, but decorrelates the host scheduler signature.
+                    const jitter = (((s >>> 8) % 1000) / 1000 - 0.5) * 0.08;
+                    return native + jitter;
+                }}, 'now'),
+                configurable: true, writable: true, enumerable: true
+            }});
+        }}
+    }} catch(e) {{}}
+
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
         try {{
@@ -913,10 +1089,23 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 17. Port Scan & Localhost Protection
     if ({str(fp.block_port_scanning).lower()}) {{
         try {{
+            // Anti-detect (audit F-18): block EVERY loopback target from the
+            // page except the local API port. The old shield whitelisted
+            // ':8899' as a substring — and left the profile's own DevTools
+            // endpoint (and any other local service) reachable, letting a
+            // page confirm CDP automation via http://127.0.0.1:<port>/json.
+            const allowPorts = {fetch_allow_ports_js};
+            const loopback = /https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\])(:\\d+)?/i;
             const origFetch = window.fetch;
-            window.fetch = makeNative(function(url, options) {{
-                if (typeof url === 'string' && (url.includes('127.0.0.1') || url.includes('localhost')) && !url.includes(':8899')) {{
-                    return Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'));
+            window.fetch = makeNative(function(input, options) {{
+                const target = (input && typeof input === 'object' && 'url' in input) ? String(input.url) : String(input);
+                const m = loopback.exec(target);
+                if (m) {{
+                    const portMatch = /:(\\d+)(?:\\/|$)/.exec(m[0]);
+                    const port = portMatch ? parseInt(portMatch[1], 10) : (target.startsWith('https') ? 443 : 80);
+                    if (allowPorts.indexOf(port) === -1) {{
+                        return Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'));
+                    }}
                 }}
                 return origFetch.apply(this, arguments);
             }}, 'fetch');

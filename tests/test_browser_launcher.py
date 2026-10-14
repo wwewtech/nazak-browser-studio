@@ -27,6 +27,9 @@ def test_build_chrome_arguments(tmp_path):
     assert "--user-data-dir=" in arg_str
     assert "test_args_prof" in arg_str
     assert "--proxy-server=http://127.0.0.1:8080" in arg_str
-    assert "--disable-blink-features=AutomationControlled" in arg_str
+    # F-17: the Puppeteer-only AutomationControlled flag is deliberately absent —
+    # it never affected regular Chrome and only marked the argv as tooling;
+    # navigator.webdriver is spoofed in the stealth layer instead.
+    assert "--disable-blink-features=AutomationControlled" not in arg_str
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in arg_str
     assert "https://accounts.google.com" in args[-1]

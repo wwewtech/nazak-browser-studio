@@ -83,7 +83,8 @@ def test_chrome_args_builder_minimal_profile(test_profile):
         assert "chrome.exe" in args
         assert any(a.startswith("--user-data-dir=") for a in args)
         assert "--profile-directory=Default" in args
-        assert "--disable-blink-features=AutomationControlled" in args
+        # F-17: the Puppeteer-only AutomationControlled flag is deliberately absent.
+        assert "--disable-blink-features=AutomationControlled" not in args
 
 
 def test_chrome_args_builder_socks5_authenticated_proxy(test_profile):

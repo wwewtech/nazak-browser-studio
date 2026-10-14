@@ -244,7 +244,10 @@ class BrowserLauncher:
         self.clean_stale_locks(user_data_path)
 
         ext_path = generate_profile_extension(
-            profile, self.extensions_dir, chrome_version=get_chrome_version(chrome_exe)
+            profile,
+            self.extensions_dir,
+            chrome_version=get_chrome_version(chrome_exe),
+            cdp_port=cdp_port,
         )
         fp = profile.fingerprint
         proxy = profile.proxy
@@ -257,7 +260,10 @@ class BrowserLauncher:
             "--profile-directory=Default",
             "--no-first-run",
             "--no-default-browser-check",
-            "--disable-blink-features=AutomationControlled",
+            # Anti-detect (audit F-17): --disable-blink-features=AutomationControlled
+            # is a *Puppeteer* flag — it never affected regular Chrome and only
+            # marked the argv as automation tooling. navigator.webdriver is
+            # spoofed in the stealth layer instead.
             "--disable-infobars",
             "--disable-features=IsolateOrigins,site-per-process,TranslateUI,UserAgentClientHint",
             f"--force-webrtc-ip-handling-policy={fp.webrtc_policy}",

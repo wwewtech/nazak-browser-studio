@@ -104,7 +104,8 @@ def test_browser_launcher_strict_isolation_flags(tmp_path):
 
     # Check key isolation flags
     assert "--user-data-dir=" in args_str
-    assert "--disable-blink-features=AutomationControlled" in args_str
+    # F-17: the Puppeteer-only AutomationControlled flag is deliberately absent.
+    assert "--disable-blink-features=AutomationControlled" not in args_str
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in args_str
     assert "--window-size=1920,1080" in args_str
     assert "--no-first-run" in args_str
