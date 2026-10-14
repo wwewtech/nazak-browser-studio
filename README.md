@@ -23,7 +23,7 @@
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.13.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.14.0 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -149,24 +149,29 @@ with sync_playwright() as p:
 
 ---
 
-### 🛡️ 7. Total Hardware Shield v2.5 & Enterprise Stealth Architecture
+### 🛡️ 7. Total Hardware Shield v2.6 & Enterprise Stealth Architecture
 - **Native Function Cloaking (`makeNative` / `toString` Proxy)**: All hooked functions, getters, and prototype descriptors (including `navigator.webdriver` getter) are shielded through a proxy of `Function.prototype.toString`. Anti-fraud verification scripts (CreepJS, DataDome, Cloudflare Turnstile) receive pristine `function () { [native code] }` reflection strings without tampering signals.
 - **Hardware Emulation (WebGL & WebGPU)**:
-  - *WebGL*: UNMASKED_VENDOR and UNMASKED_RENDERER spoofing (*NVIDIA GeForce RTX 4090 / 4080 / 3080*, *AMD Radeon RX 7900 XTX*, *Apple M3 Max*, *Intel Arc A770*).
+  - *WebGL*: UNMASKED_VENDOR/RENDERER plus ~25 limit constants (texture units, vertex/fragment uniform vectors, attribs, cube-map sizes, aliased ranges) matching a coherent desktop-GPU profile; the `WEBGL_debug_info` extension getter is wrapped so the host GPU cannot leak through `ext.getParameter`.
   - *WebGPU*: Intercepts `navigator.gpu.requestAdapter()` to synchronize `requestAdapterInfo()` and `adapter.info` with the spoofed GPU vendor and architecture.
-- **Platform-Aligned Font & Speech Spoofing**:
+- **Platform-Aligned Font, Speech & Plugin Spoofing**:
   - `queryLocalFonts`: Emulates the Font Access API with authentic OS font family lists (Windows: Segoe UI, Calibri; macOS: San Francisco, Helvetica; Linux: DejaVu Sans, Liberation).
-  - `speechSynthesis.getVoices`: Aligns synthesized system voices with spoofed platform and locale.
+  - `speechSynthesis.getVoices`: Voice pools match real distributions (Windows 12 SAPI voices, macOS 12, Linux 8) with a per-profile seeded subset.
+  - `navigator.plugins` / `mimeTypes`: The exact desktop-Chrome shape (5 PDF plugin entries, 2 mime types each, real `PluginArray`/`MimeTypeArray` prototypes) — an empty array is a headless tell.
 - **Sub-Perceptual Deterministic Noise Injection**:
-  - `Canvas 2D & OffscreenCanvas Noise`: LCG pseudo-random perturbation across all 4 RGBA channels, fully synchronized across 2D contexts, `OffscreenCanvasRenderingContext2D`, `HTMLCanvasElement.prototype.toDataURL`, and `toBlob`.
-  - `WebAudio & OfflineAudioContext Noise`: Distributes deterministic jitter across live `AudioBuffer` and `OfflineAudioContext.prototype.startRendering` rendering pipelines.
-  - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter added to `CanvasRenderingContext2D.prototype.measureText` metrics and `Element.prototype.getBoundingClientRect`.
+  - `Canvas 2D & OffscreenCanvas Noise`: LCG pseudo-random perturbation across the FULL canvas surface (`toDataURL`/`toBlob` included), re-seeded per read so two reads never cancel out.
+  - `WebAudio & OfflineAudioContext Noise`: Deterministic jitter across live `AudioBuffer` and `OfflineAudioContext.startRendering`; `sampleRate`/`baseLatency`/`numberOfChannels` pinned to the profile (host sound-card values leak otherwise).
+  - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter added to `CanvasRenderingContext2D.prototype.measureText` metrics and `Element.prototype.getBoundingClientRect`, re-derived per call.
+  - `performance.now()`: Per-profile sub-100µs jitter decorrelates the host scheduler's timing signature while keeping the timer monotonic.
 - **Network & Runtime Leak Protection**:
-  - `WebRTC Candidate Sanitizer`: Automatically strips RFC 1918 private IPv4 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
-  - `Timezone Synchronization`: The CDP stealth injector applies `Emulation.setTimezoneOverride` to every page session (live-verified — JavaScript `Intl` stays locked to the profile timezone), backed by the `--time-zone-for-testing={timezone}` flag and the `TZ` process environment for C++-side alignment.
-  - `Anti-Port Scanning Shield`: Blocks anti-fraud port scanning targeting localhost `127.0.0.1` while preserving local automation access.
+  - `WebRTC Candidate Sanitizer`: Automatically strips RFC 1918 private IPv4 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads — including trickle-ICE candidates and `createAnswer`.
+  - `Timezone Synchronization`: The CDP stealth injector applies `Emulation.setTimezoneOverride` to every page session (live-verified — JavaScript `Intl` stays locked to the profile timezone, with full `NumberFormat`/`DateTimeFormat` locale consistency), backed by the `--time-zone-for-testing={timezone}` flag and the `TZ` process environment for C++-side alignment. Offsets are always resolved DST-aware.
+  - `matchMedia`: `prefers-color-scheme` / `prefers-reduced-motion` / DPR queries answer from the profile, not the host.
+  - `Anti-Port Scanning Shield`: Blocks every loopback fetch target from the page except the local API port — the profile's own DevTools endpoint is unreachable.
+- **Cluster-Signature Hygiene (farm-level anti-detect)**:
+  - Window position randomized per launch (never a farm-wide constant), history host-sets unique per profile (110-URL pool: popular core + long tail), media-device labels drawn from realistic pools, battery states that actually vary, GREASE brands keyed to the browser major, and the CDP binding name randomized per profile.
 - **Organic Profile History Seeder (SQLite)**:
-  - Eliminates "empty bot profile" heuristics by injecting authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic visit frequencies on high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
+  - Eliminates "empty bot profile" heuristics by injecting authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic visit frequencies and a per-profile host-set (popular core shared, long tail unique).
   - 1-click execution via REST API (`POST /api/profiles/{id}/seed-history?entries_count=25`).
 - **DevToolsActivePort Handshake**: Zero-race CDP connection resolving ephemeral ports and GUID paths directly from Chromium runtime state, with automatic stale port lock cleanup.
 
@@ -196,9 +201,9 @@ with sync_playwright() as p:
 
 ---
 
-## 🗂 Project Layout (v1.13.0)
+## 🗂 Project Layout (v1.14.0)
 
-The v1.13.0 tree keeps the decomposed layout introduced in v1.12.0 (two former
+The v1.14.0 tree keeps the decomposed layout introduced in v1.12.0 (two former
 monoliths split into routers and a profiles package, one task runner for the GUI)
 and layers a shared secret masker (`nazak/core/secret_masking.py`) used by both
 the API and the CLI. Compatibility is preserved: every old import path and
@@ -311,6 +316,12 @@ reentrancy, DevTools-poll early return), `tests/test_frozen_build_contract.py` (
 nazak module reachable from main.py via static imports; spec excludes never shadow a
 module), `tests/test_secret_masking.py` (one masking contract for the CLI and API
 surfaces) and `tests/test_synchronizer_stop_contract.py` (pump-join on stop/restart).
+
+Full anti-detect audit closure (v1.14.0): the battery/device/voice distribution
+contracts, per-profile binding names, loopback fetch-shield, and the generated
+`stealth.js` passing `node --check` on all three platforms are pinned in the
+existing suites (`test_hardware_isolation_fuzzing`, `test_services_and_parsers_deep`,
+`test_synchronizer_engine`, `test_round3b_stealth_and_sync`, `test_browser_cdp_resilience`).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 

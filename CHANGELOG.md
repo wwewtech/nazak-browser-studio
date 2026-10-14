@@ -2,6 +2,81 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## v1.14.0 — Full Anti-Detect Audit Closure (20/20 Findings) (2026-10-14)
+
+A three-hour adversarial audit of the anti-detect layer produced 20 findings — four
+cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
+gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
+
+Suite: **985 passed, 5 deselected** (990 collected; 0 `xfail`). `ruff check`, `ruff format
+--check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
+windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Cluster signatures (the farm tells — fixed first)
+
+- **Window position (F-01).** Every profile opened at the pixel-identical `40,40`;
+  real users drag windows differently. Now randomized per launch inside the spoofed screen.
+- **History seeding (F-02).** The pool held 25 hard-coded URLs and every seeded profile
+  carried (nearly) the same host-set — a one-line cluster signature in Chromium history
+  forensics. The pool is now 110 URLs with a popular core (sites every real machine has)
+  and a long tail that makes each profile's host-set unique.
+- **Media devices (F-04).** All profiles reported the same `Microphone (High Definition
+  Audio Device)` + `HD WebCam Pro` labels — `enumerateDevices()` exposes kind+label even
+  without permission. Devices now come from realistic pools (8 mics, 6 speakers, 8
+  cameras; ~8% of profiles have no webcam at all, like real desktops).
+- **Battery (F-19).** A farm of 100 permanently-charging, always-full laptops is a
+  statistical outlier. States now vary: plugged-in (mostly full), draining on battery,
+  and charging from low — with realistic times.
+
+### Fingerprint surface
+
+- **Canvas noise (F-03).** `toDataURL`/`toBlob` mutated only a 16×16 corner — 99% of the
+  canvas hash stayed native. The full surface is perturbed now.
+- **WebGL (F-06).** `getParameter` spoofed ~5 constants of the ~50 that fingerprinters
+  pull; `WEBGL_debug_info` (the extension object) leaked the host GPU entirely. ~25
+  constants now match a coherent desktop-GPU profile and the extension getter is wrapped.
+- **matchMedia (F-07).** `prefers-color-scheme` / `reduced-motion` / DPR reported the
+  host; a dark-mode host under a light profile was a one-call tell. All pinned to the profile.
+- **AudioContext (F-08).** `sampleRate` / `baseLatency` / `numberOfChannels` depend on the
+  host sound card and are classic audio-fingerprint inputs — now pinned per profile.
+- **Intl (F-15).** Only `timeZone` in `resolvedOptions()` was spoofed; `NumberFormat` /
+  `DateTimeFormat` still formatted with the host locale. Full locale consistency now.
+- **plugins/mimeTypes (F-12).** Not spoofed at all — an empty or short array is a
+  headless/automation tell. The exact desktop-Chrome shape (5 PDF entries, 2 mimes each,
+  proper array prototypes) is emulated.
+- **performance.now() (F-16).** The native timer carries host-scheduler entropy and
+  correlates every profile on the same machine; a per-profile sub-100us jitter decorrelates.
+- **Speech voices (F-20).** Three voices on "Windows" is not a machine anyone owns. Pools
+  now match real distributions (Win 12, macOS 12, Linux 8) with a seeded per-profile subset.
+
+### Automation tells
+
+- **CDP binding (F-05).** A static `window.__nse_ev` was a dictionary-lookup tell shared
+  by every profile of the product. The binding name is now randomized per profile and the
+  sync client is rendered as a template with that name.
+- **Puppeteer flag (F-17).** `--disable-blink-features=AutomationControlled` never
+  affected regular Chrome and only marked the argv as automation tooling — removed;
+  `navigator.webdriver` is spoofed in the stealth layer instead.
+- **DevTools port probe (F-18).** The page-side fetch shield whitelisted `:8899` as a
+  substring and left the profile's own DevTools endpoint reachable (`/json/version`
+  answers). Every loopback port except the API is now blocked; the CDP port is baked
+  into the generated stealth source.
+
+### Network & freshness
+
+- **GREASE brands (F-09).** `Not(A:Brand;v=99` was hard-coded regardless of the browser
+  version; real Chrome keys the GREASE version to the major. Now versioned + brand varies.
+- **UA pool (F-10).** The pool shipped Chrome 130–133 — a version share that no longer
+  exists in the wild is suspicious by itself. The pool spans the current stable channel
+  (136–142); the runtime re-pin to the installed build still applies.
+- **TZ/IP cross-check (F-11).** A Tokyo profile exiting from a German IP is a one-request
+  tell; the proxy check now records `timezone_mismatch` on the health result.
+- **Teleport clicks (F-13).** Synchronizer-mirrored clicks landed without a prior mouse
+  move — a behavioural-ML signature. A 5-step interpolation trajectory precedes every click.
+- **HTTP geo lookup (F-14).** The geo check ran over plain HTTP through the proxy, so the
+  intermediary could rewrite the answer feeding the profile. Moved to HTTPS (`ipwho.is`),
+  same hostile-payload sanitising contract.
+
 ## v1.13.0 — Reliability & Anti-Detect Cleanup (2026-10-14)
 
 Suite: **985 passed, 5 deselected** (990 collected; 0 `xfail`). `ruff check`,
