@@ -161,11 +161,19 @@ def test_gpu_presets_all_have_required_keys():
 
 
 def test_media_devices_types():
+    # F-04: mic+speakers always; a webcam may be absent (like real desktops
+    # without one) — a mandatory camera on every profile was a farm tell.
     fp = generate_random_fingerprint("windows")
     kinds = [d.kind for d in fp.media_devices]
     assert "audioinput" in kinds
     assert "audiooutput" in kinds
-    assert "videoinput" in kinds
+    assert set(kinds) <= {"audioinput", "audiooutput", "videoinput"}
+    # Across a sample, most profiles DO carry a camera (the pool only drops
+    # it ~8% of the time).
+    with_cam = sum(
+        1 for _ in range(60) if "videoinput" in [d.kind for d in generate_random_fingerprint("windows").media_devices]
+    )
+    assert with_cam >= 40, f"only {with_cam}/60 profiles have a camera"
 
 
 def test_battery_spoof_config_defaults():
