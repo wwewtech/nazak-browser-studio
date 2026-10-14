@@ -175,6 +175,23 @@ class UploadQueueManager:
             for j in self.jobs.values()
         ]
 
+    def _set_job_status(self, job: UploadJob, status: str, message: str | None = None) -> bool:
+        """Transition a job's status unless the user canceled it (R-02).
+
+        cancel_all() runs synchronously from another thread while the batch
+        loop is parked on an await; the loop's next unconditional
+        `job.status = ...` used to overwrite the 'canceled' verdict, and the
+        batch kept going (a second browser could even launch after the
+        cancel sweep). Every non-terminal transition now goes through this
+        guard: a canceled job stays canceled.
+        """
+        if job.status == "canceled" and status not in ("canceled",):
+            return False
+        job.status = status
+        if message is not None:
+            job.progress_message = message
+        return True
+
     def cancel_all(self):
         self._cancel_requested = True
         canceled_ids: list[str] = []
@@ -297,8 +314,8 @@ class UploadQueueManager:
                         continue
 
                     job.started_at = datetime.now(timezone.utc).isoformat()
-                    job.status = "uniqueizing"
-                    job.progress_message = "Generating unique video hash & audio shift..."
+                    if not self._set_job_status(job, "uniqueizing", "Generating unique video hash & audio shift..."):
+                        continue  # canceled mid-flight — the verdict stands
                     await self.broadcast(
                         "autopost_job_update",
                         {"profile_id": pid, "status": job.status, "message": job.progress_message},
@@ -306,9 +323,8 @@ class UploadQueueManager:
 
                     ok, out_path, err = self.uniquifier.uniquify_video(source_video_path, pid, profile_index=idx)
                     if not ok or not out_path:
-                        job.status = "failed"
+                        self._set_job_status(job, "failed", "Uniqueization error")
                         job.error = f"Video uniqueization failed: {err}"
-                        job.progress_message = "Uniqueization error"
                         await self.broadcast(
                             "autopost_job_update", {"profile_id": pid, "status": "failed", "error": job.error}
                         )
@@ -326,8 +342,8 @@ class UploadQueueManager:
                     job.title = meta["title"]
                     job.description = meta["description"]
 
-                    job.status = "launching"
-                    job.progress_message = "Launching isolated anti-detect browser session..."
+                    if not self._set_job_status(job, "launching", "Launching isolated anti-detect browser session..."):
+                        continue  # canceled mid-flight — do NOT launch a browser
                     await self.broadcast(
                         "autopost_job_update",
                         {"profile_id": pid, "status": job.status, "message": job.progress_message},
@@ -340,9 +356,8 @@ class UploadQueueManager:
                         launched_here = True
                         self._launched_here.add(pid)
                     else:
-                        job.status = "failed"
+                        self._set_job_status(job, "failed", "Launch error")
                         job.error = f"Browser launch failed: {launch_err}"
-                        job.progress_message = "Launch error"
                         await self.broadcast(
                             "autopost_job_update", {"profile_id": pid, "status": "failed", "error": job.error}
                         )
@@ -374,9 +389,17 @@ class UploadQueueManager:
                         self.profile_manager.update_profile(prof)
                         continue
 
-                    job.status = "uploading"
                     target_label = "YouTube Studio" if platform_name == "youtube_shorts" else "Instagram"
-                    job.progress_message = f"Uploading to {target_label}..."
+                    if not self._set_job_status(job, "uploading", f"Uploading to {target_label}..."):
+                        # canceled while we were launching — sweep the browser
+                        # and keep the cancel verdict.
+                        if launched_here:
+                            try:
+                                self.browser_launcher.stop(pid)
+                            except Exception:
+                                pass
+                            self._launched_here.discard(pid)
+                        continue
                     await self.broadcast(
                         "autopost_job_update",
                         {"profile_id": pid, "status": job.status, "message": job.progress_message},

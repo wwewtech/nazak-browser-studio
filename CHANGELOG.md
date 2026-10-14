@@ -8,7 +8,7 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1015 passed, 5 deselected** (1020 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1024 passed, 5 deselected** (1029 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -29,6 +29,23 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   are recognised, and the port now survives the split (it used to degrade to 8080).
 - **Trailing separator (P-05).** `host:1080|` left the pipe in the port segment ("1080|"),
   silently degrading the port to the default; trailing `|`/`#` are now stripped.
+
+### Race conditions (hunt round 4)
+
+- **Process-monitor status race (R-01).** The monitor's check-then-act (`get` a RUNNING
+  profile, then `update` the whole object) had a window: a relaunch landing between the
+  check and the write was clobbered — the profile said STOPPED while its fresh browser was
+  alive, and the GUI could double-launch the same user-data-dir (Chrome profile-lock
+  errors). Status transitions now go through `transition_status_if`, an atomic
+  compare-and-set pinned to the pid the monitor OBSERVED as dead: a relaunch with a new pid
+  can never be marked stopped by a stale death observation.
+- **Upload-cancel race (R-02).** `cancel_all()` marks every in-flight job 'canceled' from
+  another thread while the batch loop is parked on an await; the loop's next unconditional
+  `job.status = ...` overwrote the cancel verdict and kept going — the GUI flipped from
+  'canceled' back to 'launching', and a browser could launch AFTER the cancel sweep had
+  already passed. Every non-terminal job transition now goes through a cancel guard
+  (`_set_job_status`): a canceled job stays canceled, and the pre-launch guard skips the
+  browser launch entirely.
 
 ### Concurrency & storage (hunt round 3)
 

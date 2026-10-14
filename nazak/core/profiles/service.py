@@ -45,6 +45,41 @@ class ProfileService:
         with self._lock:
             self.backend.save_all(self.profiles)
 
+    def transition_status_if(
+        self, profile_id: str, expected: ProfileStatus, new_status: ProfileStatus, expected_pid: int | None = None
+    ) -> BrowserProfile | None:
+        """Atomic compare-and-set for profile status (hunt R-01).
+
+        The process monitor's old check-then-act (`get` then `update` the
+        whole object) had a window: a relaunch landing between the check and
+        the write got clobbered — the profile said STOPPED while its fresh
+        browser was alive. This transitions the status under ONE lock take,
+        optionally pinned to the exact pid the caller saw (a relaunch with a
+        new pid must never be marked stopped by a stale death observation).
+        """
+        try:
+            files.validate_id(profile_id)
+        except ValueError:
+            return None
+        with self._lock:
+            stored = self.profiles.get(profile_id)
+            if stored is None or stored.status != expected:
+                return None
+            if expected_pid is not None and stored.pid != expected_pid:
+                # A relaunch with a different pid won the race: leave it alone.
+                return None
+            stored.status = new_status
+            if new_status != ProfileStatus.RUNNING:
+                stored.pid = None
+            stored.updated_at = datetime.now(timezone.utc).isoformat()
+            backend = self.backend
+            save_one = getattr(backend, "save_one", None)
+            if callable(save_one):
+                save_one(stored)
+            else:
+                backend.save_all(self.profiles)
+            return stored
+
     # -- queries --------------------------------------------------------
     def list_all(self) -> list[BrowserProfile]:
         with self._lock:

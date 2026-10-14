@@ -53,14 +53,44 @@ class ProcessMonitor:
                         # Check if process is still alive
                         alive = self.browser_launcher.is_profile_running(p.id)
                         if not alive:
-                            # User closed browser window - verify status before updating/saving
-                            if hasattr(self.profile_manager, "get_profile"):
+                            # Hunt R-01 (check-then-act race): a relaunch that
+                            # landed between our check and a full-object update
+                            # got clobbered — the profile said STOPPED while its
+                            # fresh browser was alive (the GUI could double-launch
+                            # the same user-data-dir). The status transition is a
+                            # single atomic compare-and-set now: RUNNING->STOPPED
+                            # only if it is still RUNNING when we take the lock.
+                            svc = getattr(self.profile_manager, "_service", None)
+                            transition_callable = (
+                                getattr(svc, "transition_status_if", None) if svc is not None else None
+                            )
+                            done = False
+                            if callable(transition_callable):
+                                # Pin the CAS to the pid we OBSERVED as dead: a
+                                # relaunch that already installed a new pid must
+                                # never be marked stopped by this observation.
+                                done = (
+                                    transition_callable(
+                                        p.id, ProfileStatus.RUNNING, ProfileStatus.STOPPED, expected_pid=p.pid
+                                    )
+                                    is not None
+                                )
+                            if not done and hasattr(self.profile_manager, "get_profile"):
+                                # Backend without the CAS method: guarded
+                                # full-object update (pre-R-01 behaviour).
                                 curr = self.profile_manager.get_profile(p.id)
-                                if curr and curr.status != ProfileStatus.RUNNING:
+                                if not curr or curr.status != ProfileStatus.RUNNING:
                                     continue
-                            p.status = ProfileStatus.STOPPED
-                            p.pid = None
-                            self.profile_manager.update_profile(p)
+                                curr.status = ProfileStatus.STOPPED
+                                curr.pid = None
+                                self.profile_manager.update_profile(curr)
+                            elif not done:
+                                # Minimal manager contract (tests, embedders):
+                                # no CAS and no get_profile — mutate the snapshot
+                                # we are already holding and push it back.
+                                p.status = ProfileStatus.STOPPED
+                                p.pid = None
+                                self.profile_manager.update_profile(p)
                             # Notify listeners
                             for cb in self._callbacks:
                                 try:
