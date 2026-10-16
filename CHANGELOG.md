@@ -8,9 +8,26 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1024 passed, 5 deselected** (1029 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1026 passed, 5 deselected** (1031 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Synchronizer hunt (round 5)
+
+- **Stuck-pump cleanup killed the new session (S-01).** `stop_session()` joins the mirror
+  pump for only 2 s; a pump stuck in a blocking Playwright call survives the join and its
+  `finally`-block runs LATER. The worker-page cache and the Playwright driver lived on the
+  manager, so the late cleanup closed the pages of whatever NEW session the user had
+  started in the meantime and stopped its driver. Both are session-scoped now: a dying
+  session can only clean up itself.
+- **Deaf sync client when the injector is still starting (S-02).** The per-profile sync
+  binding name was drawn inside the injector daemon thread — after the CDP endpoint
+  resolved (up to 6 s). `_install_sync_client` read `handle.injector` in that window,
+  fell back to the STATIC `__nse_ev`, and rendered a client for a binding that never
+  exists; because the install guard `window.__nse_c` is non-configurable, a retry with
+  the correct name could not repair the page and the sync session stayed deaf forever.
+  The name is now drawn eagerly on the injector handle at launch time and the
+  synchronizer reads it from the handle.
 
 ### Proxy parser correctness (found by the second hunting round)
 

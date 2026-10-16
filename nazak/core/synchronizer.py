@@ -314,12 +314,29 @@ class SynchronizerManager:
             return
         # Anti-detect (F-05): render the client with the SAME per-profile
         # binding name the injector installed (read from its options).
-        binding_name = "__nse_ev"
+        # Hunt S-02: the name is drawn EAGERLY on the injector handle at launch
+        # time, so it is available even while the injector thread is still
+        # resolving the CDP endpoint. The old code fell back to the STATIC
+        # name when handle.injector was not yet assigned — the client was then
+        # rendered for a binding that never exists, and because the install
+        # guard (window.__nse_c) is non-configurable, a retry with the correct
+        # name could not repair it: the session stayed deaf FOREVER.
+        binding_name = ""
         with getattr(self.browser_launcher, "_registry_lock", __import__("contextlib").nullcontext()):
             handle = getattr(self.browser_launcher, "_injectors", {}).get(master_profile_id)
         injector = getattr(handle, "injector", None) if handle else None
         if injector is not None:
-            binding_name = getattr(injector, "_binding_name", binding_name)
+            binding_name = getattr(injector, "_binding_name", "") or ""
+        elif handle is not None:
+            # Injector thread still starting: the eager name is already final.
+            binding_name = getattr(handle, "binding_name", "") or ""
+        if not binding_name:
+            # No handle at all (injector unavailable — e.g. websockets missing):
+            # the legacy static name keeps direct-injection setups working.
+            logger.warning(
+                "synchronizer: master %s has no injector handle; using legacy binding name", master_profile_id
+            )
+            binding_name = "__nse_ev"
         client_js = sync_client_js(binding_name)
         import asyncio
 

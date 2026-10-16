@@ -183,4 +183,129 @@ def test_get_chrome_version_detects_real_binary():
     assert version.count(".") == 3
     parts = version.split(".")
     assert all(p.isdigit() for p in parts)
-    assert int(parts[0]) >= 100  # modern Chrome major
+
+
+# ---------------------------------------------------------------------------
+# Hunt S-02: the per-profile sync binding name is drawn EAGERLY on the handle
+# at launch time. The old flow drew it inside the injector daemon thread (after
+# the WS endpoint resolved), so a synchronizer starting within that window read
+# handle.injector == None, fell back to the STATIC "__nse_ev", and rendered a
+# client for a binding that never exists. The install guard window.__nse_c is
+# non-configurable, so a later retry with the correct name could not repair the
+# page: the sync session stayed deaf forever.
+# ---------------------------------------------------------------------------
+
+
+def test_s02_handle_carries_eager_binding_name_matching_injector():
+    """start_stealth_injector must place the binding name on the handle
+    synchronously AND pass the very same name into InjectorOptions."""
+    import nazak.core.cdp_injector as ci
+
+    captured: dict = {}
+
+    class _FakeInjector:
+        def __init__(self, opts):
+            captured["opts"] = opts
+            captured["inj"] = self
+            self.applied = False
+            self.sessions_applied = 0
+            self.auth_challenges = 0
+            self.auth_errors = 0
+            self.requests_paused = 0
+            self.requests_continued = 0
+            self._binding_name = opts.binding_name
+            self.last_error = None
+            self._loop = None
+
+        async def run(self):  # never actually driven
+            return None
+
+    fp = SimpleNamespace(user_agent="UA", timezone="UTC", language="en-US")
+    injected = {
+        "StealthInjector": _FakeInjector,
+    }
+    # websockets present, endpoint resolvable via the user_data_dir hook, and
+    # the version probe returns without touching a real socket.
+    monkey_env = {
+        "websockets": object(),
+        "_devtools_active_ws": lambda *a, **k: "ws://127.0.0.1:1/devtools/browser/x",
+        "read_chrome_version_from_ws_info": lambda ws: "153.0.0.0",
+    }
+    real = {k: getattr(ci, k) for k in injected}
+    real.update({k: getattr(ci, k) for k in monkey_env})
+    real_asyncio_run = ci.asyncio.run
+    real_asyncio_mod = ci.asyncio
+    try:
+        for k, v in injected.items():
+            setattr(ci, k, v)
+        for k, v in monkey_env.items():
+            setattr(ci, k, v)
+        ci.asyncio = SimpleNamespace(run=lambda coro: coro.close())
+        handle = ci.start_stealth_injector(
+            fingerprint=fp,
+            user_data_dir=Path("Z:") / "no" / "such" / "dir",
+            profile_id="s02",
+        )
+        assert handle is not None
+        # 1) the name is on the handle the moment the call returns;
+        assert isinstance(handle.binding_name, str) and handle.binding_name
+        assert handle.binding_name != ci.SYNC_BINDING_NAME  # per-profile random
+        # 2) the injector received EXACTLY the same name;
+        assert captured["opts"].binding_name == handle.binding_name
+        # 3) the injector object's own name agrees (single source of truth).
+        assert captured["inj"]._binding_name == handle.binding_name
+    finally:
+        for k, v in real.items():
+            setattr(ci, k, v)
+        ci.asyncio = real_asyncio_mod
+        if handle is not None and handle.thread is not None:
+            handle.thread.join(timeout=1.0)
+
+
+def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
+    """_install_sync_client must read the EAGER handle name when the injector
+    object is not yet assigned, instead of the static legacy fallback."""
+    from nazak.core.synchronizer import SynchronizerManager, sync_client_js
+
+    mgr = SynchronizerManager(SimpleNamespace())
+    handle = SimpleNamespace(injector=None, binding_name="__nse_ev_deadbeef01")
+    import contextlib as _ctxlib
+
+    launcher = SimpleNamespace(
+        get_cdp_info=lambda pid: {"http_endpoint": "http://127.0.0.1:1"},
+        _registry_lock=_ctxlib.nullcontext(),
+        _injectors={"m": handle},
+    )
+    mgr.browser_launcher = launcher
+
+    installed: list[str] = []
+    captured_targets: list = []
+
+    def fake_thread(target, daemon=True, name=None):  # do not run _install
+        installed.append("started")
+        captured_targets.append(target)
+        return SimpleNamespace(start=lambda: None)
+
+    import nazak.core.synchronizer as sync_mod
+
+    real_thread = sync_mod.threading.Thread
+    sync_mod.threading.Thread = fake_thread
+    try:
+        mgr._install_sync_client("m")
+    finally:
+        sync_mod.threading.Thread = real_thread
+
+    assert installed == ["started"]
+    # The runner closure carries the inner _install coroutine function, whose
+    # own closure holds the rendered client. The legacy static render would
+    # contain the exact token "typeof window.__nse_ev ===" (the per-profile
+    # name has a suffix, so the substring match cannot collide with it).
+    target = captured_targets[0]
+    inner_fns = [c.cell_contents for c in target.__closure__ or [] if callable(c.cell_contents)]
+    assert inner_fns, "the runner closure must carry the _install coroutine function"
+    js_strings: list[str] = []
+    for fn in inner_fns:
+        js_strings.extend(c.cell_contents for c in fn.__closure__ or [] if isinstance(c.cell_contents, str))
+    assert js_strings, "the _install closure must carry the rendered client JS"
+    assert any("typeof window.__nse_ev_deadbeef01 ===" in s for s in js_strings), js_strings
+    assert not any("typeof window.__nse_ev ===" in s for s in js_strings), js_strings

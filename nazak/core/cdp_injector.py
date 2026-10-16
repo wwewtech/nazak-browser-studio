@@ -223,7 +223,9 @@ class StealthInjector:
     def __init__(self, opts: InjectorOptions):
         self.opts = opts
         # Anti-detect (F-05): randomized per-run binding name (falls back to
-        # the legacy constant when the caller did not supply one).
+        # the legacy constant when the caller did not supply one). Since hunt
+        # S-02 the caller ALWAYS supplies one (generated eagerly on the handle
+        # in start_stealth_injector), so the name never changes after launch.
         self._binding_name = opts.binding_name or random_sync_binding_name()
         self.applied = False
         self.sessions_applied = 0
@@ -550,6 +552,13 @@ class InjectorHandle:
     injector: StealthInjector | None = None
     thread: threading.Thread | None = None
     last_error: str | None = None
+    # Hunt S-02: the per-profile sync binding name, generated EAGERLY at launch
+    # (synchronously, before the daemon thread starts). The injector thread only
+    # assigns the StealthInjector object later (after the WS endpoint resolves,
+    # up to the resolve timeout), so any earlier reader sees "" and must not
+    # fall back to a static name: it would not match the binding the injector
+    # actually installs. Synchronizer._install_sync_client waits for this.
+    binding_name: str = ""
 
     @property
     def applied(self) -> bool:
@@ -624,7 +633,13 @@ def start_stealth_injector(
         logger.warning("websockets not installed — CDP stealth injector disabled")
         return None
 
-    handle = InjectorHandle(ws_endpoint=ws_endpoint or "")
+    handle = InjectorHandle(
+        ws_endpoint=ws_endpoint or "",
+        # Hunt S-02: draw the per-profile binding name HERE, synchronously, so
+        # it is stable and readable from the moment the launch call returns —
+        # long before the daemon thread finishes resolving the CDP endpoint.
+        binding_name=random_sync_binding_name(),
+    )
     stealth_src = load_stealth_source(ext_path)
 
     def _thread_main() -> None:
@@ -652,6 +667,10 @@ def start_stealth_injector(
                 stealth_source=stealth_src,
                 profile_id=profile_id,
                 event_sink=event_sink,
+                # Hunt S-02: use the SAME name drawn on the handle above — the
+                # injector installs exactly this binding, and late readers of
+                # the handle see a stable name instead of a stale fallback.
+                binding_name=handle.binding_name,
             )
             inj = StealthInjector(opts)
             handle.injector = inj
