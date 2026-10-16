@@ -53,7 +53,9 @@ def test_r3b_mirror_one_does_not_die_on_negative_delay():
     """Отрицательный интервал раньше бросал ValueError мимо обработчика."""
     mgr = sync.SynchronizerManager(SimpleNamespace(profile_pids={}))
     mirrored: list[str] = []
-    mgr._ensure_worker_pages = lambda workers, browser=None: {
+    # S-01: worker pages live on the SESSION; the ensure-call is session-first.
+    fake_session = SimpleNamespace(worker_pages={}, worker_pw_driver=None)
+    mgr._ensure_worker_pages = lambda session, workers, browser=None: {
         "w1": {"page": SimpleNamespace(), "total": 0},
     }
     mgr._dispatch_event = lambda page, session, event: mirrored.append(event["type"]) or True
@@ -91,7 +93,7 @@ def test_r3b_pump_marks_session_inactive_and_records_error(monkeypatch):
     mgr = sync.SynchronizerManager(SimpleNamespace(profile_pids={}))
     session = sync.SynchronizerSession("m", ["w"])
     session.active = True
-    mgr._detach_workers = lambda: None
+    mgr._detach_workers = lambda sess: None
 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("no playwright")

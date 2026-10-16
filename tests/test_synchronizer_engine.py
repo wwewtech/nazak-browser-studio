@@ -216,12 +216,13 @@ def test_mirror_one_replicates_event_to_all_workers():
     mgr = SynchronizerManager(launcher)
     mgr.start_session("master_1", ["wa", "wb"], humanize_jitter=False)
     try:
+        # S-01: the worker page cache is SESSION-scoped now.
         pages = {wid: {"page": _FakeSyncPage(), "total": 0, "browser": None} for wid in ("wa", "wb")}
-        mgr._worker_pages = pages
+        mgr.current_session.worker_pages = pages
         item = {"profile_id": "master_1", "event": {"type": "click", "x": 50, "y": 60}, "ts": 0.0}
         mgr._mirror_one(None, mgr.current_session, item)
-        assert mgr._worker_pages["wa"]["page"].clicks == [(50, 60, "left")]
-        assert mgr._worker_pages["wb"]["page"].clicks == [(50, 60, "left")]
+        assert mgr.current_session.worker_pages["wa"]["page"].clicks == [(50, 60, "left")]
+        assert mgr.current_session.worker_pages["wb"]["page"].clicks == [(50, 60, "left")]
         assert mgr.current_session.total_replicated_events == 1
     finally:
         mgr.stop_session()

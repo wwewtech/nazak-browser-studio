@@ -139,6 +139,13 @@ class SynchronizerSession:
         # Control commands (mirror_navigation) executed by the pump thread so
         # every CDP session is opened on ONE thread (Playwright requirement).
         self.commands: queue.Queue[dict[str, Any]] = queue.Queue()
+        # Hunt S-01: the worker page cache is SESSION-scoped. It used to live
+        # on the manager, so the late finally-block of a STUCK pump (one that
+        # missed the 2 s join window) wiped the cache of the NEW session the
+        # user had started in the meantime — closing its pages and stopping
+        # its Playwright driver. A dying session can now only clean up itself.
+        self.worker_pages: dict[str, dict[str, Any]] = {}
+        self.worker_pw_driver: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -218,11 +225,6 @@ class SynchronizerManager:
     def __init__(self, browser_launcher):
         self.browser_launcher = browser_launcher
         self.current_session: SynchronizerSession | None = None
-        # Synchronous Playwright attachments per worker OWNED by the pump thread:
-        # opening all CDP sessions on ONE thread is mandatory — every playwright
-        # object is bound to the event loop of the thread that created it.
-        self._worker_pages: dict[str, dict[str, Any]] = {}
-        self._worker_pw_tmp: Any = None
         self._pump_thread: threading.Thread | None = None
 
     def start_session(
@@ -244,7 +246,6 @@ class SynchronizerManager:
         session.active = True
         session.started_at = time.time()
         self.current_session = session
-        self._worker_pages = {}
         self._pump_thread = threading.Thread(
             target=self._mirror_pump, args=(session,), daemon=True, name="NazakSyncPump"
         )
@@ -265,7 +266,15 @@ class SynchronizerManager:
             # greenlet "Cannot switch to a different thread" errors.
             thread.join(timeout=2.0)
         if thread is None or not thread.is_alive():
-            self._detach_workers()
+            self._detach_workers(session)
+        else:
+            # Hunt S-01: the pump did NOT stop within the join window (stuck in
+            # a blocking Playwright call). Its finally-block will still run
+            # LATER — and it used to wipe the MANAGER-level worker cache,
+            # killing the pages of whatever NEW session was started in the
+            # meantime. The worker cache now lives on the SESSION object, so
+            # the late cleanup can only touch its own (already dead) session.
+            logger.warning("synchronizer pump did not stop in time; its late cleanup is session-scoped")
         return session
 
     # ------------------------------------------------------------ event source
@@ -415,7 +424,10 @@ class SynchronizerManager:
             # session.active stayed True, get_status() reported "active", and
             # mirror_navigation waited up to 110 s for a reply.
             session.active = False
-            self._detach_workers()
+            # Hunt S-01: session-scoped cleanup — a stuck pump finishing LATE
+            # (after stop_session gave up its 2 s join and a new session was
+            # started) must only close ITS OWN pages, never the new session's.
+            self._detach_workers(session)
 
     @staticmethod
     def _pop_command(session: SynchronizerSession) -> dict[str, Any] | None:
@@ -428,7 +440,7 @@ class SynchronizerManager:
         if command.get("command") != "navigate":
             return
         workers = list(session.worker_profile_ids)
-        pages = self._ensure_worker_pages(workers, browser=pw)
+        pages = self._ensure_worker_pages(session, workers, browser=pw)
         outcomes: dict[str, bool] = {}
         for worker_id in workers:
             outcomes[worker_id] = self._navigate_worker_sync(pages.get(worker_id), worker_id, session, command["url"])
@@ -444,7 +456,7 @@ class SynchronizerManager:
         workers = list(session.worker_profile_ids)
         if not workers:
             return
-        pages = self._ensure_worker_pages(workers, browser=pw)
+        pages = self._ensure_worker_pages(session, workers, browser=pw)
         event = item.get("event", {})
         for worker_id in workers:
             info = pages.get(worker_id)
@@ -465,18 +477,25 @@ class SynchronizerManager:
         session.total_replicated_events += 1
 
     # ------------------------------------------------------ worker attachments
-    def _ensure_worker_pages(self, worker_ids: list[str], browser: Any = None) -> dict[str, dict[str, Any]]:
-        """Attach one Playwright page per worker (cached, lazily reconnected)."""
+    def _ensure_worker_pages(
+        self, session: SynchronizerSession, worker_ids: list[str], browser: Any = None
+    ) -> dict[str, dict[str, Any]]:
+        """Attach one Playwright page per worker (cached, lazily reconnected).
+
+        The cache lives ON THE SESSION (hunt S-01): a stuck old pump cleaning
+        up late must never touch the new session's pages.
+        """
+        worker_pages = session.worker_pages
         # Audit R3-round2: the cache is checked first — if every page is alive,
         # playwright is not needed at all (the import used to run every time and fail
         # where the dependency is not installed, even though no work was required).
         need_attach = [
             worker_id
             for worker_id in worker_ids
-            if not (self._worker_pages.get(worker_id) and self._page_alive(self._worker_pages[worker_id]))
+            if not (worker_pages.get(worker_id) and self._page_alive(worker_pages[worker_id]))
         ]
         if not need_attach:
-            return {wid: self._worker_pages[wid] for wid in worker_ids if wid in self._worker_pages}
+            return {wid: worker_pages[wid] for wid in worker_ids if wid in worker_pages}
 
         from playwright.sync_api import sync_playwright
 
@@ -484,9 +503,9 @@ class SynchronizerManager:
             # Lazily start a private Playwright driver only when some worker
             # actually needs attaching (keeps unit tests and read-only paths free).
             browser = sync_playwright().start()
-            self._worker_pw_tmp = browser
+            session.worker_pw_driver = browser
         for worker_id in worker_ids:
-            info = self._worker_pages.get(worker_id)
+            info = worker_pages.get(worker_id)
             if info and self._page_alive(info):
                 continue
             try:
@@ -498,7 +517,7 @@ class SynchronizerManager:
                 contexts = browser_obj.contexts
                 context = contexts[0] if contexts else browser_obj.new_context()
                 page = context.pages[0] if context.pages else context.new_page()
-                self._worker_pages[worker_id] = {
+                worker_pages[worker_id] = {
                     "browser": browser_obj,
                     "context": context,
                     "page": page,
@@ -507,7 +526,7 @@ class SynchronizerManager:
             except Exception as exc:
                 logger.warning("synchronizer: worker %s attach failed: %s", worker_id, exc)
                 continue
-        return dict(self._worker_pages)
+        return dict(worker_pages)
 
     @staticmethod
     def _page_alive(info: dict[str, Any]) -> bool:
@@ -519,21 +538,28 @@ class SynchronizerManager:
         except Exception:
             return False
 
-    def _detach_workers(self) -> None:
-        for info in list(self._worker_pages.values()):
+    def _detach_workers(self, session: SynchronizerSession | None) -> None:
+        """Close this session's worker pages and Playwright driver (S-01).
+
+        Session-scoped: the late finally-block of a stuck old pump can only
+        clean up its own session and never the pages of a new one.
+        """
+        if session is None:
+            return
+        for info in list(session.worker_pages.values()):
             for closer in (info.get("browser"),):
                 if closer is not None:
                     try:
                         closer.close()
                     except Exception:
                         pass
-        self._worker_pages = {}
-        if self._worker_pw_tmp is not None:
+        session.worker_pages = {}
+        if session.worker_pw_driver is not None:
             try:
-                self._worker_pw_tmp.stop()
+                session.worker_pw_driver.stop()
             except Exception:
                 pass
-            self._worker_pw_tmp = None
+            session.worker_pw_driver = None
 
     def _navigate_worker_sync(
         self, info: dict[str, Any] | None, worker_id: str, session: SynchronizerSession, url: str
