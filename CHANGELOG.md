@@ -8,7 +8,7 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1026 passed, 5 deselected** (1031 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1028 passed, 5 deselected** (1033 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -28,6 +28,16 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   the correct name could not repair the page and the sync session stayed deaf forever.
   The name is now drawn eagerly on the injector handle at launch time and the
   synchronizer reads it from the handle.
+
+### Realtime hub (round 5)
+
+- **Wedged WS client froze every broadcast (S-03).** `ConnectionManager.broadcast` awaited
+  each client's `send_text` with no ceiling; a client whose TCP buffer is full (dead peer,
+  half-open connection) parked the loop forever, every later broadcast coroutine queued
+  behind it, and synchronous awaiters (upload-queue job steps, API routers) froze with it.
+  Reproduced deterministically: the old code was still blocked 3 s into a broadcast to a
+  wedged + a live client. Each send is now raced against a 5 s ceiling (`asyncio.wait_for`);
+  a timed-out client is evicted and clients after it still receive the payload.
 
 ### Proxy parser correctness (found by the second hunting round)
 

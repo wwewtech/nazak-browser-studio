@@ -17,6 +17,15 @@ from ..models.profile import ProfileStatus
 
 logger = logging.getLogger(__name__)
 
+# Hunt S-03: a per-client send ceiling. TCP backpressure on a wedged client
+# (dead peer, half-open connection, stuck proxy) used to park the broadcast
+# loop on ``await connection.send_text`` FOREVER — every subsequent broadcast
+# coroutine queued behind it, and synchronous callers that await the broadcast
+# (upload queue job steps, API routers) froze with it. One slow client must not
+# throttle the event loop: the send is raced against a short timeout and a
+# timed-out client is evicted (its next inbound packet surfaces the disconnect).
+WS_SEND_TIMEOUT_SEC = 5.0
+
 
 class ConnectionManager:
     def __init__(self):
@@ -30,13 +39,20 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
+    @staticmethod
+    async def _send_with_timeout(connection: WebSocket, payload: str) -> None:
+        try:
+            await asyncio.wait_for(connection.send_text(payload), timeout=WS_SEND_TIMEOUT_SEC)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(f"ws send timed out after {WS_SEND_TIMEOUT_SEC}s (wedged client)") from exc
+
     async def broadcast(self, event_type: str, data: Any):
         import json as _json
 
         payload = _json.dumps({"event": event_type, "data": data})
         for connection in list(self.active_connections):
             try:
-                await connection.send_text(payload)
+                await self._send_with_timeout(connection, payload)
             except Exception as exc:
                 logger.debug("WS send failed, dropping connection: %s", exc)
                 self.disconnect(connection)

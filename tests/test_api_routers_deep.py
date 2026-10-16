@@ -19,6 +19,7 @@ import asyncio
 import io
 import json
 import threading
+import time
 import urllib.error
 import zipfile
 from typing import Any
@@ -76,6 +77,18 @@ class _FakeWebSocket:
         self.sent.append(payload)
         if self._on_send is not None:
             self._on_send(payload)
+
+
+class _WedgedWebSocket(_FakeWebSocket):
+    """A client whose TCP buffer is full: send_text never returns on its own."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.send_started = asyncio.Event()
+
+    async def send_text(self, payload: str) -> None:
+        self.send_started.set()
+        await asyncio.sleep(3600)  # wedged: only the timeout can break this
 
 
 # ---------------------------------------------------------------------------
@@ -687,6 +700,45 @@ def test_broadcast_drops_dead_sockets_and_keeps_live_ones():
     manager.disconnect(live)
     manager.disconnect(live)
     assert manager.active_connections == []
+
+
+def test_s03_broadcast_survives_a_wedged_client():
+    """Hunt S-03: a wedged client (send never completes) must not park the
+    broadcast forever. The send is raced against a timeout, the wedged client
+    is evicted, and later clients still receive the payload."""
+    manager = ConnectionManager()
+    wedged = _WedgedWebSocket()
+    live = _FakeWebSocket()
+
+    async def scenario():
+        await manager.connect(wedged)
+        await manager.connect(live)
+        started = time.monotonic()
+        await manager.broadcast("profile_status_change", {"profile_id": "p1"})
+        elapsed = time.monotonic() - started
+        # Without the fix this await never returned; with it, the broadcast
+        # returns after the send ceiling, not after the wedged sleep (3600 s).
+        assert elapsed < 30, f"broadcast blocked for {elapsed:.1f}s on a wedged client"
+        assert live.sent, "clients after the wedged one must still receive the payload"
+
+    asyncio.run(scenario())
+    assert wedged not in manager.active_connections, "the wedged client must be evicted"
+    assert live in manager.active_connections
+
+
+def test_s03_wedged_client_timeout_is_bounded():
+    """The per-send ceiling is short (5 s), so the eviction is provable in a
+    test run: the broadcast completes within the ceiling plus slack."""
+    manager = ConnectionManager()
+
+    async def scenario():
+        await manager.connect(_WedgedWebSocket())
+        started = time.monotonic()
+        await manager.broadcast("e", {})
+        return time.monotonic() - started
+
+    elapsed = asyncio.run(scenario())
+    assert elapsed < realtime.WS_SEND_TIMEOUT_SEC + 2
 
 
 def test_server_loop_registry_and_process_state_broadcast():
