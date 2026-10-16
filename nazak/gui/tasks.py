@@ -168,46 +168,73 @@ def run_autopost_batch(
             )
             if progress is not None:
                 progress((pid, "launching", "Launching isolated browser..."))
-            cdp_port = get_free_port()
-            launch_ok, pid_num, launch_err = browser_launcher.launch(prof, cdp_port=cdp_port)
-            if not launch_ok:
+            # Hunt G-01: everything between launch() and the happy-path stop()
+            # can raise — the bridge's progress callback raises TaskCanceled on
+            # a user cancel (task_bridge._progress), update_profile can fail on
+            # store I/O, ensure_async_playwright raises before the uploader's
+            # internal try. The exception used to unwind the whole coroutine
+            # and orphan the just-launched Chrome: no stop(), the profile stuck
+            # RUNNING forever. The upload queue has had a finally-sweep for
+            # exactly this class of hole (R-02 era); the GUI batch path now
+            # mirrors it — the browser we launched is always taken down and
+            # the profile reset, and the original exception still propagates.
+            launched = False
+            try:
+                cdp_port = get_free_port()
+                launch_ok, pid_num, launch_err = browser_launcher.launch(prof, cdp_port=cdp_port)
+                if not launch_ok:
+                    if progress is not None:
+                        progress((pid, "failed", f"Launch error: {launch_err}"))
+                    continue
+                launched = True
+                prof.status = ProfileStatus.RUNNING
+                prof.pid = pid_num
+                profile_manager.update_profile(prof)
+                # Poll the DevTools endpoint instead of a fixed 4 s sleep (fix F2):
+                # returns as soon as Chromium is actually reachable for CDP.
+                await browser_launcher.wait_for_cdp(pid, timeout_sec=6.0)
                 if progress is not None:
-                    progress((pid, "failed", f"Launch error: {launch_err}"))
-                continue
-            prof.status = ProfileStatus.RUNNING
-            prof.pid = pid_num
-            profile_manager.update_profile(prof)
-            # Poll the DevTools endpoint instead of a fixed 4 s sleep (fix F2):
-            # returns as soon as Chromium is actually reachable for CDP.
-            await browser_launcher.wait_for_cdp(pid, timeout_sec=6.0)
-            if progress is not None:
-                progress((pid, "uploading", "Uploading Shorts to YouTube Studio..."))
+                    progress((pid, "uploading", "Uploading Shorts to YouTube Studio..."))
 
-            curr_pid = pid
+                async def progress_cb(msg: str, p=pid):
+                    if progress is not None:
+                        progress((p, "uploading", msg))
 
-            async def progress_cb(msg: str, p=curr_pid):
-                if progress is not None:
-                    progress((p, "uploading", msg))
-
-            uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
-            upload_ok, video_url, upload_err = await uploader.upload_shorts(
-                video_path=out_path,
-                title=meta["title"],
-                description=meta["description"],
-                progress_callback=progress_cb,
-            )
-            browser_launcher.stop(pid)
-            prof.status = ProfileStatus.STOPPED
-            prof.pid = None
-            profile_manager.update_profile(prof)
-            if upload_ok:
-                if progress is not None:
-                    progress((pid, "published", f"Published! {video_url or ''}"))
-                results.append({"profile_id": pid, "status": "published", "url": video_url})
-            else:
-                if progress is not None:
-                    progress((pid, "failed", upload_err or "Upload error"))
-                results.append({"profile_id": pid, "status": "failed", "error": upload_err})
+                uploader = YouTubeUploader(f"http://127.0.0.1:{cdp_port}")
+                upload_ok, video_url, upload_err = await uploader.upload_shorts(
+                    video_path=out_path,
+                    title=meta["title"],
+                    description=meta["description"],
+                    progress_callback=progress_cb,
+                )
+                browser_launcher.stop(pid)
+                launched = False
+                prof.status = ProfileStatus.STOPPED
+                prof.pid = None
+                profile_manager.update_profile(prof)
+                if upload_ok:
+                    if progress is not None:
+                        progress((pid, "published", f"Published! {video_url or ''}"))
+                    results.append({"profile_id": pid, "status": "published", "url": video_url})
+                else:
+                    if progress is not None:
+                        progress((pid, "failed", upload_err or "Upload error"))
+                    results.append({"profile_id": pid, "status": "failed", "error": upload_err})
+            finally:
+                if launched:
+                    # The happy path already stopped the browser (launched=False
+                    # above); reaching the sweep means an exception/cancel flew
+                    # through — take the browser down and reset the profile.
+                    try:
+                        browser_launcher.stop(pid)
+                    except Exception:
+                        pass
+                    prof.status = ProfileStatus.STOPPED
+                    prof.pid = None
+                    try:
+                        profile_manager.update_profile(prof)
+                    except Exception:
+                        pass
             await asyncio.sleep(3)
         return results
 

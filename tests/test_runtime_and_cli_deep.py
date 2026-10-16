@@ -405,6 +405,69 @@ def test_tasks_run_autopost_batch_progress_order_and_cancel_before_start(monkeyp
 # --------------------------------------------------------------------------- run_task_inline
 
 
+def test_g01_gui_batch_cancel_after_launch_sweeps_browser(monkeypatch, tmp_path):
+    """Hunt G-01: the TaskBridge progress callback raises TaskCanceled on a
+    user cancel (task_bridge._progress). A cancel landing after launch() but
+    before the happy-path stop() used to unwind the GUI batch coroutine and
+    orphan the just-launched Chrome: no stop(), profile stuck RUNNING. The
+    upload queue has had a finally-sweep for this; the GUI path must too."""
+    monkeypatch.setattr("nazak.core.video_uniquifier.VideoUniquifier", _FakeUniquifier)
+    monkeypatch.setattr("nazak.core.youtube_uploader.YouTubeUploader", _uploader_factory([(True, "http://vid", None)]))
+    monkeypatch.setattr("nazak.core.browser_launcher.get_free_port", lambda: 9400)
+    real_sleep = asyncio.sleep
+
+    async def instant_sleep(_seconds):
+        await real_sleep(0)  # keep the abort path instant without patching the event loop away
+
+    monkeypatch.setattr("nazak.gui.tasks.asyncio.sleep", instant_sleep)
+
+    import nazak.gui.tasks as gui_tasks
+
+    pm = _FakeProfileManager([BrowserProfile(id="g1", name="G1")])
+    launcher = _FakeLauncher()
+    events: list[tuple] = []
+    cancelled = TaskHandle(name="autopost")
+
+    def cancel_during_launch_phase(payload):
+        events.append(payload)
+        if payload[1] == "launching":
+            cancelled.cancel()  # the bridge would raise here on the NEXT progress
+        if payload[1] == "uploading":
+            raise TaskCanceled()  # exactly what task_bridge._progress does
+
+    with pytest.raises(TaskCanceled):
+        gui_tasks.run_autopost_batch(
+            pm, launcher, ["g1"], tmp_path / "in.mp4", "t", "d", handle=cancelled, progress=cancel_during_launch_phase
+        )
+    assert launcher.stopped == ["g1"], f"the launched browser was orphaned: {launcher.stopped}"
+    prof = pm.profiles["g1"]
+    assert prof.status is ProfileStatus.STOPPED and prof.pid is None, "the profile stayed RUNNING after the abort"
+
+
+def test_g01_gui_batch_store_error_sweeps_browser(monkeypatch, tmp_path):
+    """update_profile() exploding between launch and upload must still take the
+    browser down (same contract as the upload queue's unexpected-error test)."""
+    monkeypatch.setattr("nazak.core.video_uniquifier.VideoUniquifier", _FakeUniquifier)
+    monkeypatch.setattr("nazak.core.youtube_uploader.YouTubeUploader", _uploader_factory([(True, "http://vid", None)]))
+    monkeypatch.setattr("nazak.core.browser_launcher.get_free_port", lambda: 9400)
+    monkeypatch.setattr("nazak.core.spintax.format_video_metadata", lambda **_k: {"title": "T", "description": "D"})
+
+    import nazak.gui.tasks as gui_tasks
+
+    pm = _FakeProfileManager([BrowserProfile(id="g2", name="G2")], fail_update_after=0)
+    launcher = _FakeLauncher()
+    events: list[tuple] = []
+
+    with pytest.raises(RuntimeError, match="update exploded"):
+        gui_tasks.run_autopost_batch(pm, launcher, ["g2"], tmp_path / "in.mp4", "t", "d", progress=events.append)
+    assert launcher.stopped == ["g2"], f"the launched browser was orphaned by a store error: {launcher.stopped}"
+    assert pm.profiles["g2"].status is ProfileStatus.STOPPED, "the profile stayed RUNNING after the store error"
+
+
+async def _async_noop():
+    return None
+
+
 def test_run_task_inline_never_reruns_task_after_body_typeerror():
     calls: list[int] = []
 

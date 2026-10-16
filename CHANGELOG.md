@@ -8,9 +8,20 @@ A three-hour adversarial audit of the anti-detect layer produced 20 findings —
 cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
 gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
 
-Suite: **1028 passed, 5 deselected** (1033 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1030 passed, 5 deselected** (1035 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### GUI batch hunt (round 6)
+
+- **Cancelled/failed GUI batch orphaned the just-launched Chrome (G-01).** The TaskBridge
+  progress callback raises `TaskCanceled` on a user cancel; a cancel landing between
+  `launch()` and the happy-path `stop()` in `gui.tasks.run_autopost_batch` unwound the
+  whole coroutine — no `stop()`, the profile stuck RUNNING while its browser lived (a
+  store error or a missing-Playwright `RuntimeError` escaped the same way). The upload
+  queue has had a per-job finally-sweep for exactly this hole (R-02 era); the GUI batch
+  path now mirrors it: the browser the loop launched is always taken down and the
+  profile reset, and the original exception still propagates to the bridge.
 
 ### Synchronizer hunt (round 5)
 
