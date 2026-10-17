@@ -2,11 +2,14 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## v1.14.0 — Full Anti-Detect Audit Closure (20/20 Findings) (2026-10-14)
+## v1.15.0 — Concurrency Hunt: Synchronizer, Realtime & GUI Batch (2026-10-17)
 
-A three-hour adversarial audit of the anti-detect layer produced 20 findings — four
-cluster-level tells that fingerprinted a whole farm in one request, six fingerprint-surface
-gaps, and ten lower-severity leaks. **All twenty are fixed in this release.**
+Six hunting rounds against the concurrency surfaces the earlier audits had not
+reached: the synchronizer pump and its injector handshake, the WebSocket
+realtime hub, and the GUI autopost batch. Four race/teardown defects and one
+sequential-freeze defect found, reproduced with deterministic no-thread repros
+and closed; the store and parser fixes from rounds 1–4 are part of this
+release too (they landed after v1.14.0 was tagged).
 
 Suite: **1030 passed, 5 deselected** (1035 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
@@ -50,7 +53,7 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   wedged + a live client. Each send is now raced against a 5 s ceiling (`asyncio.wait_for`);
   a timed-out client is evicted and clients after it still receive the payload.
 
-### Proxy parser correctness (found by the second hunting round)
+### Proxy parser correctness (found by the second hunting round, landed post-v1.14.0)
 
 - **Colon-form password with `@` (P-02).** `host:port:user:p@ss` was captured by the
   `'@'`-branch first: rsplit made `host='ss'` and `password='8080:user:p'` — a "working"
@@ -68,7 +71,7 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 - **Trailing separator (P-05).** `host:1080|` left the pipe in the port segment ("1080|"),
   silently degrading the port to the default; trailing `|`/`#` are now stripped.
 
-### Race conditions (hunt round 4)
+### Race conditions (hunt round 4, landed post-v1.14.0)
 
 - **Process-monitor status race (R-01).** The monitor's check-then-act (`get` a RUNNING
   profile, then `update` the whole object) had a window: a relaunch landing between the
@@ -85,7 +88,7 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   (`_set_job_status`): a canceled job stays canceled, and the pre-launch guard skips the
   browser launch entirely.
 
-### Concurrency & storage (hunt round 3)
+### Concurrency & storage (hunt round 3, landed post-v1.14.0)
 
 - **Cross-process lost update (C-01).** Two ProfileManager instances over one
   `profiles.json` (GUI open + CLI `profile create`, two windows, a script) silently erased
@@ -103,7 +106,7 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   skipped (a delete by another process wins over our stale snapshot), and an explicit
   re-create clears the tombstone (`forget_deleted`, mirroring the JSON backend contract).
 
-### Bundle & cookie round-trip (same hunting round)
+### Bundle & cookie round-trip (same hunting round, landed post-v1.14.0)
 
 - **Hostile bundle entries (H-12).** `data/CON.txt` / `data/NUL.bin` (Windows device
   names) were silently swallowed during extraction while the bundle reported success —
