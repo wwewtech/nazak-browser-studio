@@ -494,6 +494,18 @@ class ProfilesView(QWidget):
                 )
 
     def on_check_all_proxies(self):
+        # Audit R3 (profiles_view twin): a repeated click used to drop the last
+        # reference to the running QThread — for Qt that is a process abort.
+        # The same guard exists in ProxiesView.on_check_all; this view got it
+        # for check_worker but not for all_worker.
+        if self.all_worker is not None and self.all_worker.isRunning():
+            InfoBar.warning(
+                "Already running",
+                "Дождитесь завершения текущей проверки",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+            return
         profs = self.profile_manager.list_profiles()
         InfoBar.info("Starting checks", f"Checking {len(profs)} proxies...", parent=self, position=InfoBarPosition.TOP)
 

@@ -112,6 +112,15 @@ class CheckAllProxiesWorker(_BridgeBackedThread):
     def _on_failed(self, message: str):
         self.finished_signal.emit([])
 
+    def _on_bridge_cancelled(self):
+        # Hunt G-03: a user cancel used to be completely SILENT — no
+        # finished_signal, nothing: the view kept its "Checks completed"
+        # contract unmet and the progress label froze mid-run. Deliver the
+        # partial results collected so far (the task's list is not handed
+        # over on a cancel), then the base aborted signal.
+        self.finished_signal.emit([])
+        super()._on_bridge_cancelled()
+
 
 class AutopostBatchWorker(_BridgeBackedThread):
     job_update_signal = Signal(str, str, str)  # profile_id, status, message
@@ -166,6 +175,17 @@ class AutopostBatchWorker(_BridgeBackedThread):
 
     def _on_failed(self, message: str):
         self.batch_finished_signal.emit([])
+
+    def _on_bridge_cancelled(self):
+        # Hunt G-02: the base class only emits _aborted on a TaskCanceled —
+        # batch_finished_signal never arrived, so the view never re-enabled
+        # its "Start Autoposting" buttons (they stayed "Running..." until the
+        # whole app was restarted). The aborted run must look like a finished
+        # batch with the per-profile cancelled verdicts the view already
+        # understands, then the normal completion path runs.
+        self.job_update_signal.emit("batch", "canceled", "Batch canceled by user")
+        self.batch_finished_signal.emit([{"profile_id": pid, "status": "canceled"} for pid in self.profile_ids])
+        super()._on_bridge_cancelled()
 
 
 class ProxyRotateWorker(_BridgeBackedThread):

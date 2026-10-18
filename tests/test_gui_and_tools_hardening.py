@@ -43,6 +43,15 @@ def _class_source(source: str, name: str) -> str:
     return rest if nxt is None else rest[: nxt.start()]
 
 
+def _member_source(source: str, name: str) -> str:
+    """Return the source of a method or signal inside a class block (4-space indent)."""
+    marker = f"    def {name}("
+    start = source.index(marker)
+    rest = source[start + len(marker) :]
+    nxt = re.search(r"\n    (?:def |[A-Za-z_]+ = )", rest)
+    return rest if nxt is None else rest[: nxt.start()]
+
+
 # --------------------------------------------------------------------------- get_free_port
 def test_get_free_port_returns_distinct_bindable_ports():
     """`get_free_port` must hand out unique, simultaneously bindable ports."""
@@ -120,6 +129,62 @@ def test_workers_uses_get_free_port_instead_of_predictable_range():
     assert "cdp_port = get_free_port()" in tasks_src, "the autopost task must request a real free port"
     assert "get_free_port" in workers_src or "run_autopost_batch" in workers_src, (
         "workers.py must route autopost through the TaskBridge task"
+    )
+
+
+# --------------------------------------------------------------------------- workers.py cancel UX (G-02/G-03)
+def test_workers_cancel_paths_reach_the_view_contract():
+    """Hunt G-02/G-03: the bridge emits only `cancelled` on a TaskCanceled.
+
+    - AutopostBatchWorker used to leave the view's Start buttons stuck on
+      'Running...' forever (batch_finished_signal never fired on a cancel);
+    - CheckAllProxiesWorker used to go completely silent (no finished_signal
+      at all — the view's completion contract was never met).
+    The cancel path of both workers must now emit their completion signal, and
+    the autopost batch must additionally report per-profile canceled verdicts.
+    """
+    workers_src = _read(WORKERS)
+
+    autopost = _class_source(workers_src, "AutopostBatchWorker")
+    assert "_on_bridge_cancelled" in autopost, "AutopostBatchWorker must handle the bridge cancelled signal"
+    assert "batch_finished_signal.emit" in _member_source(autopost, "_on_bridge_cancelled"), (
+        "a cancelled batch must still deliver batch_finished_signal (the view re-enables its buttons there)"
+    )
+    assert '"canceled"' in _member_source(autopost, "_on_bridge_cancelled"), (
+        "the canceled batch verdict must carry per-profile 'canceled' entries for the view"
+    )
+
+    check_all = _class_source(workers_src, "CheckAllProxiesWorker")
+    assert "_on_bridge_cancelled" in check_all, "CheckAllProxiesWorker must handle the bridge cancelled signal"
+    assert "finished_signal.emit" in _member_source(check_all, "_on_bridge_cancelled"), (
+        "a cancelled check-all run must still deliver finished_signal (the view completes its progress UI there)"
+    )
+
+
+def test_profiles_view_check_all_guard_matches_proxies_view():
+    """Hunt G-04: ProfilesView.on_check_all_proxies re-created the worker on a
+    re-click (no isRunning() guard) — for Qt that is a process abort. The twin
+    guard already existed in ProxiesView.on_check_all."""
+    profiles_view = _read(REPO_ROOT / "nazak" / "gui" / "views" / "profiles_view.py")
+    body = _method_source(profiles_view, "on_check_all_proxies")
+    assert "self.all_worker is not None and self.all_worker.isRunning()" in body, (
+        "a repeated 'Check All' click must be refused while the previous worker is running"
+    )
+    assert "InfoBar.warning" in body, "the refusal must be visible to the user"
+
+
+def test_autopost_view_exposes_batch_cancel():
+    """Hunt G-02 companion: worker.cancel() always existed, the UI never
+    exposed it — a running batch was unstoppable from the GUI."""
+    autopost_view = _read(REPO_ROOT / "nazak" / "gui" / "views" / "autopost_view.py")
+    assert "self.btn_cancel" in autopost_view, "the view must have a Cancel Batch button"
+    assert "def on_cancel_batch(" in autopost_view, "the Cancel button must have a handler"
+    body = _method_source(autopost_view, "on_cancel_batch")
+    assert "self.worker.cancel()" in body, "the handler must cancel the running worker"
+    # the completion path must release the cancel button again
+    finish_body = _method_source(autopost_view, "on_batch_finished")
+    assert "self.btn_cancel.setEnabled(False)" in finish_body, (
+        "the Cancel button must be disabled again when the batch settles"
     )
 
 

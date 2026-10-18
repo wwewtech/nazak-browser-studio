@@ -199,6 +199,11 @@ class AutopostView(QWidget):
         h_bot = QHBoxLayout()
         h_bot.addStretch()
 
+        self.btn_cancel = PushButton(FluentIcon.CANCEL, "Cancel Batch", self)
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(self.on_cancel_batch)
+        h_bot.addWidget(self.btn_cancel)
+
         self.btn_start_bottom = PrimaryPushButton(FluentIcon.SEND, "Start Autoposting", self)
         self.btn_start_bottom.setMinimumWidth(240)
         self.btn_start_bottom.clicked.connect(self.on_start_autopost)
@@ -246,6 +251,7 @@ class AutopostView(QWidget):
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(False)
             btn.setText("Running...")
+        self.btn_cancel.setEnabled(True)
 
         self.worker = AutopostBatchWorker(
             profile_manager=self.profile_manager,
@@ -267,6 +273,19 @@ class AutopostView(QWidget):
             position=InfoBarPosition.TOP,
         )
 
+    def on_cancel_batch(self):
+        # Hunt G-02 companion: the worker always had cancel() — the UI just
+        # never exposed it, so a running batch was unstoppable from the GUI.
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+            self.btn_cancel.setEnabled(False)
+            InfoBar.info(
+                "Canceling",
+                "Cancel requested — the batch stops at the next progress boundary",
+                parent=self,
+                position=InfoBarPosition.TOP,
+            )
+
     def on_job_update(self, profile_id: str, status: str, message: str):
         for row in range(self.table.rowCount()):
             item_p = self.table.item(row, 0)
@@ -284,4 +303,14 @@ class AutopostView(QWidget):
         for btn in (self.btn_start_top, self.btn_start_bottom):
             btn.setEnabled(True)
             btn.setText("Start Autoposting")
-        InfoBar.success("Queue completed", f"Processed {len(results)} posts", parent=self, position=InfoBarPosition.TOP)
+        self.btn_cancel.setEnabled(False)
+        self.worker = None
+        canceled = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "canceled")
+        if canceled and canceled == len(results):
+            InfoBar.info(
+                "Queue canceled", "The batch was canceled by the user", parent=self, position=InfoBarPosition.TOP
+            )
+        else:
+            InfoBar.success(
+                "Queue completed", f"Processed {len(results)} posts", parent=self, position=InfoBarPosition.TOP
+            )

@@ -11,9 +11,28 @@ sequential-freeze defect found, reproduced with deterministic no-thread repros
 and closed; the store and parser fixes from rounds 1–4 are part of this
 release too (they landed after v1.14.0 was tagged).
 
-Suite: **1030 passed, 5 deselected** (1035 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1033 passed, 5 deselected** (1038 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### GUI cancel-path UX (round 6 addendum, post-v1.15.0)
+
+- **A cancelled autopost batch left the Start buttons stuck on "Running..." (G-02).**
+  The TaskBridge emits only `cancelled` when the progress callback raises `TaskCanceled`;
+  `AutopostBatchWorker` never translated that into `batch_finished_signal`, so the view's
+  completion handler never ran and the buttons stayed disabled until an app restart. The
+  cancel path now emits the normal completion signal with per-profile `canceled`
+  verdicts, and the view reports "Queue canceled" instead of a fake success. Companion:
+  the view now has an actual **Cancel Batch** button (`worker.cancel()` always existed —
+  the UI never exposed it).
+- **A cancelled proxy-check sweep was completely silent (G-03).** `CheckAllProxiesWorker`
+  delivered neither `finished_signal` nor any notice on a user cancel — both views
+  (`ProfilesView`, `ProxiesView`) waited forever for a completion that never came. The
+  cancel path now emits `finished_signal` so the views' completion contract holds.
+- **ProfilesView "Check All" had no re-click guard (G-04).** `ProxiesView.on_check_all`
+  got its `isRunning()` guard in audit R3; the twin in `ProfilesView.on_check_all_proxies`
+  was missed — a repeated click dropped the last reference to the running QThread, and
+  for Qt that is a process abort. The guard is in place now, with a visible refusal.
 
 ### GUI batch hunt (round 6)
 
