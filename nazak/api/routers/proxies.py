@@ -46,12 +46,13 @@ async def check_profile_proxy(profile_id: str):
     result = await check_proxy_health(profile.proxy, profile_dir=user_data_path)
     profile.last_health_check = result
 
-    if result.latitude is not None and result.longitude is not None:
-        profile.fingerprint.geolocation.latitude = result.latitude
-        profile.fingerprint.geolocation.longitude = result.longitude
-    if result.timezone_name:
-        profile.fingerprint.timezone = result.timezone_name
-
+    # Hunt X-21: this endpoint used to OVERWRITE the spoofed
+    # fingerprint.timezone / geolocation with the proxy exit's geo lookup
+    # (reproduced: America/New_York silently became Asia/Tokyo after one
+    # health check). The contradiction between the spoofed timezone and the
+    # real exit geo is already surfaced as HealthCheckResult.timezone_mismatch
+    # (proxy_checker, audit F-11) — the operator decides, the tool does not
+    # silently rewrite the fingerprint it was asked to protect.
     profile_manager.update_profile(profile)
 
     await deps.broadcast_coro("profile_health_update", {"profile_id": profile_id, "health": result.model_dump()})
@@ -67,8 +68,13 @@ async def check_all_profiles():
     async def _check(p: BrowserProfile):
         res = await check_proxy_health(p.proxy, profile_dir=PROFILES_DIR / p.id)
         p.last_health_check = res
+        # Hunt X-22: this used to write profile_manager.profiles[p.id] = p
+        # DIRECTLY — outside the service lock — while save_all() on another
+        # thread iterated the same dict: reproduced "RuntimeError: dictionary
+        # changed size during iteration" through the real facade. update()
+        # performs the write under the service lock.
         p.updated_at = datetime.now(timezone.utc).isoformat()
-        profile_manager.profiles[p.id] = p
+        profile_manager.update_profile(p)
         await deps.broadcast_coro("profile_health_update", {"profile_id": p.id, "health": res.model_dump()})
         return p.id, res
 

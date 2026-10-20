@@ -178,6 +178,20 @@ class ProfileService:
                 backend.save_all(self.profiles)
             return profile
 
+    def register_runtime_update(self, profile: BrowserProfile) -> None:
+        """Hunt X-22: in-memory-only re-registration of a live object.
+
+        The batch endpoints used to write ``profile_manager.profiles[pid] = p``
+        directly — outside the service lock — while save_all() iterated the
+        same dict on another thread (reproduced: "RuntimeError: dictionary
+        changed size during iteration"). Callers that only need the LIVE
+        object swapped (persisting separately right after) go through here;
+        callers that want persistence use update().
+        """
+        files.validate_id(profile.id)
+        with self._lock:
+            self.profiles[profile.id] = profile
+
     def delete(self, profile_id: str, delete_data: bool = True) -> bool:
         files.validate_id(profile_id)
         with self._lock:

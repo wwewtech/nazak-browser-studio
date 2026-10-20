@@ -469,11 +469,10 @@ class ProfilesView(QWidget):
         prof = self.profile_manager.get_profile(profile_id)
         if prof:
             prof.last_health_check = res
-            if res.latitude and res.longitude:
-                prof.fingerprint.geolocation.latitude = res.latitude
-                prof.fingerprint.geolocation.longitude = res.longitude
-            if res.timezone_name:
-                prof.fingerprint.timezone = res.timezone_name
+            # Hunt X-21 (GUI twin of the API fix): the geo lookup must not
+            # silently rewrite the spoofed fingerprint.timezone/geolocation —
+            # the mismatch is reported on the result (timezone_mismatch) and
+            # the operator decides.
             self.profile_manager.update_profile(prof)
             self.refresh_profiles()
 

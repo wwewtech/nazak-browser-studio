@@ -353,6 +353,12 @@ def test_check_profile_proxy_unknown_404_and_geo_persistence(client: TestClient)
     profile_id = "deep_health_prof"
     _create_profile(profile_id)
     try:
+        before = server.profile_manager.get_profile(profile_id)
+        tz_before = before.fingerprint.timezone
+        geo_before = (
+            before.fingerprint.geolocation.latitude,
+            before.fingerprint.geolocation.longitude,
+        )
         result = HealthCheckResult(
             status=HealthStatus.HEALTHY,
             ping_ms=12.0,
@@ -370,11 +376,16 @@ def test_check_profile_proxy_unknown_404_and_geo_persistence(client: TestClient)
 
         stored = server.profile_manager.get_profile(profile_id)
         assert stored is not None
-        assert stored.fingerprint.timezone == "Europe/Berlin"
-        assert stored.fingerprint.geolocation.latitude == pytest.approx(52.52)
-        assert stored.fingerprint.geolocation.longitude == pytest.approx(13.405)
+        # Hunt X-21: the check result is RECORDED (last_health_check) but the
+        # spoofed fingerprint is never silently rewritten by a geo lookup —
+        # the timezone/geo contradiction is reported on the result
+        # (timezone_mismatch, audit F-11) and the operator decides.
         assert stored.last_health_check is not None
         assert stored.last_health_check.ip == "203.0.113.10"
+        assert stored.fingerprint.timezone == tz_before, "the check endpoint overwrote the spoofed timezone (X-21)"
+        assert (stored.fingerprint.geolocation.latitude, stored.fingerprint.geolocation.longitude) == geo_before, (
+            "the check endpoint overwrote the spoofed geolocation (X-21)"
+        )
     finally:
         _drop(profile_id)
 

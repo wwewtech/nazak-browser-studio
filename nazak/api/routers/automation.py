@@ -153,18 +153,21 @@ async def batch_launch(req: BatchActionRequest):
         prof = profile_manager.get_profile(pid)
         if prof:
             ok, p_id, err = browser_launcher.launch(prof)
+            prof.updated_at = datetime.now(timezone.utc).isoformat()
             if ok:
                 prof.status = ProfileStatus.RUNNING
                 prof.pid = p_id
-                prof.updated_at = datetime.now(timezone.utc).isoformat()
-                profile_manager.profiles[pid] = prof
+                # Hunt X-22: profile_manager.profiles[pid] = prof wrote the
+                # shared dict OUTSIDE the service lock — concurrent save_all
+                # raised "dictionary changed size during iteration". update()
+                # does the write under the service lock.
+                profile_manager.update_profile(prof)
                 any_changed = True
                 results[pid] = {"success": True, "pid": p_id}
             else:
                 prof.status = ProfileStatus.ERROR
                 prof.pid = None
-                prof.updated_at = datetime.now(timezone.utc).isoformat()
-                profile_manager.profiles[pid] = prof
+                profile_manager.update_profile(prof)
                 any_changed = True
                 results[pid] = {"success": False, "error": err}
     if any_changed:
@@ -188,7 +191,8 @@ async def batch_stop(req: BatchActionRequest):
             prof.status = ProfileStatus.STOPPED
             prof.pid = None
             prof.updated_at = datetime.now(timezone.utc).isoformat()
-            profile_manager.profiles[pid] = prof
+            # Hunt X-22 (twin of batch-launch): no unlocked dict writes.
+            profile_manager.update_profile(prof)
             any_changed = True
     if any_changed:
         profile_manager.save_profiles()

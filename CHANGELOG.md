@@ -11,9 +11,27 @@ sequential-freeze defect found, reproduced with deterministic no-thread repros
 and closed; the store and parser fixes from rounds 1–4 are part of this
 release too (they landed after v1.14.0 was tagged).
 
-Suite: **1044 passed, 5 deselected** (1049 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1047 passed, 5 deselected** (1052 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### API write paths & fingerprint integrity (round 8, post-v1.15.0)
+
+- **Unlocked dict writes crashed concurrent saves (X-22).** `batch_launch`,
+  `batch_stop` and `check_all_profiles` wrote `profile_manager.profiles[pid] = p`
+  directly — outside the service lock — while `save_all()` iterated the same dict on
+  another thread. Reproduced through the real facade with a 3000-profile store:
+  `RuntimeError: dictionary changed size during iteration`. All write paths now go
+  through the service (`update()` persists, `register_runtime_update()` is the locked
+  in-memory-only variant).
+- **One health check silently rewrote the spoofed fingerprint (X-21).**
+  `POST /api/profiles/{id}/check` (and the GUI twin in ProfilesView) copied the proxy
+  exit's geo lookup into `fingerprint.timezone`/`geolocation` — a Berlin-configured
+  profile became a Tokyo profile after one check, fabricating exactly the
+  timezone-vs-exit contradiction the anti-detect layer (audit F-11) treats as a tell.
+  Reproduced: `America/New_York` → `Asia/Tokyo`. The check result is now recorded
+  (`last_health_check`, including its `timezone_mismatch` report) and the operator
+  decides about the fingerprint.
 
 ### Store integrity & cross-instance races (round 7, post-v1.15.0)
 
