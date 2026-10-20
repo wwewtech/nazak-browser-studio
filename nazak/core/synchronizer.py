@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 #    session.active stayed True, i.e. the client saw an active session with a dead pump.
 #  * MAX_SYNC_NAVIGATE_WAIT_SEC — how long to wait for the pump's reply during navigation.
 MAX_PENDING_EVENTS = 5000
+MAX_PENDING_COMMANDS = 16
 MAX_COORDINATE_JITTER_PX = 50
 MAX_DELAY_MS = 60_000
 MAX_SYNC_NAVIGATE_WAIT_SEC = 45.0
@@ -138,7 +139,13 @@ class SynchronizerSession:
         self.events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_PENDING_EVENTS)
         # Control commands (mirror_navigation) executed by the pump thread so
         # every CDP session is opened on ONE thread (Playwright requirement).
-        self.commands: queue.Queue[dict[str, Any]] = queue.Queue()
+        # Hunt X-11: this queue used to be UNBOUNDED — with a pump stuck in a
+        # blocking Playwright call (the exact S-01 scenario), every navigate
+        # call parked its waiter for up to MAX_SYNC_NAVIGATE_WAIT_SEC while
+        # the commands piled up; the pump then executed them ALL LATER,
+        # driving the workers to URLs nobody was waiting for. Bounded + a
+        # session-active check on dequeue (stale commands are dropped).
+        self.commands: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_PENDING_COMMANDS)
         # Hunt S-01: the worker page cache is SESSION-scoped. It used to live
         # on the manager, so the late finally-block of a STUCK pump (one that
         # missed the 2 s join window) wiped the cache of the NEW session the
@@ -397,7 +404,16 @@ class SynchronizerManager:
             return {w: False for w in workers}
 
         outcome_queue: queue.Queue[dict[str, bool]] = queue.Queue()
-        session.commands.put({"command": "navigate", "url": url, "reply": outcome_queue})
+        try:
+            # put_nowait, never a blocking put: with a stuck pump the queue
+            # stays full and a blocking put parked the CALLER forever —
+            # worse than the stale-command problem it tried to fix (X-11).
+            session.commands.put_nowait({"command": "navigate", "url": url, "reply": outcome_queue})
+        except queue.Full:
+            # Hunt X-11: a stuck pump stopped draining; refusing the command
+            # beats piling stale navigations that would execute much later.
+            logger.warning("mirror_navigation: command queue is full (pump stuck?); command refused")
+            return {w: False for w in workers}
         try:
             # Bounded queue.get: a dead pump must not leave a blocked executor
             # thread behind after wait_for cancels the await.
@@ -449,9 +465,21 @@ class SynchronizerManager:
     @staticmethod
     def _pop_command(session: SynchronizerSession) -> dict[str, Any] | None:
         try:
-            return session.commands.get_nowait()
+            command = session.commands.get_nowait()
         except queue.Empty:
             return None
+        # Hunt X-11: a command parked while the pump was stuck is stale once
+        # the session is being torn down — executing it would drive the
+        # workers somewhere nobody asked for anymore.
+        if not session.active:
+            reply = command.get("reply")
+            if reply is not None:
+                try:
+                    reply.put({})
+                except Exception:
+                    pass
+            return None
+        return command
 
     def _run_command(self, pw: Any, session: SynchronizerSession, command: dict[str, Any]) -> None:
         if command.get("command") != "navigate":

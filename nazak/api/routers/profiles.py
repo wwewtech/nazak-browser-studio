@@ -43,6 +43,11 @@ async def list_profiles():
     profiles = profile_manager.list_profiles()
     result = []
     for p in profiles:
+        # Hunt X-13: p is the SHARED stored object. Setting p.status/p.pid on
+        # it made the transient RUNNING overlay leak into the store through
+        # any concurrent save of a different profile (the next save_all
+        # serializes the polluted object). The overlay must live on a copy.
+        p = p.model_copy(deep=True)
         if browser_launcher.is_profile_running(p.id):
             p.status = ProfileStatus.RUNNING
             p.pid = browser_launcher.profile_pids.get(p.id)
@@ -61,6 +66,9 @@ async def get_profile(profile_id: str):
     profile = profile_manager.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    # Hunt X-13 (twin of the list endpoint): the overlay must not be written
+    # onto the shared stored object.
+    profile = profile.model_copy(deep=True)
     if browser_launcher.is_profile_running(profile.id):
         profile.status = ProfileStatus.RUNNING
         profile.pid = browser_launcher.profile_pids.get(profile.id)

@@ -57,11 +57,41 @@ class JsonProfileBackend(ProfileBackend):
         # them (a foreign process still holding them would otherwise undo our
         # delete on every save).
         self._deleted_ids: set[str] = set()
+        # Hunt F-04: True when load_all() found the store FILE (so this is not
+        # a fresh install) but zero readable profiles — the operator deleted
+        # everything (or every record was corrupt). The service must not seed
+        # demo presets over a deliberate delete-all on the next load.
+        self._store_file_had_zero_profiles: bool = False
+        # Hunt X-02: delete tombstones PERSISTED next to the store (the
+        # in-memory set dies with the instance, so a second window / a
+        # restarted app resurrected deleted ids through the save_one upsert).
+        self._tombstones_file = self.profiles_file.with_name(f"{self.profiles_file.name}.tombstones")
+        self._load_tombstones()
+
+    def _load_tombstones(self) -> None:
+        try:
+            raw = json.loads(self._tombstones_file.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                self._deleted_ids.update(str(x) for x in raw)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            logger.debug("tombstones file unreadable: %s", self._tombstones_file, exc_info=True)
+
+    def _save_tombstones(self) -> None:
+        try:
+            self._tombstones_file.write_text(json.dumps(sorted(self._deleted_ids)), encoding="utf-8")
+        except Exception:
+            logger.debug("tombstones file write failed: %s", self._tombstones_file, exc_info=True)
 
     # -- load -----------------------------------------------------------
     def load_all(self) -> dict[str, BrowserProfile]:
+        # Hunt X-02: tombstones are persisted; another instance (or a later
+        # load in this one) may have recorded deletes since we last looked.
+        self._load_tombstones()
         if not self.profiles_file.exists():
             self._seen_stat = None
+            self._store_file_had_zero_profiles = False
             return {}
         self._seen_stat = self._stat()
         try:
@@ -93,6 +123,9 @@ class JsonProfileBackend(ProfileBackend):
                         exc_info=True,
                     )
                     continue
+            # F-04: a parseable file with zero records is a deliberate
+            # delete-all, never a first run (a first run has no file).
+            self._store_file_had_zero_profiles = not loaded
             return loaded
         except Exception:
             logger.error("profiles.json unreadable — starting empty (backup kept)", exc_info=True)
@@ -116,10 +149,33 @@ class JsonProfileBackend(ProfileBackend):
     def note_deleted(self, profile_id: str) -> None:
         """Record a deliberate delete (C-01): the merge must not resurrect it."""
         self._deleted_ids.add(profile_id)
+        self._save_tombstones()
+
+    def mark_seen_empty_store(self) -> bool:
+        """Hunt F-04: True when the store FILE exists but held zero profiles.
+
+        The service calls this after load_all() returned an empty dict to
+        distinguish a fresh install (no file: seed the demo presets) from a
+        deliberate delete-all (file present, zero records: never reseed).
+        """
+        return self._store_file_had_zero_profiles
+
+    def is_deleted(self, profile_id: str) -> bool:
+        """Hunt X-02: True when this id was deliberately deleted here.
+
+        The service consults this on every update so a stale in-memory
+        snapshot cannot resurrect the row through the save_one upsert path.
+        Tombstones are persisted: another instance may have deleted the id
+        AFTER this one was constructed, so the file is re-read here — a stale
+        in-memory set missed exactly that cross-instance delete.
+        """
+        self._load_tombstones()
+        return profile_id in self._deleted_ids
 
     def forget_deleted(self, profile_id: str) -> None:
         """An explicit re-create of the same id clears the tombstone."""
         self._deleted_ids.discard(profile_id)
+        self._save_tombstones()
 
     def save_all(self, profiles: dict[str, BrowserProfile]) -> None:
         with self._write_lock:

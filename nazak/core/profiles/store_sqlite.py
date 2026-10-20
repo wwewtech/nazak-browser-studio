@@ -186,7 +186,29 @@ class SqliteProfileBackend(ProfileBackend):
                     continue
             # C-05: remember what WE saw — save_all may delete only these ids.
             self._loaded_ids = set(out)
+            # Hunt F-04 (sqlite twin): the database FILE exists with zero rows
+            # after this store was EVER populated — the operator deleted
+            # everything while on this backend. Seeding demo presets again
+            # would resurrect prof_01..prof_10 on every restart. A fresh
+            # install has the `ever_populated` marker absent.
+            self._db_had_zero_rows = not out and self._get_meta("ever_populated") == "1"
             return out
+
+    def mark_seen_empty_store(self) -> bool:
+        """Hunt F-04 (sqlite twin): True when the DB exists, is initialized
+        (migration marker present) and holds zero rows — a deliberate
+        delete-all, never a fresh install."""
+        return getattr(self, "_db_had_zero_rows", False)
+
+    def is_deleted(self, profile_id: str) -> bool:
+        """Hunt X-02 (sqlite twin): True while the shared tombstone exists.
+
+        A stale in-memory snapshot must not resurrect the row through the
+        save_one upsert (the tombstone only guarded save_all/delete_one).
+        """
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM meta WHERE key=?", (f"deleted:{profile_id}",)).fetchone()
+        return row is not None
 
     def save_all(self, profiles: dict[str, BrowserProfile]) -> None:
         """Upsert the snapshot WITHOUT wiping rows written by other processes.
@@ -218,6 +240,13 @@ class SqliteProfileBackend(ProfileBackend):
             rows.append((p.id, p.updated_at or now, json.dumps(item, ensure_ascii=False)))
         removed = sorted(self._loaded_ids - set(profiles))
         with self._lock, self._conn:
+            if rows:
+                # Hunt F-04: remember this store was ever populated so a later
+                # delete-all on an EMPTY database is never reseeded.
+                self._conn.execute(
+                    "INSERT INTO meta(key, value) VALUES('ever_populated', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value='1'"
+                )
             self._conn.executemany(
                 "INSERT INTO profiles(id, updated_at, data) VALUES(?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, data=excluded.data",
@@ -233,6 +262,10 @@ class SqliteProfileBackend(ProfileBackend):
         item = profile.model_dump()
         item["proxy"] = protect_proxy_fields(item.get("proxy") or {})
         with self._lock, self._conn:
+            # Hunt F-04: same ever-populated marker as save_all.
+            self._conn.execute(
+                "INSERT INTO meta(key, value) VALUES('ever_populated', '1') ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
             self._conn.execute(
                 "INSERT INTO profiles(id, updated_at, data) VALUES(?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, data=excluded.data",

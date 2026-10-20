@@ -178,7 +178,19 @@ class BrowserLauncher:
                 if psutil.pid_exists(pid):
                     try:
                         p = psutil.Process(pid)
-                        if p.is_running() and p.status() != psutil.STATUS_ZOMBIE:
+                        if (
+                            p.is_running()
+                            and p.status() != psutil.STATUS_ZOMBIE
+                            # Hunt X-14: the registry only stores a bare pid.
+                            # After an app restart (or a reboot) that number
+                            # can belong to an UNRELATED process — a bare
+                            # pid_exists() check then reported "running"
+                            # forever and stop() would have killed that
+                            # innocent process. The pid we launch ourselves
+                            # is always a Chrome/Chromium binary: verify the
+                            # process identity before trusting the number.
+                            and self._looks_like_browser(p)
+                        ):
                             return True
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
@@ -188,6 +200,28 @@ class BrowserLauncher:
         self._stop_injector(profile_id)
         self._stop_forwarder(profile_id)
         return False
+
+    _BROWSER_IMAGE_BASENAMES = ("chrome", "chromium", "msedge", "brave", "vivaldi", "opera", "yandex")
+
+    @classmethod
+    def _looks_like_browser(cls, process) -> bool:
+        """Hunt X-14: a stored pid must be re-validated against the process
+        image name before the code treats it as OUR launched browser.
+
+        The pid in the registry is only a number; a reboot hands it to an
+        arbitrary new process. Without this check:
+        - is_profile_running() said "running" -> every launch refused with
+          "Profile is already running" until the unrelated process died;
+        - stop() sent terminate()/taskkill /F /T to that unrelated process.
+        """
+        try:
+            name = (process.name() or "").lower()
+        except Exception:
+            return True  # cannot tell -> keep the legacy trust behaviour
+        if not name:
+            return True
+        stem = name.rsplit(".", 1)[0] if name.endswith(".exe") else name
+        return any(token in stem for token in cls._BROWSER_IMAGE_BASENAMES)
 
     def clean_stale_locks(self, user_data_dir: Path):
         """
@@ -579,21 +613,34 @@ class BrowserLauncher:
         try:
             if pid and psutil.pid_exists(pid):
                 parent = psutil.Process(pid)
-                for child in parent.children(recursive=True):
-                    try:
-                        child.terminate()
-                    except Exception:
-                        pass
-                parent.terminate()
-                parent.wait(timeout=2.0)
+                # Hunt X-14 (twin of the launch check): only kill the process
+                # when it is really the browser we (or a previous app run)
+                # launched. A reboot can hand the stored pid to an innocent
+                # process — taskkill /F /T on it killed that process tree.
+                if self._looks_like_browser(parent):
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.terminate()
+                        except Exception:
+                            pass
+                    parent.terminate()
+                    parent.wait(timeout=2.0)
         except Exception:
             if pid and sys.platform == "win32":
                 try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
+                    parent = psutil.Process(pid)
+                    is_browser = self._looks_like_browser(parent)
                 except Exception:
-                    pass
+                    is_browser = False
+                if is_browser:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(pid)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    except Exception:
+                        pass
 
         with self._registry_lock:
             self.active_processes.pop(profile_id, None)

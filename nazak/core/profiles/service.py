@@ -37,6 +37,23 @@ class ProfileService:
             if loaded:
                 self.profiles = loaded
                 return
+            # Hunt F-04: "no file at all" (fresh install) and "file exists but
+            # holds zero profiles" (the operator deliberately deleted every
+            # profile) both produce an empty dict here — but only the first
+            # one may seed the demo fleet. Seeding after a delete-all used to
+            # resurrect prof_01..prof_10 on every restart until each was
+            # deleted again (json) — and the sqlite catch-up then re-imported
+            # them from a stale profiles.json forever.
+            empty_is_deliberate = False
+            mark = getattr(self.backend, "mark_seen_empty_store", None)
+            if callable(mark):
+                try:
+                    empty_is_deliberate = bool(mark())
+                except Exception:
+                    empty_is_deliberate = False
+            if empty_is_deliberate:
+                self.profiles = {}
+                return
             defaults = seed_defaults()
             self.profiles = {p.id: p for p in defaults}
             self.backend.save_all(self.profiles)
@@ -136,6 +153,20 @@ class ProfileService:
             stored = self.profiles.get(profile.id)
             if stored is None:
                 return None
+            # Hunt X-02: a stale in-memory object (a second window / a worker
+            # thread that loaded BEFORE the delete) used to resurrect the row
+            # through save_one — the sqlite tombstone only guards save_all and
+            # delete_one, not the upsert path. A profile this instance (or the
+            # shared store) has deliberately deleted must not come back to
+            # life through an update of a stale snapshot.
+            is_deleted = getattr(self.backend, "is_deleted", None)
+            if callable(is_deleted):
+                try:
+                    if is_deleted(profile.id):
+                        logger.warning("update refused for deleted profile %r (stale reference)", profile.id)
+                        return None
+                except Exception:
+                    pass
             profile = self._prepare_for_write(profile, stored)
             profile.updated_at = datetime.now(timezone.utc).isoformat()
             self.profiles[profile.id] = profile

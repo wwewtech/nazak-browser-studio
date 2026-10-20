@@ -11,9 +11,42 @@ sequential-freeze defect found, reproduced with deterministic no-thread repros
 and closed; the store and parser fixes from rounds 1–4 are part of this
 release too (they landed after v1.14.0 was tagged).
 
-Suite: **1033 passed, 5 deselected** (1038 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1044 passed, 5 deselected** (1049 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Store integrity & cross-instance races (round 7, post-v1.15.0)
+
+- **Deleting every profile resurrected the demo fleet on restart (F-04).** `load()`
+  treated "store file exists but holds zero profiles" exactly like "no file at all" and
+  seeded the ten demo presets again — every app restart after a delete-all brought
+  prof_01..prof_10 back (verified on both backends; the sqlite twin also re-imported
+  them from a stale profiles.json through the catch-up). A store that was ever
+  populated now remembers that (`mark_seen_empty_store`), so only a genuine first run
+  seeds the presets.
+- **A stale in-memory snapshot resurrected a deleted profile (X-02).** Window B loaded
+  the profile before window A deleted it; B's next `update()` upserted the row back
+  through `save_one` — the C-05 tombstones only guarded `save_all`/`delete_one`, not
+  the single-row upsert. Tombstones are now persisted (`profiles.json.tombstones`,
+  shared `meta` rows on sqlite) and `update()` refuses ids with a live tombstone.
+- **Stale navigate commands executed long after the caller gave up (X-11).** The
+  synchronizer's command queue was unbounded: with the pump stuck in a blocking
+  Playwright call, every `mirror_navigation` parked up to 45 s while the queue piled
+  up; the pump then drove the workers to all those stale URLs. The queue is bounded
+  (`MAX_PENDING_COMMANDS`), a full queue refuses immediately with `put_nowait`, and
+  commands dequeued after the session went inactive answer their waiter with empty
+  outcomes instead of executing.
+- **A GET leaked the transient RUNNING overlay into the store (X-13).** The list and
+  get endpoints set `p.status/p.pid` on the SHARED stored object; a concurrent save of
+  any other profile then serialized the polluted object — the store recorded
+  `status: running` with a dead pid. The overlay now lives on a deep copy.
+- **A rebooted pid killed an innocent process (X-14).** The launcher registry stores a
+  bare pid; after an app restart or reboot that number can belong to an unrelated
+  process. `is_profile_running()` reported "running" (every launch refused with
+  "Profile is already running") and `stop()` sent `terminate()`/`taskkill /F /T` to
+  that process — verified killing a sacrificial `ping` process. The pid is now
+  re-validated against the process image name (Chrome/Chromium/Edge/...) before the
+  code trusts it, on both the status and the kill path.
 
 ### GUI cancel-path UX (round 6 addendum, post-v1.15.0)
 
