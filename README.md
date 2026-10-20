@@ -211,9 +211,10 @@ the API and the CLI. Compatibility is preserved: every old import path and
 
 | Area | Where it lives now |
 |---|---|
-| REST API | `nazak/api/server.py` is a thin composition root; endpoints live in `nazak/api/routers/` (system, profiles, automation, proxies, cookies, warmup, synchronizer, autopost), request bodies in `nazak/api/schemas.py`, the Host/Origin/token/CSP perimeter in `nazak/api/security.py`, the WebSocket hub in `nazak/api/realtime.py`, lazy singletons in `nazak/api/deps.py` |
-| Profiles & storage | `nazak/core/profile_manager.py` is a facade over `nazak/core/profiles/` (`store_json` / `store_sqlite`, `service`, `bundles`, `files`, `merge`, `constants`, `presets`) |
-| Desktop UI | `nazak/gui/task_bridge.py` (one `QThread`, busy-guard, `cancel()`, headless inline mode) + `nazak/gui/tasks.py` (Qt-free tasks); `nazak/gui/workers.py` keeps the original worker classes and signal names |
+| REST API | `nazak/api/server.py` is a thin composition root; endpoints live in `nazak/api/routers/` (system, profiles, automation, proxies, cookies, warmup, synchronizer, autopost), request bodies in `nazak/api/schemas.py`, the Host/Origin/token/CSP perimeter in `nazak/api/security.py`, the WebSocket hub in `nazak/api/realtime.py`, lazy singletons in `nazak/api/deps.py`. All profile writes go through the service (no unlocked dict writes) |
+| Profiles & storage | `nazak/core/profile_manager.py` is a facade over `nazak/core/profiles/` (`store_json` / `store_sqlite`, `service`, `bundles`, `files`, `merge`, `constants`, `presets`) — persisted delete-tombstones, `mark_seen_empty_store` (a delete-all is never reseeded), stale-snapshot resurrection guard |
+| Desktop UI | `nazak/gui/task_bridge.py` (one `QThread`, busy-guard, `cancel()`, headless inline mode) + `nazak/gui/tasks.py` (Qt-free tasks with a per-profile finally-sweep in the autopost batch); `nazak/gui/workers.py` keeps the original worker classes and signal names — every cancel path now delivers its completion signal |
+| Launcher safety | `nazak/core/browser_launcher.py` — stored pids are re-validated against the process image before `is_profile_running()`/`stop()` trust them (a rebooted pid can never get an innocent process killed) |
 | Configuration | `nazak/config.py` — paths only; `ensure_data_dirs()` provisions `data/` and is called by the real entry points, not at import time |
 
 Full map, storage-backend details and the operations/hardening notes:
@@ -249,7 +250,7 @@ python -m nazak.cli profile list --json
 python -m nazak.cli cdp start prof_01 --json
 ```
 
-> 📖 **Full CLI documentation:** [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) — 11 groups, 61 commands (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`), machine-readable `system schema`, stable exit codes `0/1/2/4`, secrets masked by default (`--reveal` to show them).
+> 📖 **Full CLI documentation:** [`docs/CLI_REFERENCE.md`](docs/CLI_REFERENCE.md) — 61 commands in 12 groups (`profile`, `cookie`, `proxy`, `warmup`, `scenario`, `sync`, `autopost`, `account`, `cdp`, `secrets`, `system`, legacy aliases), machine-readable `system schema`, stable exit codes `0/1/2/4`, secrets masked by default (`--reveal` to show them).
 
 ---
 
@@ -329,6 +330,14 @@ handle, the bounded per-client WebSocket send ceiling and the GUI batch
 finally-sweep are pinned in `test_synchronizer_stop_contract`,
 `test_synchronizer_engine`, `test_cdp_injector`, `test_api_routers_deep`
 (`test_s03_*`) and `test_runtime_and_cli_deep` (`test_g01_*`).
+
+Store & API integrity (v1.15.1): `tests/test_store_integrity_round7.py`
+(deliberate delete-all never reseeded, stale snapshots cannot resurrect deleted
+profiles on either backend, bounded sync-command queue, stale commands answered),
+`tests/test_api_write_paths_round8.py` (unlocked dict writes cannot crash concurrent
+saves; the check endpoint never rewrites the spoofed fingerprint) and the updated
+`test_api_routers_deep.py` health-check contract (geo lookup recorded on the result,
+fingerprint untouched).
 
 New in v1.10.0: `tests/test_cli_parity.py` (12 tests) and `tests/test_cli_agent_comfort.py` (7 tests) cover the CLI contract — every GUI group, `--json` output, exit codes, and the machine-readable `system schema`.
 

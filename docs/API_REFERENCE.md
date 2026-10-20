@@ -68,7 +68,12 @@ a single `TaskBridge` (`nazak/gui/task_bridge.py`): one `QThread` at a time
 (`progress`/`finished`/`error`/`cancelled`), headless inline fallback for
 tests. Business logic lives in Qt-free callables in `nazak/gui/tasks.py`
 (`check_single_proxy`, `check_all_proxies`, `rotate_proxy`,
-`run_warmup_scenario`, `run_autopost_batch`).
+`run_warmup_scenario`, `run_autopost_batch`). Since v1.15.1 every cancel
+path delivers its completion signal (`batch_finished_signal` /
+`finished_signal`), so the views never wait for a run that was cancelled,
+and `run_autopost_batch` carries a per-profile `finally`-sweep: the browser
+the loop launched is always stopped, on the happy path and on any
+exception.
 
 ---
 
@@ -83,14 +88,14 @@ relies on (`profiles` dict, `_save_lock`, `_merge_*`, `MAX_BUNDLE_*`,
 | Piece | Module | Role |
 |---|---|---|
 | Store contract | `profiles/store_json.py` (`ProfileBackend`) | `load_all()` / `save_all()` |
-| JSON backend | `profiles/store_json.py` (`JsonProfileBackend`) | atomic write (tmp + rename, Windows retries), corrupt-file `.bak`, rotating `.bak.N` (5) |
-| SQLite backend | `profiles/store_sqlite.py` (`SqliteProfileBackend`) | `profiles.db` (WAL), `save_one`/`delete_one` upserts, `VACUUM`, one-shot JSON→SQLite migration |
-| Business logic | `profiles/service.py` (`ProfileService`) | CRUD, clone (fresh fingerprints/seeds), mass-generate (clamped to 200), batch cookies, bundles, reencrypt |
+| JSON backend | `profiles/store_json.py` (`JsonProfileBackend`) | atomic write (tmp + rename, Windows retries), corrupt-file `.bak`, rotating `.bak.N` (5), persisted delete-tombstones (`profiles.json.tombstones`), `mark_seen_empty_store` (a delete-all is never reseeded with the demo presets) |
+| SQLite backend | `profiles/store_sqlite.py` (`SqliteProfileBackend`) | `profiles.db` (WAL), `save_one`/`delete_one` upserts, shared `meta` tombstones, `VACUUM`, one-shot JSON→SQLite migration |
+| Business logic | `profiles/service.py` (`ProfileService`) | CRUD, clone (fresh fingerprints/seeds), mass-generate (clamped to 200), batch cookies, bundles, reencrypt; `update()` refuses ids with a live tombstone (a stale snapshot cannot resurrect a deleted profile) |
 | Bundles | `profiles/bundles.py` | `.nazak` export/import with zip-slip + zip-bomb guards |
 | Disk files | `profiles/files.py` | cookies, cache purge, history seeding, sizes, `validate_id` |
 | Merge rules | `profiles/merge.py` | masked-secret round-trip, proxy/fingerprint/google partial-update merges |
 | Constants | `profiles/constants.py` | `MAX_MASS_GENERATE_COUNT=200`, bundle bounds, `MASK="***"` |
-| Defaults | `profiles/presets.py` | the 10 seed profiles |
+| Defaults | `profiles/presets.py` | the 10 seed profiles (seeded only on a genuine first run — never over a deliberate delete-all) |
 | Backend select | `backend_for()` in `store_sqlite.py` | `NAZAK_PROFILE_STORE=json` (default) / `sqlite` (opt-in) |
 
 ### `NAZAK_PROFILE_STORE`
@@ -573,14 +578,14 @@ Launches the profile directly into the initial organic query step of the warmup 
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/profiles/{id}/rotate-proxy` | Trigger provider rotation URL for dynamic mobile proxy (`http(s)` to a public host only — `file:`, loopback, private and link-local targets, and redirects, are refused with `400`) |
-| `POST` | `/api/profiles/{id}/check` | Perform 5-stage health check and auto-align geolocation/timezone |
+| `POST` | `/api/profiles/{id}/check` | Perform 5-stage health check; the result (including the `timezone_mismatch` report) is recorded on the profile — the spoofed fingerprint is never rewritten by the geo lookup (see below) |
 | `POST` | `/api/profiles/check-all` | Batch run health checks across all configured profiles |
 | `POST` | `/api/profiles/test-proxy` | Test standalone raw proxy string without profile binding |
 
 #### 5-Stage Diagnostics Pipeline:
 1. **TCP Connection Latency**: Ping time to host/port.
 2. **External IP & ISP Identification**: Resolves exit IP, organization, and country.
-3. **Geolocation & Timezone Alignment**: Extracts latitude, longitude, and timezone name.
+3. **Geolocation & Timezone Extraction**: Records latitude, longitude, and timezone name **on the check result only** — the profile's spoofed `fingerprint.timezone`/`geolocation` are never overwritten by a geo lookup (v1.15.1): a Berlin-configured profile must not silently become a Tokyo profile after one check. A mismatch between the profile timezone and the exit-IP timezone is reported on the result (`timezone_mismatch`), and the operator decides whether to align the fingerprint.
 4. **Google Reachability**: Checks connectivity and challenge detection against Google endpoints.
 5. **Data Isolation**: Verifies that user data directory is isolated and free of port conflicts.
 
@@ -612,7 +617,7 @@ Real-time streaming channel for UI synchronization and telemetry:
 - `cookies_bulk_imported` (`{ count, profiles_updated }`)
 - `synchronizer_started` (`{ session }`), `synchronizer_stopped`
 - `autopost_batch_started` (`{ total }`)
-- `autopost_job_started`, `autopost_job_progress`, `autopost_job_finished`
+- `autopost_job_update` (`{ profile_id, status, message?, error?, video_url? }` — one event per job transition)
 - `autopost_batch_finished` (`{ results }`)
 - `secrets_mode_changed` (`{ mode }`)
 
@@ -628,7 +633,7 @@ Real-time streaming channel for UI synchronization and telemetry:
 | :--- | :--- | :--- | :--- | :--- |
 | `plain` *(default)* | None | None | Plaintext | Full transparency; no encryption |
 | `dpapi` | Windows DPAPI | OS User Master Key | `nzk1:dpapi:...` | User-scoped; Windows only |
-| `passphrase` | Fernet (AES-128-CBC + HMAC) | PBKDF2-HMAC-SHA256 (600,000 iterations) | `nzk1:passphrase:...` | Platform-independent; lost passphrase = unrecoverable data |
+| `passphrase` | Fernet (AES-128-CBC + HMAC) | PBKDF2-HMAC-SHA256 (600,000 iterations) | `nzk1:pwd:...` | Platform-independent; lost passphrase = unrecoverable data |
 
 ### Endpoints:
 
@@ -636,7 +641,7 @@ Real-time streaming channel for UI synchronization and telemetry:
 Inspects current mode, available modes, and platform suitability.
 
 #### `POST /api/security/secrets-mode`
-Switches active mode and re-encrypts all existing profile credentials atomically:
+Switches the active mode. New writes use the selected mode immediately; existing envelopes stay decodable and are **not** re-encrypted by this call — re-encryption of the whole fleet is a separate, explicit operation (`ProfileManager.reencrypt_all_profile_secrets`):
 ```json
 {
   "mode": "passphrase",

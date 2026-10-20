@@ -1,7 +1,10 @@
 # Nazak Browser Studio — CLI Reference (GUI parity)
 
 The CLI covers **all 6 GUI sections** (Profiles / Autoposting / Accounts / Proxies / Warmup / Settings)
-and every REST API group. Russian help text, English keys/JSON fields — convenient for AI agents.
+and every REST API group: **61 commands in 12 groups** (verified via
+`system schema`; `profile` 18, `cookie` 4, `proxy` 4, `warmup` 2, `scenario` 2,
+`sync` 5, `autopost` 5, `account` 4, `system` 4, `secrets` 2, `cdp` 4, legacy 7).
+Russian help text, English keys/JSON fields — convenient for AI agents.
 
 ## 0. Getting Started
 
@@ -53,7 +56,7 @@ NazakBrowserStudio.exe list                           # the legacy alias works t
 
 ```powershell
 python -m nazak.cli system doctor --json     # 0) preflight: data dir, storage backend, chrome, ffmpeg, secrets mode
-python -m nazak.cli system schema --json     # 0b) exact schema of all 60+ commands for function-calling
+python -m nazak.cli system schema --json     # 0b) exact schema of all 61 commands for function-calling
 python -m nazak.cli profile ensure --name "Ads 01" --group "Google Ads" --json  # 1) idempotently
 python -m nazak.cli proxy check <id> --json  # 2) check before launch
 python -m nazak.cli cdp start <id> --json    # 3) wsEndpoint for connect_over_cdp
@@ -169,11 +172,15 @@ $env:NAZAK_PROFILE_STORE="json"; python -m nazak.cli profile list --json
 
 Rules: updates in SQLite are point upserts (`save_one`), deletions are
 `delete_one`, with no rewrite of the whole file; corrupt JSON no longer
-resets the fleet when data exists in SQLite. `system doctor` reports which
-backend is live, e.g. `backend=json, profiles.json` or
-`backend=sqlite, profiles.db=yes`, so a preflight shows the active store at a
-glance. The plan to make SQLite the default is in [CHANGELOG.md](../CHANGELOG.md)
-(the v1.12.0 entry, gates and rollback).
+resets the fleet when data exists in SQLite. Deliberate deletes are
+remembered across restarts (tombstones): on JSON in
+`profiles.json.tombstones`, on SQLite in the shared `meta` table — a stale
+window or a second process cannot resurrect a deleted profile through an
+update, and a delete-all is never reseeded with the ten demo presets.
+`system doctor` reports which backend is live, e.g. `backend=json,
+profiles.json` or `backend=sqlite, profiles.db=yes`, so a preflight shows
+the active store at a glance. The plan to make SQLite the default is in
+[CHANGELOG.md](../CHANGELOG.md) (the v1.12.0 entry, gates and rollback).
 
 ## 5c. Where Each Piece of Code Lives (P0)
 
