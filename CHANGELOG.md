@@ -2,38 +2,44 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## v1.15.0 — Concurrency Hunt: Synchronizer, Realtime & GUI Batch (2026-10-17)
+## v1.15.1 — Store Integrity & Fingerprint Protection (2026-10-19)
 
-Six hunting rounds against the concurrency surfaces the earlier audits had not
-reached: the synchronizer pump and its injector handshake, the WebSocket
-realtime hub, and the GUI autopost batch. Four race/teardown defects and one
-sequential-freeze defect found, reproduced with deterministic no-thread repros
-and closed; the store and parser fixes from rounds 1–4 are part of this
-release too (they landed after v1.14.0 was tagged).
+Three hardening rounds (6–8) after v1.15.0: the GUI batch/worker cancel paths, five
+store/launcher/synchronizer integrity defects, and two API write-path defects. Every
+finding was reproduced with a deterministic repro before the fix and pinned by a
+regression test after it.
 
 Suite: **1047 passed, 5 deselected** (1052 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
-### API write paths & fingerprint integrity (round 8, post-v1.15.0)
+### GUI cancel-path UX (round 6)
 
-- **Unlocked dict writes crashed concurrent saves (X-22).** `batch_launch`,
-  `batch_stop` and `check_all_profiles` wrote `profile_manager.profiles[pid] = p`
-  directly — outside the service lock — while `save_all()` iterated the same dict on
-  another thread. Reproduced through the real facade with a 3000-profile store:
-  `RuntimeError: dictionary changed size during iteration`. All write paths now go
-  through the service (`update()` persists, `register_runtime_update()` is the locked
-  in-memory-only variant).
-- **One health check silently rewrote the spoofed fingerprint (X-21).**
-  `POST /api/profiles/{id}/check` (and the GUI twin in ProfilesView) copied the proxy
-  exit's geo lookup into `fingerprint.timezone`/`geolocation` — a Berlin-configured
-  profile became a Tokyo profile after one check, fabricating exactly the
-  timezone-vs-exit contradiction the anti-detect layer (audit F-11) treats as a tell.
-  Reproduced: `America/New_York` → `Asia/Tokyo`. The check result is now recorded
-  (`last_health_check`, including its `timezone_mismatch` report) and the operator
-  decides about the fingerprint.
+- **A cancelled autopost batch left the Start buttons stuck on "Running..." (G-02).**
+  The TaskBridge emits only `cancelled` when the progress callback raises `TaskCanceled`;
+  `AutopostBatchWorker` never translated that into `batch_finished_signal`, so the view's
+  completion handler never ran and the buttons stayed disabled until an app restart. The
+  cancel path now emits the normal completion signal with per-profile `canceled`
+  verdicts, and the view reports "Queue canceled" instead of a fake success. Companion:
+  the view now has an actual **Cancel Batch** button (`worker.cancel()` always existed —
+  the UI never exposed it).
+- **A cancelled proxy-check sweep was completely silent (G-03).** `CheckAllProxiesWorker`
+  delivered neither `finished_signal` nor any notice on a user cancel — both views
+  (`ProfilesView`, `ProxiesView`) waited forever for a completion that never came. The
+  cancel path now emits `finished_signal` so the views' completion contract holds.
+- **ProfilesView "Check All" had no re-click guard (G-04).** `ProxiesView.on_check_all`
+  got its `isRunning()` guard in audit R3; the twin in `ProfilesView.on_check_all_proxies`
+  was missed — a repeated click dropped the last reference to the running QThread, and
+  for Qt that is a process abort. The guard is in place now, with a visible refusal.
+- **A cancelled/failed GUI batch orphaned the just-launched Chrome (G-01).** A cancel
+  landing between `launch()` and the happy-path `stop()` in `gui.tasks.run_autopost_batch`
+  unwound the whole coroutine — no `stop()`, the profile stuck RUNNING while its browser
+  lived (a store error or a missing-Playwright `RuntimeError` escaped the same way). The
+  GUI batch path now mirrors the upload queue's per-job finally-sweep: the browser the
+  loop launched is always taken down, the profile reset, and the original exception still
+  propagates to the bridge.
 
-### Store integrity & cross-instance races (round 7, post-v1.15.0)
+### Store integrity & cross-instance races (round 7)
 
 - **Deleting every profile resurrected the demo fleet on restart (F-04).** `load()`
   treated "store file exists but holds zero profiles" exactly like "no file at all" and
@@ -66,35 +72,36 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   re-validated against the process image name (Chrome/Chromium/Edge/...) before the
   code trusts it, on both the status and the kill path.
 
-### GUI cancel-path UX (round 6 addendum, post-v1.15.0)
+### API write paths & fingerprint integrity (round 8)
 
-- **A cancelled autopost batch left the Start buttons stuck on "Running..." (G-02).**
-  The TaskBridge emits only `cancelled` when the progress callback raises `TaskCanceled`;
-  `AutopostBatchWorker` never translated that into `batch_finished_signal`, so the view's
-  completion handler never ran and the buttons stayed disabled until an app restart. The
-  cancel path now emits the normal completion signal with per-profile `canceled`
-  verdicts, and the view reports "Queue canceled" instead of a fake success. Companion:
-  the view now has an actual **Cancel Batch** button (`worker.cancel()` always existed —
-  the UI never exposed it).
-- **A cancelled proxy-check sweep was completely silent (G-03).** `CheckAllProxiesWorker`
-  delivered neither `finished_signal` nor any notice on a user cancel — both views
-  (`ProfilesView`, `ProxiesView`) waited forever for a completion that never came. The
-  cancel path now emits `finished_signal` so the views' completion contract holds.
-- **ProfilesView "Check All" had no re-click guard (G-04).** `ProxiesView.on_check_all`
-  got its `isRunning()` guard in audit R3; the twin in `ProfilesView.on_check_all_proxies`
-  was missed — a repeated click dropped the last reference to the running QThread, and
-  for Qt that is a process abort. The guard is in place now, with a visible refusal.
+- **Unlocked dict writes crashed concurrent saves (X-22).** `batch_launch`,
+  `batch_stop` and `check_all_profiles` wrote `profile_manager.profiles[pid] = p`
+  directly — outside the service lock — while `save_all()` iterated the same dict on
+  another thread. Reproduced through the real facade with a 3000-profile store:
+  `RuntimeError: dictionary changed size during iteration`. All write paths now go
+  through the service (`update()` persists, `register_runtime_update()` is the locked
+  in-memory-only variant).
+- **One health check silently rewrote the spoofed fingerprint (X-21).**
+  `POST /api/profiles/{id}/check` (and the GUI twin in ProfilesView) copied the proxy
+  exit's geo lookup into `fingerprint.timezone`/`geolocation` — a Berlin-configured
+  profile became a Tokyo profile after one check, fabricating exactly the
+  timezone-vs-exit contradiction the anti-detect layer (audit F-11) treats as a tell.
+  Reproduced: `America/New_York` → `Asia/Tokyo`. The check result is now recorded
+  (`last_health_check`, including its `timezone_mismatch` report) and the operator
+  decides about the fingerprint.
 
-### GUI batch hunt (round 6)
+## v1.15.0 — Concurrency Hunt: Synchronizer, Realtime & GUI Batch (2026-10-17)
 
-- **Cancelled/failed GUI batch orphaned the just-launched Chrome (G-01).** The TaskBridge
-  progress callback raises `TaskCanceled` on a user cancel; a cancel landing between
-  `launch()` and the happy-path `stop()` in `gui.tasks.run_autopost_batch` unwound the
-  whole coroutine — no `stop()`, the profile stuck RUNNING while its browser lived (a
-  store error or a missing-Playwright `RuntimeError` escaped the same way). The upload
-  queue has had a per-job finally-sweep for exactly this hole (R-02 era); the GUI batch
-  path now mirrors it: the browser the loop launched is always taken down and the
-  profile reset, and the original exception still propagates to the bridge.
+Six hunting rounds against the concurrency surfaces the earlier audits had not
+reached: the synchronizer pump and its injector handshake, the WebSocket
+realtime hub, and the GUI autopost batch. Four race/teardown defects and one
+sequential-freeze defect found, reproduced with deterministic no-thread repros
+and closed; the store and parser fixes from rounds 1–4 are part of this
+release too (they landed after v1.14.0 was tagged).
+
+Suite: **1047 passed, 5 deselected** (1052 collected; 0 `xfail`). `ruff check`, `ruff format
+--check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
+windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
 ### Synchronizer hunt (round 5)
 
