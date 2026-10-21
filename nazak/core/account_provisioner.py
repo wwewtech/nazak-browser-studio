@@ -14,6 +14,7 @@ import re
 import secrets
 import struct
 import time
+import uuid
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -322,6 +323,12 @@ class AccountProvisioner:
     def __init__(self, profile_manager: ProfileManager, profiles_dir: Path):
         self.profile_manager = profile_manager
         self.profiles_dir = profiles_dir
+        # Hunt X-23: the proxy lines that could not be parsed during the LAST
+        # import. The batch signature returns list[BrowserProfile] (changing it
+        # would break every caller), so the skipped entries are reported here
+        # and the caller surfaces them — a silently dropped proxy line is
+        # exactly what X-23 was.
+        self.last_import_skipped: list[dict[str, str]] = []
 
     def batch_import_and_create_profiles(
         self,
@@ -332,26 +339,66 @@ class AccountProvisioner:
     ) -> list[BrowserProfile]:
         """
         Parses multi-line account strings and creates corresponding isolated profiles with hardware fingerprints.
+
+        Hunt X-23: the proxy lines are PARSED (``ProxyConfig.parse``) instead of
+        being wrapped in a raw string. The old code built
+        ``ProxyConfig(type=HTTP, raw=<line>)``, which left host/port EMPTY:
+        ``is_direct()`` was True, ``to_chrome_proxy_arg()`` returned None (no
+        ``--proxy-server`` in the Chrome argv), ``to_httpx_url()`` returned None
+        (the OAuth token exchange went out directly) and the auth forwarder was
+        never started — so the browser exited from the operator's REAL IP with
+        the proxy credentials silently dropped. A socks5:// line was also
+        mislabelled as HTTP. A malformed line (e.g. an out-of-range port) is
+        recorded in ``last_import_skipped`` and the batch continues.
         """
         lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
         created_profiles = []
         proxy_idx = 0
+        skipped: list[dict[str, str]] = []
+        self.last_import_skipped = skipped
 
         for i, line in enumerate(lines, start=1):
             acc = parse_account_string(line)
             if not acc:
                 continue
 
-            # Assign proxy
+            # Assign proxy (X-23: parse it, or the profile silently runs
+            # without it).
             proxy_cfg = ProxyConfig(type=ProxyType.DIRECT, raw="direct")
-            if proxy_list and len(proxy_list) > 0:
+            if proxy_list:
                 raw_px = proxy_list[proxy_idx % len(proxy_list)].strip()
                 if raw_px:
-                    proxy_cfg = ProxyConfig(type=ProxyType.HTTP, raw=raw_px)
-                proxy_idx += 1
+                    try:
+                        parsed = ProxyConfig.parse(raw_px)
+                    except ValueError as exc:
+                        # P-03: an explicitly invalid port raises ValueError -
+                        # the batch must not die because of one broken line.
+                        skipped.append({"proxy": raw_px[:80], "error": str(exc)})
+                        logger.warning("account import: bad proxy line %r: %s", raw_px[:80], exc)
+                        proxy_idx += 1
+                    else:
+                        if parsed.is_direct() and raw_px.lower() not in ("direct", "none", "null", ""):
+                            # A malformed string that parses into DIRECT would
+                            # put the account on the operator's real IP.
+                            skipped.append(
+                                {
+                                    "proxy": raw_px[:80],
+                                    "error": "unusable proxy string (parsed as a direct connection)",
+                                }
+                            )
+                            logger.warning("account import: unusable proxy line %r", raw_px[:80])
+                        else:
+                            proxy_cfg = parsed
+                        proxy_idx += 1
 
             fp = generate_random_fingerprint()
-            pid = f"prof_acc_{int(time.time())}_{i}"
+            # Hunt Y-01: the id used to be `prof_acc_{unix_seconds}_{line_index}`
+            # — two imports inside the SAME second produced the SAME id, and
+            # the second create raised an unhandled ValueError ("Profile with
+            # id ... already exists") in the GUI, in `account import` and in
+            # the auto-login flow. A random suffix makes the id unique per
+            # line, per second and per process.
+            pid = f"prof_acc_{int(time.time())}_{uuid.uuid4().hex[:8]}_{i}"
 
             username = acc["email"].split("@")[0] if "@" in acc["email"] else acc["email"]
             gpu_display = fp.webgl_unmasked_renderer.replace("NVIDIA GeForce ", "").replace("AMD Radeon ", "").strip()

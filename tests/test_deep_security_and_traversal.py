@@ -263,4 +263,12 @@ def test_cli_env_credentials_masked_in_stdout(capsys):
             pass
     captured = capsys.readouterr().out
     assert "SecretSuperPassword123!" not in captured
-    assert "**********************" in captured or "******" in captured
+    # Hunt Y-02: without GOOGLE_EMAIL the flow now refuses to publish under an
+    # arbitrary profile — it stops BEFORE the credential banner, so the masked
+    # form is not printed. What must hold is that the secret never leaks.
+    assert "JBSWY3DPEHPK3PXP" not in captured
+    if "refusing to publish" in captured:
+        # the refusal path: the account was never named, nothing was published
+        assert "SecretSuperPassword123!" not in captured
+    else:
+        assert "**********************" in captured or "******" in captured

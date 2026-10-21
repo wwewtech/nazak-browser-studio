@@ -94,8 +94,30 @@ class ProfileEditDialog(QDialog):
 
         self.input_proxy_raw = LineEdit(card_proxy)
         self.input_proxy_raw.setPlaceholderText("host:port:user:pass or socks5://user:pass@host:port (or direct)")
-        if self.profile and self.profile.proxy.raw:
-            self.input_proxy_raw.setText(self.profile.proxy.raw)
+        # Hunt Y-06: a proxy created through the API carries structured fields
+        # (host/port/user/password) and NO `raw` string. The dialog used to
+        # fall back to "direct" in that case — and saving it REPLACED the
+        # whole proxy with DIRECT: the profile silently stopped using its
+        # proxy and started exiting from the real IP. The stored proxy is
+        # rendered into the field instead, so editing any other setting
+        # (name, group, GPU) cannot drop the proxy.
+        if self.profile and self.profile.proxy:
+            stored_proxy = self.profile.proxy
+            if stored_proxy.raw:
+                self.input_proxy_raw.setText(stored_proxy.raw)
+            elif not stored_proxy.is_direct():
+                # Structured proxy without a `raw` string: render the canonical
+                # form WITH the real credentials (the same plaintext the `raw`
+                # field always showed) so a save round-trips it unchanged.
+                # to_display_string() masks the password ("***") — saving that
+                # would overwrite the stored password with the mask.
+                proto = stored_proxy.type.value
+                cred = ""
+                if stored_proxy.username:
+                    cred = f"{stored_proxy.username}:{stored_proxy.password or ''}@"
+                self.input_proxy_raw.setText(f"{proto}://{cred}{stored_proxy.host}:{stored_proxy.port}")
+            else:
+                self.input_proxy_raw.setText("direct")
         else:
             self.input_proxy_raw.setText("direct")
         l_proxy.addWidget(self.input_proxy_raw)

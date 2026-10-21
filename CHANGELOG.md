@@ -2,6 +2,69 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## v1.15.2 — Global Code Re-Audit (2026-10-21)
+
+A full re-audit of the code base after v1.15.1, covering the surfaces the
+earlier rounds had not reached: the account provisioner, the auto-login
+publisher, the profile-edit dialog, the extension/launch path and the CLI
+import flow. Five defects found — two of them data-destroying, one a path
+traversal with real deletions — each reproduced before the fix and pinned by
+a regression test after it.
+
+Suite: **1064 passed, 5 deselected** (1069 collected; 0 `xfail`). `ruff check`, `ruff format
+--check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
+windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Account import: the proxy was never applied (X-23/X-24)
+
+- **The proxies assigned at account import were silently dropped (X-23).** The import
+  built `ProxyConfig(type=HTTP, raw=<line>)` instead of parsing the line, so `host`/`port`
+  stayed empty: `is_direct()` was True, `to_chrome_proxy_arg()` returned None (no
+  `--proxy-server` in the Chrome argv), `to_httpx_url()` returned None (the OAuth token
+  exchange went out directly) and the auth forwarder was never started — the browser
+  exited from the operator's REAL IP with the proxy credentials dropped, and a
+  `socks5://` line was mislabelled as HTTP. The lines are parsed now
+  (`ProxyConfig.parse`), a broken line (e.g. an out-of-range port) is recorded in
+  `last_import_skipped` and the batch continues, and the skipped entries are reported
+  by the CLI (`--json` → `skipped`) and the GUI (InfoBar).
+- **The proxy lines were unreachable from the UI (X-23).** `proxy_list` was a ghost
+  parameter: neither the GUI nor the CLI could pass it, so every imported account ran
+  without a proxy. The GUI has a proxy field now, and `account import` has a `--proxy`
+  flag (a line, a CSV or `@file`).
+- **Two imports in the same second collided on the profile id (X-24).** The id was
+  `prof_acc_{unix_seconds}_{line_index}` — the second import in the same second
+  produced the SAME id and `create_profile` raised an unhandled `ValueError` ("Profile
+  with id ... already exists") in the GUI, in `account import` and in the auto-login
+  flow. The id now carries a random suffix.
+
+### Global code re-audit (round 9)
+
+- **Two account imports in the same second collided (Y-01).** The imported profile id was
+  `prof_acc_{unix_seconds}_{line_index}` — a second import in the same second produced the
+  SAME id and `create_profile` raised an unhandled `ValueError` ("Profile with id ... already
+  exists") in the GUI, in `account import` and in the auto-login flow. The id now carries a
+  random suffix: unique per line, per second and per process.
+- **The auto-login flow published under an arbitrary account (Y-02).** Without
+  `GOOGLE_EMAIL` the script took the FIRST profile it found — often a demo preset without
+  any account — then signed in and published a Shorts under that identity; with several
+  imported accounts it silently took the last one. The account must now be named
+  explicitly, otherwise the flow stops before publishing.
+- **A hostile profile id escaped the extensions and profiles roots (Y-04).** The
+  extension directory and the user-data dir are derived from the profile id, which was
+  interpolated into the path unchecked: `id="../../evil"` made the generator `rmtree` + write
+  outside `extensions_dir`, and `build_chrome_args` deleted the target's lock files
+  (`clean_stale_locks`) outside `profiles_dir` — a path traversal with real deletions.
+  Both paths now validate the id and check the resolved directory against its root.
+- **Editing a profile silently dropped its proxy (Y-06).** A proxy created through the API
+  carries structured fields and no `raw` string; the edit dialog showed the literal
+  "direct" for it, and saving the dialog REPLACED the whole proxy with DIRECT — the profile
+  stopped using its proxy and began exiting from the real IP (reproduced through the real
+  API: `host/port/password` all lost). The stored proxy is now rendered into the field
+  (with the real credentials, not the `***` display mask) and survives a save.
+- **The delete-tombstone file was not git-ignored (Y-03).** The JSON backend's
+  `profiles.json.tombstones` is runtime state next to `profiles.json` and was picked up as
+  an untracked file; it is now ignored.
+
 ## v1.15.1 — Store Integrity & Fingerprint Protection (2026-10-19)
 
 Three hardening rounds (6–8) after v1.15.0: the GUI batch/worker cancel paths, five

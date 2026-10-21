@@ -147,7 +147,24 @@ def generate_profile_extension(
     shield only allowed the API port 8899 and left every other local port
     (including the debugging endpoint) reachable by the page.
     """
+    # Hunt Y-04: the extension directory is derived from the profile id, which
+    # used to be interpolated into the path unchecked: a hostile id
+    # ("../../evil") made the generator rmtree + write OUTSIDE the extensions
+    # root, and the launcher deleted the profile's lock files in the same way
+    # (clean_stale_locks) — a path traversal with real deletions. The id is
+    # validated here, and the resolved directory is checked against the root.
+    from .profiles.files import validate_id
+
+    try:
+        validate_id(profile.id)
+    except ValueError as exc:
+        raise ValueError(f"Refusing to build an extension for an unsafe profile id: {exc}") from exc
+
     ext_dir = extensions_base_dir / profile.id
+    root = extensions_base_dir.resolve()
+    resolved = ext_dir.resolve()
+    if not resolved.is_relative_to(root) or resolved == root:
+        raise ValueError(f"Refusing to build an extension outside {root}: {profile.id!r}")
     if ext_dir.exists():
         shutil.rmtree(ext_dir, ignore_errors=True)
     ext_dir.mkdir(parents=True, exist_ok=True)

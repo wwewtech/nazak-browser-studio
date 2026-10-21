@@ -73,6 +73,13 @@ def register(sp) -> None:
     s.add_argument("--mode", default="browser_stealth", choices=["browser_stealth", "oauth_api"])
     s.add_argument("--file", default=None)
     s.add_argument("--stdin", action="store_true")
+    # Hunt X-23: the proxy lines were unreachable from the CLI (a ghost
+    # parameter) — every imported account ran without its proxy.
+    s.add_argument(
+        "--proxy",
+        default=None,
+        help="Прокси для импортируемых аккаунтов: строка, CSV или @file (по одному в строке)",
+    )
     s.add_argument("data", nargs="?", default=None, help="Текст или @file")
     s.set_defaults(func=cmd_account_import)
 
@@ -298,13 +305,26 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
         return emit_error("Нет данных: login:pass:2fa:recovery через аргумент/--file/stdin", opt)
     if opt.server:
         return emit_error("account import доступен только в direct-режиме (без --server)", opt)
+    # Hunt X-23: the proxy lines were a ghost parameter — nothing in the CLI or
+    # the GUI could pass them, so every imported account ran WITHOUT its
+    # proxy (Chrome exited from the operator's real IP). The flag exists now
+    # (same shape as `profile create --proxy`: a line, a CSV or @file).
+    proxy_lines: list[str] = []
+    proxy_arg = getattr(args, "proxy", None)
+    if proxy_arg:
+        raw_proxy_text = read_input_text(proxy_arg)
+        proxy_lines = [ln.strip() for ln in raw_proxy_text.splitlines() if ln.strip()]
+        if not proxy_lines:
+            return emit_error("--proxy не содержит ни одной строки прокси", opt)
     from nazak.config import PROFILES_DIR
     from nazak.core.account_provisioner import AccountProvisioner
 
     pm, _ = get_managers()
     prov = AccountProvisioner(pm, PROFILES_DIR)
     posting = "browser_stealth" if args.mode == "browser_stealth" else "oauth_api"
-    profiles = prov.batch_import_and_create_profiles(text, group_name=args.group, posting_mode=posting)
+    profiles = prov.batch_import_and_create_profiles(
+        text, group_name=args.group, posting_mode=posting, proxy_list=proxy_lines or None
+    )
     ids = [p.id for p in profiles]
     if not profiles:
         return emit_error("Не распознано ни одного аккаунта (формат login:pass:2fa:recovery)", opt)
@@ -324,6 +344,12 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
     extra = {"created_count": len(ids), "profile_ids": ids, "group": args.group}
     if warning:
         extra["warning"] = warning
+    # Hunt X-23: the proxy lines that could not be parsed are reported, never
+    # swallowed — a silently dropped proxy means the account runs on the
+    # operator's real IP.
+    skipped = list(getattr(prov, "last_import_skipped", []) or [])
+    if skipped:
+        extra["skipped"] = skipped
     if opt.as_json:
         emit({"success": True, **extra}, opt)
     else:
@@ -335,6 +361,10 @@ def cmd_account_import(args, opt: GlobalOptions) -> int:
         console.print(t)
         if warning:
             err_console.print(f"[bold yellow]⚠ {warning}[/bold yellow]")
+        if skipped:
+            err_console.print(f"[bold yellow]⚠ Пропущено прокси-строк: {len(skipped)}[/bold yellow]")
+            for item in skipped:
+                err_console.print(f"  - {item.get('proxy', '')}: {item.get('error', '')}")
     return EXIT_OK
 
 

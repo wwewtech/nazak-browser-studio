@@ -101,3 +101,8 @@ PROBLEMS.TXT
 OMG.txt
 
 data/profiles.json.bak*
+
+# Hunt Y-03: the JSON backend's delete tombstones (v1.15.1) are runtime state
+# next to profiles.json — they must never be committed.
+data/profiles.json.tombstones
+*.tombstones

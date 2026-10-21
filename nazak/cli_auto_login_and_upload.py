@@ -52,10 +52,17 @@ async def run_live_flow():
     if not profiles:
         existing = pm.list_profiles()
         google_profs = [p for p in existing if p.google and (p.google.notes or p.google.target_account_email)]
-        if google_profs:
-            profiles = [google_profs[0]]
-        elif existing:
-            profiles = [existing[0]]
+        if google_profs or existing:
+            # Hunt Y-02: the flow used to take the FIRST google profile it
+            # found — often a demo preset without any account — and then
+            # signed in and PUBLISHED under that arbitrary identity. The
+            # account must be named explicitly (GOOGLE_EMAIL); without it the
+            # flow stops instead of guessing.
+            print(
+                "❌ GOOGLE_EMAIL is not set and no account was named: refusing to publish under an "
+                "arbitrary profile. Set GOOGLE_EMAIL to the exact profile id or account email."
+            )
+            return False
 
     if not profiles:
         data_file = Path(os.environ.get("NAZAK_DATA_FILE", DATA_DIR / "data1.txt"))
@@ -68,7 +75,17 @@ async def run_live_flow():
 
     if not profiles:
         print("❌ No profiles found for sign-in. Create a profile or set NAZAK_DATA_FILE.")
-        return
+        return False
+
+    # Hunt Y-02 (twin): the imported batch can hold several accounts — the
+    # flow used to take the LAST one silently. The account to publish under
+    # must be named; otherwise the batch is ambiguous.
+    if len(profiles) > 1 and not os.environ.get("GOOGLE_EMAIL", "").strip():
+        print(
+            f"❌ {len(profiles)} accounts were imported but none was named: refusing to guess. "
+            "Set GOOGLE_EMAIL to the exact profile id or account email."
+        )
+        return False
 
     target_prof = profiles[-1]
     raw_notes = {}

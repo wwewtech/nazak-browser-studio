@@ -173,6 +173,20 @@ class AccountsView(QWidget):
         self.txt_accounts.setFixedHeight(85)
         config_layout.addWidget(self.txt_accounts)
 
+        # Hunt X-23: the proxy lines for the imported accounts were unreachable
+        # from the GUI (the provisioner's proxy_list was a ghost parameter) —
+        # every imported account ran WITHOUT its proxy, so Chrome exited from
+        # the operator's real IP. One proxy per line; they are assigned
+        # round-robin to the imported accounts.
+        lbl_proxies = CaptionLabel("Proxies (one per line, optional, round-robin):", config_card)
+        lbl_proxies.setStyleSheet("color: #a1a1aa; font-weight: 600;")
+        config_layout.addWidget(lbl_proxies)
+
+        self.txt_proxies = TextEdit(config_card)
+        self.txt_proxies.setPlaceholderText("host:port:user:pass\nsocks5://user:pass@host:1080\nhttp://host:port")
+        self.txt_proxies.setFixedHeight(55)
+        config_layout.addWidget(self.txt_proxies)
+
         # Controls Row
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(12)
@@ -290,10 +304,27 @@ class AccountsView(QWidget):
 
         group = self.edit_group.text().strip() or "Imported"
         mode = "browser_stealth" if self.cmb_mode.currentIndex() == 0 else "oauth_api"
+        # Hunt X-23: the proxy lines are finally passed to the provisioner.
+        proxy_lines = [ln.strip() for ln in self.txt_proxies.toPlainText().splitlines() if ln.strip()]
 
-        created = self.provisioner.batch_import_and_create_profiles(
-            raw_text=raw_text, group_name=group, posting_mode=mode
-        )
+        try:
+            created = self.provisioner.batch_import_and_create_profiles(
+                raw_text=raw_text,
+                group_name=group,
+                posting_mode=mode,
+                proxy_list=proxy_lines or None,
+            )
+        except ValueError as exc:
+            # A refused create (e.g. a duplicate id from an external cause)
+            # must not kill the GUI slot with a traceback.
+            InfoBar.error(
+                title="Import failed",
+                content=str(exc),
+                parent=self,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=4000,
+            )
+            return
 
         if created:
             self.txt_accounts.clear()
@@ -305,6 +336,17 @@ class AccountsView(QWidget):
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=4000,
             )
+            # Hunt X-23: proxy lines that could not be parsed are reported —
+            # a silently dropped proxy means the account runs on the real IP.
+            skipped = list(getattr(self.provisioner, "last_import_skipped", []) or [])
+            if skipped:
+                InfoBar.warning(
+                    title="Some proxies were skipped",
+                    content="; ".join(f"{s.get('proxy', '')} — {s.get('error', '')}" for s in skipped[:5]),
+                    parent=self,
+                    position=InfoBarPosition.TOP_RIGHT,
+                    duration=6000,
+                )
         else:
             InfoBar.error(
                 title="Parsing error",

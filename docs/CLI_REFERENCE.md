@@ -45,7 +45,7 @@ NazakBrowserStudio.exe list                           # the legacy alias works t
 | `scenario` | `list · run --scenario <id\|alias> [--scenario-file] --profiles/--all --concurrency --wait` (aliases: `ecommerce_trust_booster`, `youtube_shorts_warmup`, `crypto_web3_farming`, `finance_high_cpc_banking`) | WarmupView + API |
 | `sync` | `start --master --workers --no-jitter --min-delay --max-delay --coord-jitter · stop · status · tile [--cols] · navigate <url>` | SynchronizerDialog |
 | `autopost` | `status · preview --profiles/--all --title --desc --tg · uniquify --video --profiles/--all · launch --profiles/--all --video --platform youtube_shorts\|instagram_reels --title --desc --tg --delay --demo --wait · cancel` | AutopostView |
-| `account` | `import [--file/stdin] --group --mode browser_stealth\|oauth_api · list · totp <id> · login [--profile --email --video --data-file]` | AccountsView + `cli_auto_login_and_upload.py` |
+| `account` | `import [--file/stdin] --group --mode browser_stealth\|oauth_api [--proxy <line\|CSV\|@file>] · list · totp <id> · login [--profile --email --video --data-file]` | AccountsView + `cli_auto_login_and_upload.py` |
 | `cdp` | `start <id> [--url --port] · stop <id> · active · info <id>` (response `{automation: {port, wsEndpoint}}`, `connect_over_cdp`) | Dolphin `/v1.0/*` |
 | `secrets` | `get · set --mode plain\|dpapi\|passphrase [--passphrase/--passphrase-stdin/$NAZAK_PASSPHRASE]` | SettingsView |
 | `system` | `info · doctor · schema · version` | SettingsView System card |
@@ -121,6 +121,11 @@ python -m nazak.cli autopost cancel --json
 
 # Accounts
 python -m nazak.cli account import --file accounts.txt --group "Retriv Gmail" --mode browser_stealth --json
+# one proxy per line (or a CSV, or @file): assigned round-robin to the imported
+# accounts. A line that cannot be parsed is reported in `skipped` — it is never
+# applied silently (that would run the account on the operator's real IP).
+python -m nazak.cli account import --file accounts.txt --proxy "http://user:pass@host:8080" --json
+python -m nazak.cli account import --file accounts.txt --proxy proxies.txt --json
 python -m nazak.cli account totp prof_01 --json
 python -m nazak.cli account login --profile prof_01 --video clip.mp4
 

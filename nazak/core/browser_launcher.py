@@ -273,6 +273,18 @@ class BrowserLauncher:
         """
         Constructs the strict isolation command line arguments for Chromium launch.
         """
+        # Hunt Y-04: the user-data dir is derived from the profile id. A
+        # hostile id ("../VICTIM") made this method create the directory and
+        # DELETE its lock files outside profiles_dir (clean_stale_locks), and
+        # the extension generator wrote there too. The id is validated before
+        # any filesystem operation.
+        from .profiles.files import validate_id
+
+        try:
+            validate_id(profile.id)
+        except ValueError as exc:
+            raise ValueError(f"Refusing to launch a profile with an unsafe id: {exc}") from exc
+
         user_data_path = self.profiles_dir / profile.id
         user_data_path.mkdir(parents=True, exist_ok=True)
         self.clean_stale_locks(user_data_path)
