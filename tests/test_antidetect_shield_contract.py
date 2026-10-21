@@ -205,6 +205,32 @@ def test_a07_rect_jitter_is_stable_per_element():
     assert "rectOffsets" in src, "the rect offsets must be cached per element (A-07)"
 
 
+def test_a11_window_geometry_is_derived_from_the_spoofed_screen():
+    """A-11: the window geometry was left at the HOST's real values while the
+    screen was spoofed — and the two disagreed (measured: outerHeight 1055 >
+    screen.availHeight 1040, i.e. a window taller than its own screen)."""
+    src = _generated_js()
+    for metric in ("outerWidth", "outerHeight", "innerWidth", "innerHeight", "screenX", "screenY"):
+        assert f"defineWindowMetric('{metric}'" in src, f"the window metric {metric} must be spoofed (A-11)"
+
+
+def test_a12_window_metrics_are_defined_on_the_instance():
+    """A-12: in Chrome these are OWN properties of the window INSTANCE
+    (configurable accessors), so a Window.prototype override is shadowed and
+    never applies — that is why the old devicePixelRatio spoof did nothing
+    (the page kept the host's scale factor: measured 2 on a 1.0 profile)."""
+    src = _generated_js()
+    assert "apply(window);" in src, (
+        "the window metrics must be redefined on the window INSTANCE — a prototype-level "
+        "override is shadowed by Chrome's own property (A-12)"
+    )
+    assert "defineWindowMetric('devicePixelRatio'" in src, "devicePixelRatio must be spoofed on the instance (A-12)"
+    # the old prototype-only devicePixelRatio definition must be gone
+    assert "Object.defineProperty(Window.prototype, 'devicePixelRatio'" not in src, (
+        "the prototype-level devicePixelRatio override never applied and contradicts the instance-level one (A-12)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

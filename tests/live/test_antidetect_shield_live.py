@@ -62,6 +62,20 @@ PROBE = """() => {
   t('webdriver', () => navigator.webdriver);
   t('cores', () => navigator.hardwareConcurrency);
   t('screen', () => screen.width + 'x' + screen.height);
+  t('geometry', () => {
+    const s = { w: screen.availWidth, h: screen.availHeight, l: screen.availLeft, t: screen.availTop };
+    const w = { x: window.screenX, y: window.screenY, ow: window.outerWidth, oh: window.outerHeight,
+                iw: window.innerWidth, ih: window.innerHeight, dpr: window.devicePixelRatio };
+    const bad = [];
+    if (w.ow > s.w) bad.push('outerWidth>availWidth');
+    if (w.oh > s.h) bad.push('outerHeight>availHeight');
+    if (w.iw > w.ow) bad.push('innerWidth>outerWidth');
+    if (w.x + w.ow > s.w + s.l) bad.push('off-right');
+    if (w.y + w.oh > s.h + s.t) bad.push('off-bottom');
+    if (w.dpr <= 0) bad.push('dpr<=0');
+    return 'bad=' + (bad.join(',') || 'none') + ' dpr=' + w.dpr +
+           ' outer=' + w.ow + 'x' + w.oh + ' avail=' + s.w + 'x' + s.h;
+  });
   t('languages', () => navigator.languages.join(','));
   t('webgl_vendor', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37445) : 'no-ctx'; });
   t('webgl_renderer', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37446) : 'no-ctx'; });
@@ -120,6 +134,13 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         # the shield must report the PROFILE's values, not the host's
         assert res["cores"].endswith(str(fp.hardware_concurrency)), res["cores"]
         assert res["screen"].endswith(f"{fp.screen_width}x{fp.screen_height}"), res["screen"]
+        # A-11/A-12: the window geometry must fit inside the spoofed screen and
+        # the device pixel ratio must be the profile's (the host's own
+        # properties are own instance accessors — a prototype-level override
+        # is shadowed and never applies).
+        assert "bad=none" in res["geometry"], f"incoherent window geometry: {res['geometry']}"
+        dpr_reported = res["geometry"].split("dpr=")[1].split(" ")[0]
+        assert float(dpr_reported) == float(fp.device_pixel_ratio), res["geometry"]
         assert res["tz_offset"].endswith(str(fp.timezone_offset)), res["tz_offset"]
         assert res["intl_dtf_tz"].endswith(fp.timezone), res["intl_dtf_tz"]
         assert res["languages"].endswith(",".join(fp.languages[:2])), res["languages"]

@@ -404,7 +404,94 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         Object.defineProperty(Screen.prototype, 'availHeight', {{ get: makeNative(() => {fp.screen_avail_height}, 'get availHeight'), configurable: true, enumerable: true }});
         Object.defineProperty(Screen.prototype, 'colorDepth', {{ get: makeNative(() => {fp.color_depth}, 'get colorDepth'), configurable: true, enumerable: true }});
         Object.defineProperty(Screen.prototype, 'pixelDepth', {{ get: makeNative(() => {fp.pixel_depth}, 'get pixelDepth'), configurable: true, enumerable: true }});
-        Object.defineProperty(Window.prototype, 'devicePixelRatio', {{ get: makeNative(() => {_js_number(fp.device_pixel_ratio)}, 'get devicePixelRatio'), configurable: true, enumerable: true }});
+        // NOTE: devicePixelRatio is defined further down, on the window
+        // INSTANCE (hunt A-12) — a prototype-level override is shadowed by
+        // Chrome's own instance property and never applies.
+
+        // Hunt A-11: the WINDOW geometry was left at the HOST's real values
+        // while the screen was spoofed — and the two then disagreed. Measured
+        // on a 1920x1080 host with a 1920x1080 profile: the page saw
+        // outerHeight 1055 > screen.availHeight 1040 and a window that
+        // "hung off the bottom edge" of its own screen. A page that compares
+        // the two sees a machine that does not exist. The window is now
+        // derived from the SPOOFED screen: it always fits inside it, the
+        // position stays inside the available area, and the chrome insets
+        // (the title bar / taskbar) match the profile's avail delta.
+        const fakeScreenW = {fp.screen_width};
+        const fakeScreenH = {fp.screen_height};
+        const fakeAvailW = {fp.screen_avail_width};
+        const fakeAvailH = {fp.screen_avail_height};
+        const fakeAvailLeft = 0;
+        const fakeAvailTop = 0;
+        const fakeDpr = {_js_number(fp.device_pixel_ratio)};
+        // A non-finite scale factor would make every derived metric NaN.
+        const safeDpr = (function(d) {{
+            return (typeof d === 'number' && isFinite(d) && d > 0 && d <= 4) ? d : 1;
+        }})(fakeDpr);
+        // The browser chrome (title bar + borders) and the taskbar strip are
+        // part of the profile's screen metrics: the window is the available
+        // area minus a plausible chrome.
+        const chromeW = Math.max(0, fakeAvailW - Math.min(fakeAvailW, Math.round(fakeAvailW * 0.86)));
+        const chromeH = Math.max(0, fakeAvailH - Math.min(fakeAvailH, Math.round(fakeAvailH * 0.86)));
+        const fakeOuterW = Math.max(1, Math.min(fakeAvailW, fakeAvailW - chromeW));
+        const fakeOuterH = Math.max(1, Math.min(fakeAvailH, fakeAvailH - chromeH));
+        // The window sits inside the available area (never off-screen).
+        const fakeScreenX = fakeAvailLeft + Math.max(0, Math.min(16, Math.floor((fakeAvailW - fakeOuterW) / 2)));
+        const fakeScreenY = fakeAvailTop + Math.max(0, Math.min(16, Math.floor((fakeAvailH - fakeOuterH) / 2)));
+        const fakeInnerW = Math.max(1, fakeOuterW - Math.max(0, Math.min(16, chromeW)));
+        const fakeInnerH = Math.max(1, fakeOuterH - Math.max(0, Math.min(120, chromeH)));
+
+        const defineWindowMetric = function(name, value) {{
+            // Hunt A-12: in Chrome these are OWN properties of the window
+            // INSTANCE (configurable accessors), NOT accessors on
+            // Window.prototype — a prototype-level override is shadowed by
+            // the own property and never applies. That is why the old
+            // devicePixelRatio spoof silently did nothing: the page kept the
+            // host's scale factor (measured 2 on a 1.0 profile). The own
+            // property is redefined on the instance; the prototype is kept
+            // as a fallback for exotic hosts.
+            const apply = function(target) {{
+                try {{
+                    Object.defineProperty(target, name, {{
+                        get: makeNative(() => value, 'get ' + name),
+                        configurable: true, enumerable: true
+                    }});
+                }} catch(e) {{}}
+            }};
+            apply(window);
+            apply(Window.prototype);
+        }};
+        defineWindowMetric('outerWidth', fakeOuterW);
+        defineWindowMetric('outerHeight', fakeOuterH);
+        defineWindowMetric('innerWidth', fakeInnerW);
+        defineWindowMetric('innerHeight', fakeInnerH);
+        defineWindowMetric('screenX', fakeScreenX);
+        defineWindowMetric('screenY', fakeScreenY);
+        defineWindowMetric('screenLeft', fakeScreenX);
+        defineWindowMetric('screenTop', fakeScreenY);
+        // Hunt A-12: the same own-property problem applies to
+        // devicePixelRatio — the host's scale factor leaked through and
+        // contradicted the spoofed screen metrics (a page comparing
+        // screen.width with window.innerWidth would see two different
+        // scales).
+        defineWindowMetric('devicePixelRatio', safeDpr);
+        try {{
+            Object.defineProperty(Window.prototype, 'screenLeft', {{
+                get: makeNative(() => fakeScreenX, 'get screenLeft'), configurable: true, enumerable: true
+            }});
+            Object.defineProperty(Window.prototype, 'screenTop', {{
+                get: makeNative(() => fakeScreenY, 'get screenTop'), configurable: true, enumerable: true
+            }});
+        }} catch(e) {{}}
+        // The available AREA's origin must match the window's position.
+        try {{
+            Object.defineProperty(Screen.prototype, 'availLeft', {{
+                get: makeNative(() => fakeAvailLeft, 'get availLeft'), configurable: true, enumerable: true
+            }});
+            Object.defineProperty(Screen.prototype, 'availTop', {{
+                get: makeNative(() => fakeAvailTop, 'get availTop'), configurable: true, enumerable: true
+            }});
+        }} catch(e) {{}}
     }} catch(e) {{}}
 
     // 6. Timezone & Locale Formatting

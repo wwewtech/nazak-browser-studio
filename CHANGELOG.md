@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1077 passed, 6 deselected** (1083 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1079 passed, 6 deselected** (1085 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -57,6 +57,20 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   follows the SAME offset, so the canvas metric and the DOM metric agree exactly as they
   do in a real browser (measured delta 0.000000). The rect jitter is likewise stable per
   element instead of per call.
+- **The window was bigger than its own screen (A-11).** The screen metrics were spoofed
+  but the WINDOW geometry was left at the host's real values, and the two disagreed:
+  measured on a 1920×1080 host with a 1920×1080 profile, the page saw `outerHeight`
+  1055 > `screen.availHeight` 1040 and a window hanging off the bottom edge of its own
+  screen — a machine that does not exist. The window is now derived from the spoofed
+  screen: it always fits inside the available area, its position is inside it, and the
+  chrome insets follow the profile's avail delta.
+- **The device pixel ratio was never spoofed at all (A-12).** `window.devicePixelRatio`
+  (like `outerWidth` and friends) is an OWN property of the window INSTANCE in Chrome, so
+  the shield's `Window.prototype` override was shadowed and never applied: the page kept
+  the host's scale factor (measured 2 on a 1.0 profile) — a one-line contradiction
+  against the spoofed screen metrics. The window metrics are now redefined on the
+  instance (and on the prototype as a fallback), and a non-finite scale factor falls
+  back to 1 instead of poisoning every derived metric with NaN.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
@@ -70,12 +84,16 @@ device and like the profile: the media-device list (labels from the profile, sta
 across reads), the battery state (the profile's charging flag/level/times), the local
 font pool, the WebGPU adapter info (vendor/architecture/device from the profile), the
 `getBoundingClientRect` geometry, `matchMedia` (light scheme, no reduced motion, the
-profile's DPR), `performance.now()` (monotonic), the WebRTC candidate scrubber (no
-private/local candidate in the SDP) and the port-scan shield (the profile's own CDP
-port is unreachable from the page). Two suspected findings were **disproved** by the
-same comparison and are therefore NOT defects: a blocked external `fetch` and a blocked
-API-port `fetch` happen identically in a plain Chrome (CORS), i.e. they are not caused
-by the shield.
+profile's DPR), `performance.now()` (monotonic), the WebRTC candidate scrubber and the
+port-scan shield (the profile's own CDP port is unreachable from the page). The
+harvested ICE candidates carry only an mDNS `.local` name — no private IPv4 — so there
+is no local-IP leak (the same shape the host Chrome offers).
+
+Three suspected findings were **disproved** by the same comparison and are therefore
+NOT defects: a blocked external `fetch` and a blocked API-port `fetch` happen
+identically in a plain Chrome (CORS), and `navigator.webdriver === true` in the
+Playwright-driven comparison comes from Playwright itself (read through a raw CDP
+connection the page reports `false`).
 
 ### Coverage added
 

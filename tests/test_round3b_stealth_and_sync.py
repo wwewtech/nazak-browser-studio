@@ -27,9 +27,14 @@ def test_r3b_generated_stealth_js_has_no_python_number_literals(tmp_path):
     profile.fingerprint.audio_noise_seed = float("nan")
     ext_dir = Path(eg.generate_profile_extension(profile, tmp_path / "ext"))
     js = (ext_dir / "stealth.js").read_text(encoding="utf-8")
+    # The Python literals must never reach the browser: `inf`/`nan` are undefined
+    # identifiers there, so the getter would throw a ReferenceError.
     assert "=> inf" not in js
     assert "= nan" not in js
-    assert "=> Infinity" in js
+    assert "inf)" not in js.replace("Infinity)", "")
+    # Infinity is a valid JS literal (hunt A-12 moved the dpr into a constant);
+    # NaN has no literal and must be rendered as 0.
+    assert "Infinity" in js
     assert "= 0 ||" in js
 
 
