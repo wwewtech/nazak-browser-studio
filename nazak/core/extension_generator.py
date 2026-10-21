@@ -285,6 +285,18 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         return fn;
     }}
 
+    // Hunt A-01: the timezone/offset constants are needed by TWO sections
+    // (6 — the Intl/Date hooks — and 12d — the Intl locale consistency).
+    // They used to be declared with `const` INSIDE section 6's try-block, so
+    // section 12d referenced an out-of-scope binding: every call to
+    // Intl.DateTimeFormat().resolvedOptions() threw
+    // "ReferenceError: targetTimezone is not defined" — a broken hook is
+    // worse than no hook (any site calling Intl crashed, and a detector saw
+    // a sabotaged Intl instead of a spoofed one). Declared once, in the
+    // enclosing IIFE scope, both sections see the same values.
+    const targetTimezone = {timezone_json};
+    const targetOffset = {fp.timezone_offset};
+
     try {{
         const toStringProxy = new Proxy(nativeToString, {{
             apply(target, thisArg, argArray) {{
@@ -396,17 +408,11 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     }} catch(e) {{}}
 
     // 6. Timezone & Locale Formatting
+    // Hunt A-01: the Intl/Date hooks are installed once, in section 12d —
+    // installing the same hook twice made the second wrapper reference an
+    // out-of-scope variable and EVERY Intl.DateTimeFormat().resolvedOptions()
+    // call threw a ReferenceError.
     try {{
-        const targetTimezone = {timezone_json};
-        const targetOffset = {fp.timezone_offset};
-
-        const origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
-        Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {{
-            const res = origResolvedOptions.apply(this, arguments);
-            res.timeZone = targetTimezone;
-            return res;
-        }}, 'resolvedOptions');
-
         Date.prototype.getTimezoneOffset = makeNative(function() {{
             return targetOffset;
         }}, 'getTimezoneOffset');
@@ -783,7 +789,28 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }} else {{
                 voicesData = pickSubset(linuxPool, 4 + (shuffleSeed % 4));
             }}
-            const voiceObjects = voicesData.map(v => Object.assign(Object.create(window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype), v));
+            // Hunt A-03: SpeechSynthesisVoice.prototype.name/lang/default are
+            // GETTER-ONLY accessors. Object.assign() onto such an instance
+            // throws "TypeError: Cannot set property name of
+            // #<SpeechSynthesisVoice> which has only a getter" — and because
+            // the whole section lives in one try-block, that single throw
+            // ABORTED the rest of the section: the profile's voice pool was
+            // never installed and the page kept the HOST's voices (21 on the
+            // test machine vs the 8-12 the profile claims). The own properties
+            // are now defined with defineProperty, which works on a
+            // getter-only prototype.
+            const voiceObjects = voicesData.map(v => {{
+                const proto = window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype;
+                const inst = Object.create(proto);
+                Object.keys(v).forEach(function(k) {{
+                    try {{
+                        Object.defineProperty(inst, k, {{
+                            value: v[k], configurable: true, enumerable: true, writable: true
+                        }});
+                    }} catch(e) {{}}
+                }});
+                return inst;
+            }});
             window.speechSynthesis.getVoices = makeNative(function() {{
                 return voiceObjects;
             }}, 'getVoices');
@@ -1006,6 +1033,11 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // formatted numbers/dates with the HOST locale, contradicting the profile.
     try {{
         const fpLocale = {json.dumps(fp.languages[0] if fp.languages else "en-US")};
+        // Hunt A-01: the timezone hook is installed ONCE, here. Section 6
+        // installs it too; installing it twice wrapped the first hook, and the
+        // second one referenced an out-of-scope `targetTimezone` — every
+        // Intl.DateTimeFormat().resolvedOptions() call threw a
+        // ReferenceError, which broke the page instead of spoofing it.
         const origDTFResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
         Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {{
             const res = origDTFResolved.apply(this, arguments);
@@ -1013,20 +1045,37 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             res.locale = fpLocale;
             return res;
         }}, 'resolvedOptions');
+        // Hunt A-02: replacing the Intl constructors with a plain function
+        // DROPPED their static members: Intl.NumberFormat.supportedLocalesOf
+        // and Intl.DateTimeFormat.supportedLocalesOf became "is not a
+        // function" — a hard TypeError in any site that calls them (and a
+        // blatant sign of a tampered Intl). The static side is copied over
+        // from the originals, and the constructor keeps the native shape
+        // (prototype + toString) instead of a hand-rolled function.
         const origNFF = Intl.NumberFormat;
-        Intl.NumberFormat = makeNative(function() {{
-            const args = Array.prototype.slice.call(arguments);
-            if (typeof args[0] === 'undefined') args[0] = fpLocale;
-            return new (Function.prototype.bind.apply(origNFF, [null].concat(args)))();
-        }}, 'NumberFormat');
-        Intl.NumberFormat.prototype = origNFF.prototype;
         const origDTF = Intl.DateTimeFormat;
-        Intl.DateTimeFormat = makeNative(function() {{
-            const args = Array.prototype.slice.call(arguments);
-            if (typeof args[0] === 'undefined') args[0] = fpLocale;
-            return new (Function.prototype.bind.apply(origDTF, [null].concat(args)))();
-        }}, 'DateTimeFormat');
-        Intl.DateTimeFormat.prototype = origDTF.prototype;
+        const wrapIntl = function(orig, label) {{
+            const wrapped = makeNative(function() {{
+                const args = Array.prototype.slice.call(arguments);
+                if (typeof args[0] === 'undefined') args[0] = fpLocale;
+                return new (Function.prototype.bind.apply(orig, [null].concat(args)))();
+            }}, label);
+            wrapped.prototype = orig.prototype;
+            // keep the static side (supportedLocalesOf, etc.) and the native
+            // reflection of the constructor itself
+            try {{
+                Object.defineProperty(wrapped, 'supportedLocalesOf', {{
+                    value: makeNative(orig.supportedLocalesOf.bind(orig), 'supportedLocalesOf'),
+                    configurable: true, writable: true
+                }});
+            }} catch(e) {{}}
+            try {{
+                Object.setPrototypeOf(wrapped, Object.getPrototypeOf(orig));
+            }} catch(e) {{}}
+            return wrapped;
+        }};
+        Intl.NumberFormat = wrapIntl(origNFF, 'NumberFormat');
+        Intl.DateTimeFormat = wrapIntl(origDTF, 'DateTimeFormat');
     }} catch(e) {{}}
 
     // 12e. Anti-detect (audit F-16): performance.now() timing entropy.

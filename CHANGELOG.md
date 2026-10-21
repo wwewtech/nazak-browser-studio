@@ -2,6 +2,50 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## v1.15.3 — Anti-Detect Shield Audit (Empirical, Real Chrome) (2026-10-21)
+
+The first audit of the anti-detect layer that was measured instead of read: the
+generated shield was injected into a REAL Chrome through the product's own
+launch path (CDP injector), and every API the shield touches was read back.
+Three sections were installed but **broken at runtime** — a broken hook is
+worse than no hook: the site sees a sabotaged API and a detector sees the same.
+
+Suite: **1070 passed, 6 deselected** (1076 collected; 0 `xfail`). `ruff check`, `ruff format
+--check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
+windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
+
+### Shield sections that threw at runtime
+
+- **Every `Intl.DateTimeFormat().resolvedOptions()` call crashed (A-01).** The timezone
+  constant was declared with `const` inside section 6's `try`-block and used by the
+  Intl hook in section 12d — an out-of-scope reference, so the installed hook threw
+  `ReferenceError: targetTimezone is not defined` on every call. Measured: 4 of 33 probed
+  APIs threw. The constants now live in the shared IIFE scope, and the hook is installed
+  exactly once.
+- **`Intl.NumberFormat.supportedLocalesOf` was "not a function" (A-02).** Replacing the
+  Intl constructors with a plain function dropped their static side, so any site calling
+  `supportedLocalesOf` (a common i18n feature probe) got a hard `TypeError` — and the
+  missing static method is a blatant "tampered Intl" signal. The wrapper now re-attaches
+  the static side and keeps the native constructor shape.
+- **The profile's voice pool was never installed (A-03).** `SpeechSynthesisVoice.prototype.name`
+  is a getter-only accessor, so the `Object.assign` that built the voice objects threw and
+  aborted the whole section: the page kept the HOST's voices (21 on the audit machine vs
+  the 8–12 the profile claims) — a farm-wide tell, since every profile on a host would
+  share the host's voice list. The own properties are now defined with `defineProperty`.
+
+After the fixes the same real-Chrome probe reports **0 throwing APIs**, and every probed
+value matches the PROFILE (timezone, offset, screen, cores, languages, GPU vendor and
+renderer, plugins, mimeTypes, voice count).
+
+### Coverage added
+
+- `tests/test_antidetect_shield_contract.py` — six source-level contracts in the repo's
+  established style; each one was mutation-checked (re-introducing the original defect
+  makes the corresponding contract fail).
+- `tests/live/test_antidetect_shield_live.py` — the behavioural proof: launches a real
+  profile through the product's own launcher, reads every shielded API back and asserts
+  the profile's values and the absence of runtime exceptions (`pytest -m live`).
+
 ## v1.15.2 — Global Code Re-Audit (2026-10-21)
 
 A full re-audit of the code base after v1.15.1, covering the surfaces the

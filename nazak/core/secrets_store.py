@@ -514,7 +514,19 @@ def protect_proxy_fields(proxy: dict) -> dict:
 
 
 def unprotect_proxy_fields(proxy: dict) -> dict:
-    """Best-effort decryption of proxy credentials read from storage."""
+    """Best-effort decryption of proxy credentials read from storage.
+
+    Hunt X-26: a value that cannot be opened (a DPAPI envelope from ANOTHER
+    Windows user, or a passphrase envelope without the passphrase) used to be
+    left in place as-is — the ENVELOPE STRING then became the proxy password,
+    and ``to_httpx_url()`` produced a URL like
+    ``http://user:nzk1%3Adpapi%3A...@host:8080``. The profile was created and
+    every request through it failed with a confusing auth error, and the
+    operator saw no hint that the credential was an unopenable envelope.
+    An unopenable value is now REPLACED by the display placeholder: the field
+    is visibly empty/unknown instead of silently wrong, and the write path
+    never mistakes the placeholder for a real secret.
+    """
     out = dict(proxy)
     for field in PROXY_SECRET_FIELDS:
         value = out.get(field)
@@ -524,4 +536,5 @@ def unprotect_proxy_fields(proxy: dict) -> dict:
             out[field] = decrypt_secret(value)
         except SecretsDecryptError as exc:
             logger.warning("Secrets: cannot open stored proxy %s: %s", field, exc)
+            out[field] = UNAVAILABLE_PLACEHOLDER
     return out
