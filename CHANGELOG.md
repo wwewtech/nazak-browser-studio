@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1070 passed, 6 deselected** (1076 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1075 passed, 6 deselected** (1081 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -32,10 +32,27 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   aborted the whole section: the page kept the HOST's voices (21 on the audit machine vs
   the 8–12 the profile claims) — a farm-wide tell, since every profile on a host would
   share the host's voice list. The own properties are now defined with `defineProperty`.
+- **Every audio consumer died with "Maximum call stack size exceeded" (A-05).** The
+  `numberOfChannels` getter looked its own descriptor up on the prototype AT CALL TIME —
+  by then the descriptor WAS the spoofing getter, so it called itself. The original
+  descriptor is now captured before the override.
+- **The canvas hash changed on every read (A-04).** The noise field was re-seeded from a
+  call counter, and `toDataURL` wrote the noise back into the LIVE canvas — so drawing
+  the same content twice produced two different hashes. A real browser's canvas hash is
+  STABLE for identical content; an unstable hash is a one-line automation tell (the
+  classic BrowserLeaks-style probe draws the same content repeatedly and compares). The
+  noise is now a deterministic function of (profile seed, content) and is applied to a
+  COPY, leaving the live canvas clean. The old test asserted the opposite premise
+  ("repeated reads must not return identical noise") — that premise WAS the tell; it is
+  rewritten to the real-browser contract.
+- **The audio noise was applied twice per read (A-06).** The offline-render helper called
+  the SPOOFED `getChannelData`, which applied its own noise pass on top, and advanced the
+  phase counter twice per read. The getter is now the single owner of the mutation.
 
-After the fixes the same real-Chrome probe reports **0 throwing APIs**, and every probed
-value matches the PROFILE (timezone, offset, screen, cores, languages, GPU vendor and
-renderer, plugins, mimeTypes, voice count).
+After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
+hash, a working audio path, and every probed value matching the PROFILE (timezone,
+offset, screen, cores, languages, GPU vendor and renderer, plugins, mimeTypes, voice
+count, UA/Client-Hints version coherence).
 
 ### Coverage added
 

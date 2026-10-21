@@ -112,6 +112,73 @@ def test_shield_sections_are_independent_of_each_other():
         assert len(decl_lines) == 1, f"{const_name} is declared {len(decl_lines)} times"
 
 
+def test_a04_canvas_noise_is_content_derived_not_call_derived():
+    """A-04: the canvas noise used to be re-seeded from a CALL COUNTER, so the
+    same content produced a different canvas hash on every read — an unstable
+    hash is a one-line automation tell. The field must be derived from the
+    profile seed and the CONTENT."""
+    src = _generated_js()
+    assert "canvasCallCount" not in src, (
+        "the canvas noise must not depend on a call counter — the same content must hash the same on every read (A-04)"
+    )
+    assert "contentSeed" in src, "the canvas noise must be derived from the content (A-04)"
+
+
+def test_a04_to_data_url_does_not_mutate_the_live_canvas():
+    """A-04: toDataURL used to write the noise back into the LIVE canvas
+    (putImageData), so the second call hashed already-noised pixels and
+    produced a third value. The noise must be applied to a COPY."""
+    src = _generated_js()
+    anchor = src.find("HTMLCanvasElement.prototype.toDataURL")
+    block = src[anchor : anchor + 2200]
+    # strip the comments: the word putImageData may appear in the explanation
+    code_lines = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        code_lines.append(line)
+    code = "\n".join(code_lines)
+    # the noise may be written into the COPY (copyCtx.putImageData) — but it
+    # must never be written back into the source canvas' own context
+    assert "ctx.putImageData" not in code, (
+        "toDataURL must not write the noise back into the live canvas — the hash of "
+        "identical content must stay stable (A-04)"
+    )
+    assert "copyCtx.putImageData" in code, "the noise must be written into the COPY (A-04)"
+    assert "noisyCopy" in code, "toDataURL must hash a noised COPY of the canvas (A-04)"
+
+
+def test_a05_audio_channels_descriptor_is_captured_before_the_override():
+    """A-05: the numberOfChannels getter read the descriptor from the prototype
+    AT CALL TIME — by then it was the spoofing getter itself, so it recursed
+    infinitely ("RangeError: Maximum call stack size exceeded")."""
+    src = _generated_js()
+    assert "origChannelsDesc" in src, (
+        "the original numberOfChannels descriptor must be captured BEFORE the override (A-05)"
+    )
+    block = src[src.find("origChannelsDesc") : src.find("origChannelsDesc") + 700]
+    assert "Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels')" in block, (
+        "the original descriptor must be read once, outside the getter (A-05)"
+    )
+    getter_start = src.find("get: makeNative(function() {", src.find("origChannelsDesc"))
+    getter = src[getter_start : getter_start + 400]
+    assert "Object.getOwnPropertyDescriptor(AudioBuffer.prototype" not in getter, (
+        "the getter must use the captured descriptor, not look it up again (A-05)"
+    )
+
+
+def test_a06_audio_noise_is_applied_once():
+    """A-06: the render helper called the SPOOFED getChannelData, which
+    applied its own noise pass on top — the noise was applied twice and the
+    phase counter advanced twice per read."""
+    src = _generated_js()
+    helper = src[src.find("const applyAudioNoise = function(buffer)") :][:900]
+    assert "applyAudioNoiseToChannel" not in helper, (
+        "the render helper must not apply the noise a second time — the getter owns it (A-06)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

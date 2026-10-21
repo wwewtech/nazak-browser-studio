@@ -1,4 +1,17 @@
-"""Noise-field freshness: repeated reads must not return identical noise."""
+"""Noise-field contract: deterministic per profile, stable per content.
+
+Hunt A-04 (empirical audit in a real Chrome): the canvas noise used to be
+re-seeded from a CALL COUNTER, so drawing the SAME content twice produced two
+DIFFERENT canvas hashes. A real browser's canvas hash is STABLE for identical
+content — an unstable hash is a one-line automation tell (the classic
+BrowserLeaks-style probe draws the same content repeatedly and compares).
+
+So the noise must be a deterministic function of (profile seed, CONTENT):
+identical content -> identical pixels and identical hash (as on a real device),
+while two different profiles differ (the farm-wide uniqueness the noise exists
+for). The old test asserted the opposite ("repeated reads must not return
+identical noise"); that premise produced the tell.
+"""
 
 from __future__ import annotations
 
@@ -16,15 +29,29 @@ def _stealth(tmp_path, **fp_kwargs) -> str:
     return (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
 
-def test_canvas_noise_reseeds_per_call(tmp_path):
+def test_canvas_noise_is_content_derived_not_call_derived(tmp_path):
     js = _stealth(tmp_path, canvas_noise=True, canvas_noise_seed=777888)
     assert "mutateCanvasData" in js
     assert "1664525" in js  # LCG constant kept
     assert "777888" in js  # profile seed kept
-    # Per-call reseed: a counter mixed into the start state.
-    assert "canvasCallCount" in js
+    # Hunt A-04: the noise field is derived from the CONTENT (plus the profile
+    # seed), NOT from a call counter — otherwise the same drawing hashes
+    # differently on every read, which is the automation tell.
+    assert "canvasCallCount" not in js
+    assert "contentSeed" in js
     # No fixed single start offset anymore.
     assert "for (let i = (s % 7); i < len; i += 17)" not in js
+
+
+def test_canvas_hash_is_stable_for_identical_content(tmp_path):
+    """The noise must be written into a COPY: the live canvas keeps its clean
+    pixels, so a second toDataURL() of the same content hashes identically."""
+    js = _stealth(tmp_path, canvas_noise=True, canvas_noise_seed=777888)
+    anchor = js.find("HTMLCanvasElement.prototype.toDataURL")
+    block = js[anchor : anchor + 2200]
+    code = "\n".join(line for line in block.splitlines() if not line.strip().startswith("//"))
+    assert "ctx.putImageData" not in code, "the noise must not be written back into the live canvas (A-04)"
+    assert "copyCtx.putImageData" in code, "the noise must be applied to a copy (A-04)"
 
 
 def test_audio_noise_phase_shifts_per_call(tmp_path):
@@ -34,6 +61,10 @@ def test_audio_noise_phase_shifts_per_call(tmp_path):
     assert "audioCallCount" in js
     # The old fixed pattern must be gone from both application sites.
     assert "(((i % 3) - 1) * 0.5)" not in js
+    # Hunt A-06: the render helper must not apply the noise a second time
+    # (it called the spoofed getter, which applied its own pass on top).
+    helper = js[js.find("const applyAudioNoise = function(buffer)") :][:900]
+    assert "applyAudioNoiseToChannel" not in helper
 
 
 def test_rect_and_font_jitter_vary_per_read(tmp_path):

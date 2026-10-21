@@ -821,19 +821,36 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     if ({str(fp.canvas_noise).lower()}) {{
         try {{
             const seed = {fp.canvas_noise_seed};
-            let canvasCallCount = 0;
+            // Hunt A-04: the noise field used to be re-seeded from a CALL
+            // COUNTER, so drawing the SAME content twice produced two
+            // DIFFERENT canvas hashes. A real browser's canvas hash is
+            // STABLE for identical content — an unstable hash is a one-line
+            // automation tell (BrowserLeaks-style probes draw the same
+            // content repeatedly and compare). The field is now derived from
+            // the PROFILE seed and the CONTENT itself: the same content
+            // yields the same hash (as on a real device), while two
+            // profiles differ (the farm-wide uniqueness the noise exists
+            // for). A checker that subtracts the noise needs the clean
+            // image, which it does not have.
+            const contentSeed = function(imageData) {{
+                const data = imageData.data;
+                const len = data.length;
+                // FNV-1a over every 16th byte + the length: cheap, stable,
+                // and sensitive to both content and size.
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < len; i += 16) {{
+                    h ^= data[i];
+                    h = Math.imul(h, 16777619) >>> 0;
+                }}
+                h ^= len;
+                h = Math.imul(h, 16777619) >>> 0;
+                return h >>> 0;
+            }};
             const mutateCanvasData = function(imageData) {{
                 if (!imageData || !imageData.data) return imageData;
-                // Per-call reseed: the old code restarted the LCG from the same
-                // seed on every read, so getImageData(x, y, w, h) returned the
-                // SAME noise field on every call — a checker that reads two
-                // regions (or the same region twice) sees identical deltas and
-                // subtracts the noise out in one line. Mixing a call counter
-                // into the start state makes every read carry a different field
-                // while staying fully deterministic for the profile.
-                canvasCallCount = (canvasCallCount + 1) >>> 0;
-                let s = (seed ^ (canvasCallCount * 2654435761)) >>> 0;
                 const len = imageData.data.length;
+                let s = (seed ^ contentSeed(imageData)) >>> 0;
+                s = (s * 2654435761) >>> 0;
                 // Stride 17 keeps cost low on big canvases; the mutated channel
                 // now walks RGBA instead of always landing with period 17 % 4.
                 const start = s % 64;
@@ -861,17 +878,33 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}
 
             const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            // Hunt A-04: the noise must be applied to a COPY of the canvas.
+            // The old code read the pixels, mutated them and wrote them back
+            // into the LIVE canvas (putImageData) — so the second
+            // toDataURL() of the same canvas hashed ALREADY-NOISED pixels
+            // and produced a third different value: the hash of identical
+            // content changed on every call, which is exactly the
+            // instability a canvas probe looks for. The noise is now
+            // applied to a scratch canvas: the live canvas keeps its clean
+            // pixels, and the SAME content always yields the SAME hash.
+            const noisyCopy = function(source) {{
+                const ctx = source.getContext('2d');
+                if (!ctx || source.width <= 0 || source.height <= 0) return null;
+                const img = ctx.getImageData(0, 0, source.width, source.height);
+                mutateCanvasData(img);
+                const copy = document.createElement('canvas');
+                copy.width = source.width;
+                copy.height = source.height;
+                const copyCtx = copy.getContext('2d');
+                if (!copyCtx) return null;
+                copyCtx.putImageData(img, 0, 0);
+                return copy;
+            }};
             HTMLCanvasElement.prototype.toDataURL = makeNative(function() {{
                 try {{
-                    // Anti-detect (audit F-03): only a 16x16 corner used to be
-                    // mutated, so 99% of the canvas hash stayed native. The
-                    // full surface is perturbed now; on huge canvases the
-                    // per-call LCG keeps the cost bounded via the stride.
-                    const ctx = this.getContext('2d');
-                    if (ctx && this.width > 0 && this.height > 0) {{
-                        const img = ctx.getImageData(0, 0, this.width, this.height);
-                        mutateCanvasData(img);
-                        ctx.putImageData(img, 0, 0);
+                    const copy = noisyCopy(this);
+                    if (copy) {{
+                        return origToDataURL.apply(copy, arguments);
                     }}
                 }} catch(err) {{}}
                 return origToDataURL.apply(this, arguments);
@@ -881,11 +914,9 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 const origToBlob = HTMLCanvasElement.prototype.toBlob;
                 HTMLCanvasElement.prototype.toBlob = makeNative(function(callback, type, quality) {{
                     try {{
-                        const ctx = this.getContext('2d');
-                        if (ctx && this.width > 0 && this.height > 0) {{
-                            const img = ctx.getImageData(0, 0, this.width, this.height);
-                            mutateCanvasData(img);
-                            ctx.putImageData(img, 0, 0);
+                        const copy = noisyCopy(this);
+                        if (copy) {{
+                            return origToBlob.apply(copy, [callback, type, quality]);
                         }}
                     }} catch(err) {{}}
                     return origToBlob.apply(this, arguments);
@@ -903,18 +934,19 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             // on the same buffer returned bitwise-identical arrays minus the
             // untouched samples — a checker diffs them and the noise cancels.
             let audioCallCount = 0;
+            // Hunt A-06: the noise pass lives in the getChannelData getter
+            // (the single owner of the mutation) — the old render helper called
+            // the SPOOFED getter, which applied its own pass on top: the noise
+            // was applied twice and the phase counter advanced twice per read.
+            // The helper now only makes sure the getter is reached for every
+            // channel, so an offline render carries the same noise as a
+            // direct read.
             const applyAudioNoise = function(buffer) {{
                 if (!buffer || !buffer.getChannelData) return buffer;
                 audioCallCount = (audioCallCount + 1) >>> 0;
-                const phase = audioCallCount % 3;
-                for (let c = 0; c < buffer.numberOfChannels; c++) {{
-                    const data = buffer.getChannelData(c);
-                    if (data && data.length > 0) {{
-                        const step = Math.max(1, Math.floor(data.length / 100));
-                        for (let i = 0; i < data.length; i += step) {{
-                            data[i] = data[i] + factor * ((((i + phase) % 3) - 1) * 0.5);
-                        }}
-                    }}
+                const channels = buffer.numberOfChannels;
+                for (let c = 0; c < channels; c++) {{
+                    buffer.getChannelData(c);
                 }}
                 return buffer;
             }};
@@ -977,10 +1009,19 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 get: makeNative(() => fpSampleRate, 'get sampleRate'),
                 configurable: true, enumerable: true
             }});
+            // Hunt A-05: the numberOfChannels getter used to read
+            // Object.getOwnPropertyDescriptor(AudioBuffer.prototype,
+            // 'numberOfChannels') AT CALL TIME — but by then the descriptor
+            // on the prototype was ALREADY the spoofing getter, so it called
+            // ITSELF: an infinite recursion that surfaced as
+            // "RangeError: Maximum call stack size exceeded" in every
+            // AudioBuffer/OfflineAudioContext consumer (the audio noise
+            // section reads buffer.numberOfChannels). The original
+            // descriptor is now captured BEFORE the override.
+            const origChannelsDesc = Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels');
             Object.defineProperty(AudioBuffer.prototype, 'numberOfChannels', {{
                 get: makeNative(function() {{
-                    const orig = Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels');
-                    const v = orig && orig.get ? orig.get.call(this) : fpMaxChannels;
+                    const v = origChannelsDesc && origChannelsDesc.get ? origChannelsDesc.get.call(this) : fpMaxChannels;
                     return Math.min(v, fpMaxChannels);
                 }}, 'get numberOfChannels'),
                 configurable: true, enumerable: true
