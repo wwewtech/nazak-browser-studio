@@ -238,6 +238,8 @@ class StealthInjector:
         self.binding_events_rejected = 0
         self.binding_events_throttled = 0
         self.immediate_inject_skipped = 0
+        # Hunt A-13: how many worker scopes the shield reached.
+        self.worker_sessions_applied = 0
         self._ws: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._next_id = 0
@@ -280,13 +282,19 @@ class StealthInjector:
         pump = asyncio.create_task(self._pump_loop())
         try:
             # Auto-attach to every current and future target (pages, OOPIF...).
+            # Hunt A-13: waitForDebuggerOnStart is ON for the browser-level
+            # auto-attach so a WORKER target is paused at start — the shield
+            # must be in place BEFORE the worker's own code reads the
+            # navigator, otherwise the worker captures the host's values
+            # before we can inject anything. The worker is released with
+            # Runtime.runIfWaitingForDebugger right after the injection.
             await self._command(
                 "Target.setAutoAttach",
-                {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
+                {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
             )
             res = await self._command("Target.getTargets", {})
             for info in res.get("targetInfos", []):
-                if info.get("type") == "page":
+                if info.get("type") in ("page", "worker", "shared_worker", "service_worker"):
                     try:
                         await self._command("Target.attachToTarget", {"targetId": info["targetId"], "flatten": True})
                     except Exception as exc:  # pragma: no cover - defensive
@@ -365,14 +373,57 @@ class StealthInjector:
 
     async def _on_attached(self, params: dict[str, Any]) -> None:
         info = params.get("targetInfo", {})
-        if info.get("type") not in ("page", "iframe", "other", "webview"):
-            return
+        target_type = info.get("type")
         session_id = params.get("sessionId")
+        # Hunt A-13: a WORKER target is a separate global scope — the page can
+        # read the real navigator/Intl/Date values there. The shield must be
+        # injected there too, otherwise the whole spoofing is bypassable with
+        # a three-line Worker probe. The worker scope has no `window`, so the
+        # generated script skips the DOM sections there (see the __hasDom
+        # guard in extension_generator).
+        if target_type in ("worker", "shared_worker", "service_worker"):
+            if session_id:
+                self._session_is_page[session_id] = False
+                await self._apply_worker_session(session_id)
+            return
+        if target_type not in ("page", "iframe", "other", "webview"):
+            return
         # Only top-level pages are allowed to send sync gestures: an OOPIF
         # (type=iframe) is a foreign frame inside the page.
         if session_id:
-            self._session_is_page[session_id] = info.get("type") == "page"
+            self._session_is_page[session_id] = target_type == "page"
         await self._apply_session(session_id)
+
+    async def _apply_worker_session(self, session_id: str) -> None:
+        """Inject the shield into a worker target's global scope.
+
+        A worker has no Page domain, so the script is evaluated directly in
+        its runtime. The evaluation must happen BEFORE the worker's own code
+        runs to be useful — with ``waitForDebuggerOnStart`` the worker is
+        paused at start, and ``Runtime.runIfWaitingForDebugger`` releases it.
+        """
+        src = self.opts.stealth_source
+        if not src:
+            return
+        try:
+            await self._command("Runtime.enable", {}, session_id=session_id)
+            res = await self._command(
+                "Runtime.evaluate",
+                {"expression": src, "returnByValue": True, "awaitPromise": False},
+                session_id=session_id,
+            )
+            if res.get("exceptionDetails"):
+                logger.debug("worker stealth injection failed: %s", res.get("exceptionDetails"))
+            else:
+                self.worker_sessions_applied += 1
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("worker stealth injection error: %s", exc)
+        finally:
+            # Release a worker that was paused at start (waitForDebuggerOnStart).
+            try:
+                await self._command("Runtime.runIfWaitingForDebugger", {}, session_id=session_id)
+            except Exception:
+                pass
 
     async def _apply_session(self, session_id: str | None) -> None:
         if not session_id:
@@ -380,7 +431,7 @@ class StealthInjector:
         try:
             await self._command(
                 "Target.setAutoAttach",
-                {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
+                {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
                 session_id=session_id,
             )
             await self._command("Page.enable", {}, session_id=session_id)
@@ -438,6 +489,15 @@ class StealthInjector:
         except Exception as exc:  # pragma: no cover - defensive
             self.last_error = str(exc)
             logger.warning("stealth apply failed for session %s: %s", session_id, exc)
+        finally:
+            # Hunt A-13: the auto-attach uses waitForDebuggerOnStart, so a
+            # freshly attached target is PAUSED until it is released. The
+            # shield is in place by now — release the target, otherwise the
+            # page (or a worker) would never run.
+            try:
+                await self._command("Runtime.runIfWaitingForDebugger", {}, session_id=session_id)
+            except Exception:
+                pass
 
     async def _continue_paused(self, params: dict[str, Any], session_id: str | None) -> None:
         self.requests_paused += 1

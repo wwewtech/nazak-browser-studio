@@ -152,8 +152,11 @@ def test_stealth_js_overrides_navigator_webdriver_false(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
-    assert "Navigator.prototype, 'webdriver'" in stealth
-    assert "() => false" in stealth
+    # Hunt A-13: the navigator-level shields are applied through the
+    # dual-prototype helper — a worker's navigator is a WorkerNavigator, so
+    # patching only Navigator.prototype left the worker scope untouched.
+    assert "__defineNav('webdriver'" in stealth
+    assert "__navGetter('webdriver', false)" in stealth
     assert "delete Navigator.prototype.webdriver" not in stealth
 
 

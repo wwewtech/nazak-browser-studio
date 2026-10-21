@@ -187,7 +187,10 @@ def test_device_memory_is_spec_quantized_and_audio_seeds_differ(tmp_path):
     profile = BrowserProfile(id="reg_devmem", name="Device Memory")
     ext_dir = Path(generate_profile_extension(profile, tmp_path))
     stealth = (ext_dir / "stealth.js").read_text(encoding="utf-8")
-    match = re.search(r"\(\) => ([0-9.]+), 'get deviceMemory'", stealth)
+    # Hunt A-13: the navigator-level shields go through the dual-prototype
+    # helper (__defineNav / __navGetter), so the value is passed as an
+    # argument instead of being inlined in an arrow function.
+    match = re.search(r"__defineNav\('deviceMemory',\s*__navGetter\('deviceMemory',\s*([0-9.]+)\)", stealth)
     assert match, "deviceMemory getter not found in stealth.js"
     assert float(match.group(1)) in (0.25, 0.5, 1, 2, 4, 8)
 

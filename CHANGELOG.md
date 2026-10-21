@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1079 passed, 6 deselected** (1085 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1081 passed, 6 deselected** (1087 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -71,6 +71,17 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   against the spoofed screen metrics. The window metrics are now redefined on the
   instance (and on the prototype as a fallback), and a non-finite scale factor falls
   back to 1 instead of poisoning every derived metric with NaN.
+- **The whole shield was bypassable from a Worker (A-13 — the biggest hole found).**
+  A page can spawn a Worker and read the REAL values there. Measured: the worker
+  reported the host's `hardwareConcurrency` (14) and `deviceMemory` (32) while the main
+  world reported the profile's — a three-line probe defeated the entire spoofing. Two
+  causes: the shield was injected only into page targets, and it patched only
+  `Navigator.prototype` while a worker's navigator is a **different class**
+  (`WorkerNavigator`, and there is no `Navigator` global in a worker at all). The
+  injector now attaches to worker targets and evaluates the shield in their scope (the
+  worker is paused at start and released afterwards), the shield patches BOTH navigator
+  prototypes, and the DOM-only sections are skipped where there is no DOM. After the fix
+  the worker reports the profile's values (cores, memory, timezone, languages).
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,

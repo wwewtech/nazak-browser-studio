@@ -257,16 +257,33 @@ chrome.webRequest.onAuthRequired.addListener(
 
     stealth_js = f"""
 // Total Hardware Shield v2.5 Enterprise Stealth
-if (window.__nsi) {{
+// Hunt A-13: the shield must also cover the WORKER global scope. A page that
+// spawns a Worker reads the REAL navigator/screen/Intl values there — a
+// three-line probe bypassed the whole shield (measured: the worker reported
+// the host's hardwareConcurrency/deviceMemory while the main world reported
+// the profile's). `window` does not exist in a worker, so the guard and the
+// DOM-only sections must be skipped there — but the navigator/Intl/Date
+// sections are scope-independent and DO apply.
+var __scopeIsWorker = (typeof window === 'undefined');
+if (!__scopeIsWorker && window.__nsi) {{
     // Already applied on this document (extension content script + CDP injector may both run).
 }} else {{
+if (!__scopeIsWorker) {{
 // Audit R3-round2: this used to be a branded flag of the form window.__nazak*,
 // by which any anti-fraud system could identify the product in a single line. The
 // idempotency flag is still here, but it was renamed and made non-enumerable so it
 // does not appear in the ordinary enumeration of window properties.
 Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enumerable: false, writable: false}});
+}}
 (function() {{
     'use strict';
+
+    // Hunt A-13: the shield also runs in a WORKER's global scope (there is no
+    // window, no Screen and no document there). The scope-independent
+    // sections (navigator properties, Intl, Date) MUST apply there — a worker
+    // probe reads the real values otherwise. The DOM-only sections are
+    // skipped via __hasDom.
+    const __hasDom = (typeof window !== 'undefined' && typeof document !== 'undefined');
 
     // 0. Native Function Cloaking Engine (Bypasses CreepJS & DataDome toString tampering detection)
     const nativeToString = Function.prototype.toString;
@@ -311,44 +328,48 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
         makeNative(Function.prototype.toString, 'toString');
     }} catch(e) {{}}
 
+    // Hunt A-13: in a WORKER the global navigator is a WorkerNavigator — a
+    // DIFFERENT class with its OWN prototype (there is no `Navigator` global
+    // at all in a worker scope). Patching only Navigator.prototype left the
+    // worker scope untouched, and a page could read the host's
+    // hardwareConcurrency / deviceMemory / languages with a three-line
+    // Worker probe. Every navigator-level shield is applied to BOTH
+    // prototypes when they exist.
+    const __navProtos = [];
+    if (typeof Navigator !== 'undefined' && Navigator.prototype) __navProtos.push(Navigator.prototype);
+    if (typeof WorkerNavigator !== 'undefined' && WorkerNavigator.prototype) __navProtos.push(WorkerNavigator.prototype);
+    const __defineNav = function(name, getter) {{
+        __navProtos.forEach(function(proto) {{
+            try {{
+                Object.defineProperty(proto, name, {{
+                    get: getter, configurable: true, enumerable: true
+                }});
+            }} catch(e) {{}}
+        }});
+    }};
+    const __navGetter = function(name, value) {{
+        const g = makeNative(() => value, 'get ' + name);
+        __navProtos.forEach(function(proto) {{
+            try {{
+                const d = Object.getOwnPropertyDescriptor(proto, name);
+                if (d && d.get) makeNative(d.get, 'get ' + name);
+            }} catch(e) {{}}
+        }});
+        return g;
+    }};
+
     // 1. Remove Automation Artifacts & navigator.webdriver (W3C WebDriver spec compliant)
     try {{
-        Object.defineProperty(Navigator.prototype, 'webdriver', {{
-            get: () => false,
-            configurable: true,
-            enumerable: true
-        }});
-        const wdDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
-        if (wdDesc && wdDesc.get) makeNative(wdDesc.get, 'get webdriver');
+        __defineNav('webdriver', __navGetter('webdriver', false));
     }} catch(e) {{}}
 
     // 2. Hardware Resources Isolation (CPU & RAM)
     try {{
-        Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', {{
-            get: makeNative(() => {fp.hardware_concurrency}, 'get hardwareConcurrency'),
-            configurable: true,
-            enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'deviceMemory', {{
-            get: makeNative(() => {device_memory_json}, 'get deviceMemory'),
-            configurable: true,
-            enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'platform', {{
-            get: makeNative(() => {platform_json}, 'get platform'),
-            configurable: true,
-            enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'maxTouchPoints', {{
-            get: makeNative(() => {fp.max_touch_points}, 'get maxTouchPoints'),
-            configurable: true,
-            enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'vendor', {{
-            get: makeNative(() => {vendor_json}, 'get vendor'),
-            configurable: true,
-            enumerable: true
-        }});
+        __defineNav('hardwareConcurrency', __navGetter('hardwareConcurrency', {fp.hardware_concurrency}));
+        __defineNav('deviceMemory', __navGetter('deviceMemory', {device_memory_json}));
+        __defineNav('platform', __navGetter('platform', {platform_json}));
+        __defineNav('maxTouchPoints', __navGetter('maxTouchPoints', {fp.max_touch_points}));
+        __defineNav('vendor', __navGetter('vendor', {vendor_json}));
     }} catch(e) {{}}
 
     // 3. User-Agent Data & High-Entropy Client Hints
@@ -374,29 +395,18 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {platform_json} }};
             }}, 'toJSON')
         }};
-        Object.defineProperty(Navigator.prototype, 'userAgentData', {{
-            get: makeNative(() => uaData, 'get userAgentData'),
-            configurable: true,
-            enumerable: true
-        }});
+        __defineNav('userAgentData', __navGetter('userAgentData', uaData));
     }} catch(e) {{}}
 
     // 4. Languages & Locale
     try {{
         const langs = {languages_json};
-        Object.defineProperty(Navigator.prototype, 'languages', {{
-            get: makeNative(() => langs, 'get languages'),
-            configurable: true,
-            enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'language', {{
-            get: makeNative(() => langs[0] || "en-US", 'get language'),
-            configurable: true,
-            enumerable: true
-        }});
+        __defineNav('languages', __navGetter('languages', langs));
+        __defineNav('language', __navGetter('language', langs[0] || "en-US"));
     }} catch(e) {{}}
 
     // 5. Monitor & Screen Metrics Shield
+        if (__hasDom) {{
     try {{
         Object.defineProperty(Screen.prototype, 'width', {{ get: makeNative(() => {fp.screen_width}, 'get width'), configurable: true, enumerable: true }});
         Object.defineProperty(Screen.prototype, 'height', {{ get: makeNative(() => {fp.screen_height}, 'get height'), configurable: true, enumerable: true }});
@@ -493,6 +503,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }});
         }} catch(e) {{}}
     }} catch(e) {{}}
+        }}
 
     // 6. Timezone & Locale Formatting
     // Hunt A-01: the Intl/Date hooks are installed once, in section 12d —
@@ -506,6 +517,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     }} catch(e) {{}}
 
     // 7. WebGL & GPU Hardware Spoofing (Shields actual host graphics card)
+        if (__hasDom) {{
     try {{
         const webglParams = {{
             37445: {webgl_vendor_json},           // UNMASKED_VENDOR_WEBGL
@@ -584,8 +596,10 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'getExtension');
         }} catch(e) {{}}
     }} catch(e) {{}}
+        }}
 
     // 8. WebGPU Hardware Emulation (Aligns with WebGL GPU Vendor & Model)
+        if (__hasDom) {{
     try {{
         if (navigator.gpu && navigator.gpu.requestAdapter) {{
             const origRequestAdapter = navigator.gpu.requestAdapter;
@@ -615,8 +629,10 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'requestAdapter');
         }}
     }} catch(e) {{}}
+        }}
 
     // 9. Media Devices Shield (Mocks Webcams, Microphones, Audio Outputs)
+        if (__hasDom) {{
     try {{
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {{
             const spoofedDevices = {media_devs_json};
@@ -631,6 +647,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'enumerateDevices');
         }}
     }} catch(e) {{}}
+        }}
 
     // 9b. Plugin Array & MimeType Consistency (anti-detect audit F-12)
     // A real desktop Chrome ships exactly 5 PDF plugin entries with 2 mime
@@ -721,6 +738,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     }} catch(e) {{}}
 
     // 10. Battery API Shield
+        if (__hasDom) {{
     try {{
         if (navigator.getBattery) {{
             const batData = {battery_json};
@@ -736,8 +754,10 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'getBattery');
         }}
     }} catch(e) {{}}
+        }}
 
     // 11. Geolocation API Shield
+        if (__hasDom) {{
     try {{
         const geoConf = {geo_json};
         if (navigator.geolocation && geoConf.latitude && geoConf.longitude) {{
@@ -762,8 +782,10 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'watchPosition');
         }}
     }} catch(e) {{}}
+        }}
 
     // 10.1 Local Font Spoofing & queryLocalFonts
+        if (__hasDom) {{
     try {{
         const osPlatform = {platform_json}.toLowerCase();
         let fontList = [];
@@ -803,12 +825,14 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'queryLocalFonts');
         }}
     }} catch(e) {{}}
+        }}
 
     // 10.2 SpeechSynthesis Voices Matching Platform
     // Anti-detect (audit F-20): a real Windows 10/11 box ships 10+ SAPI
     // voices, macOS ~70, desktop Linux (speech-dispatcher/espeak) 4-8; a
     // three-voice "Windows" is not a machine anyone owns. Pools now match
     // the real distributions, and a per-profile subset varies the set.
+        if (__hasDom) {{
     try {{
         if (window.speechSynthesis && window.speechSynthesis.getVoices) {{
             const osPlatform = {platform_json}.toLowerCase();
@@ -903,9 +927,11 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'getVoices');
         }}
     }} catch(e) {{}}
+        }}
 
     // 11. Subtle Canvas 2D Noise & OffscreenCanvas Noise (Noise Seed: {fp.canvas_noise_seed})
     if ({str(fp.canvas_noise).lower()}) {{
+        if (__hasDom) {{
         try {{
             const seed = {fp.canvas_noise_seed};
             // Hunt A-04: the noise field used to be re-seeded from a CALL
@@ -1010,10 +1036,12 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 }}, 'toBlob');
             }}
         }} catch(e) {{}}
+        }}
     }}
 
     // 12. AudioContext Fingerprint Noise & OfflineAudioContext
     if ({str(fp.audio_noise).lower()}) {{
+        if (__hasDom) {{
         try {{
             const factor = {_js_number(fp.audio_noise_seed)} || 0.00001;
             // Per-call phase: the old code applied the identical deterministic
@@ -1065,6 +1093,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 }}, 'startRendering');
             }}
         }} catch(e) {{}}
+        }}
     }}
 
     // 12b. Anti-detect (audit F-08): AudioContext hardware parameters.
@@ -1119,6 +1148,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 12c. Anti-detect (audit F-07): matchMedia must report the profile's
     // preferences (color scheme / reduced motion / DPR), not the host's —
     // a dark-mode host under a light-profile fingerprint is a one-call tell.
+        if (__hasDom) {{
     try {{
         const spoofDpr = {_js_number(fp.device_pixel_ratio)};
         const origMatchMedia = window.matchMedia;
@@ -1155,6 +1185,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             return origMatchMedia.apply(this, arguments);
         }}, 'matchMedia');
     }} catch(e) {{}}
+        }}
 
     // 12d. Anti-detect (audit F-15): full Intl locale consistency. The old hook
     // only replaced timeZone in resolvedOptions(); toLocale* methods still
@@ -1235,6 +1266,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
 
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
+        if (__hasDom) {{
         try {{
             // Hunt A-07: the jitter used to be re-derived from a CALL
             // COUNTER, so measuring the SAME string twice returned two
@@ -1309,10 +1341,12 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 return metrics;
             }}, 'measureText');
         }} catch(e) {{}}
+        }}
     }}
 
     // 17. Port Scan & Localhost Protection
     if ({str(fp.block_port_scanning).lower()}) {{
+        if (__hasDom) {{
         try {{
             // Anti-detect (audit F-18): block EVERY loopback target from the
             // page except the local API port. The old shield whitelisted
@@ -1335,9 +1369,11 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 return origFetch.apply(this, arguments);
             }}, 'fetch');
         }} catch(e) {{}}
+        }}
     }}
 
     // 18. WebRTC Local IP Leak & Candidate Sanitizer
+        if (__hasDom) {{
     try {{
         if (window.RTCPeerConnection) {{
             const sanitizeSdp = function(sdp) {{
@@ -1398,6 +1434,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
             }}, 'setLocalDescription');
         }}
     }} catch(e) {{}}
+        }}
 
 }})();
 }}

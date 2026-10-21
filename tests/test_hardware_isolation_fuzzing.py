@@ -105,9 +105,11 @@ def test_extension_generator_stealth_script_content(tmp_path):
     content = stealth_file.read_text(encoding="utf-8")
 
     # Check all key stealth hooks
-    assert "Navigator.prototype, 'webdriver'" in content
-    assert "Navigator.prototype, 'hardwareConcurrency'" in content
-    assert "Navigator.prototype, 'deviceMemory'" in content
+    # Hunt A-13: the navigator-level hooks go through the dual-prototype
+    # helper (Navigator + WorkerNavigator), so the worker scope is covered too.
+    assert "__defineNav('webdriver'" in content
+    assert "__defineNav('hardwareConcurrency'" in content
+    assert "__defineNav('deviceMemory'" in content
     assert "Screen.prototype, 'width'" in content
     assert "Screen.prototype, 'height'" in content
     assert "WebGLRenderingContext.prototype" in content

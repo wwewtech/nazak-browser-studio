@@ -60,6 +60,15 @@ PROBE = """() => {
   t('plugins', () => navigator.plugins.length);
   t('mimeTypes', () => navigator.mimeTypes.length);
   t('webdriver', () => navigator.webdriver);
+  // A-13: the WORKER scope must be shielded too. The probe below is async
+  // (a worker answers through a message event), so it is collected with a
+  // separate promise and merged at the end.
+  const __workerProbe = (src) => new Promise((resolve) => {
+    const w = new Worker(URL.createObjectURL(new Blob([src], {type:'text/javascript'})));
+    const tm = setTimeout(() => { try { w.terminate(); } catch (e) {} resolve('TIMEOUT'); }, 4000);
+    w.onmessage = (e) => { clearTimeout(tm); try { w.terminate(); } catch (x) {} resolve(String(e.data)); };
+    w.onerror = () => { clearTimeout(tm); resolve('ERR'); };
+  });
   t('cores', () => navigator.hardwareConcurrency);
   t('screen', () => screen.width + 'x' + screen.height);
   t('geometry', () => {
@@ -79,7 +88,16 @@ PROBE = """() => {
   t('languages', () => navigator.languages.join(','));
   t('webgl_vendor', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37445) : 'no-ctx'; });
   t('webgl_renderer', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37446) : 'no-ctx'; });
-  return out;
+  return Promise.all([
+    __workerProbe('self.postMessage(String(navigator.hardwareConcurrency));'),
+    __workerProbe('self.postMessage(String(navigator.deviceMemory));'),
+    __workerProbe('self.postMessage(String(new Date().getTimezoneOffset()));')
+  ]).then((vals) => {
+    out.worker_cores = 'OK ' + vals[0];
+    out.worker_dm = 'OK ' + vals[1];
+    out.worker_tz = 'OK ' + vals[2];
+    return out;
+  });
 }"""
 
 
@@ -173,6 +191,23 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["measure_1"] == res["measure_2"] == res["measure_3"], (
             f"the font metric is not stable for identical text (A-07): "
             f"{res['measure_1']} / {res['measure_2']} / {res['measure_3']}"
+        )
+
+        # A-13: the WORKER scope must be shielded too — a page reads the real
+        # navigator values there with a three-line probe.
+        assert res["worker_cores"].endswith(str(fp.hardware_concurrency)), (
+            f"the worker scope leaks the host's hardwareConcurrency (A-13): {res['worker_cores']}"
+        )
+        # navigator.deviceMemory only ever exposes 0.25/0.5/1/2/4/8 (the API
+        # quantises it), so the shield reports the quantised profile value.
+        from nazak.core.extension_generator import _quantized_device_memory
+
+        expected_dm = _quantized_device_memory(fp.device_memory)
+        assert res["worker_dm"].endswith(str(expected_dm)), (
+            f"the worker scope leaks the host's deviceMemory (A-13): {res['worker_dm']} (expected {expected_dm})"
+        )
+        assert res["worker_tz"].endswith(str(fp.timezone_offset)), (
+            f"the worker scope leaks the host's timezone offset (A-13): {res['worker_tz']}"
         )
     finally:
         launcher.stop(profile.id)

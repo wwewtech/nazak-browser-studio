@@ -231,6 +231,34 @@ def test_a12_window_metrics_are_defined_on_the_instance():
     )
 
 
+def test_a13_shield_covers_the_worker_scope():
+    """A-13: a page can read the REAL navigator/Intl values in a Worker scope
+    (measured: the worker reported the host's hardwareConcurrency/deviceMemory
+    while the main world reported the profile's). The shield must run in a
+    worker too: the scope-independent sections apply there, the DOM-only ones
+    are skipped, and the navigator prototypes of BOTH scopes are patched
+    (a worker's navigator is a WorkerNavigator — a different class)."""
+    src = _generated_js()
+    assert "__scopeIsWorker" in src, "the shield must know it runs in a worker scope (A-13)"
+    assert "WorkerNavigator" in src, (
+        "the navigator-level shields must cover WorkerNavigator.prototype — a worker's "
+        "navigator is a different class, so patching only Navigator.prototype left the "
+        "worker scope untouched (A-13)"
+    )
+    assert "__hasDom" in src, "the DOM-only sections must be skipped in a worker (A-13)"
+    for prop in ("webdriver", "hardwareConcurrency", "deviceMemory", "languages", "language"):
+        assert f"__defineNav('{prop}'" in src, f"the navigator property {prop} must be shielded in both scopes (A-13)"
+
+
+def test_a13_injector_reaches_worker_targets():
+    """The injector must attach to worker targets and inject the shield there
+    (and release them afterwards)."""
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    assert '"worker"' in src and '"shared_worker"' in src, "the injector must attach to worker targets (A-13)"
+    assert "_apply_worker_session" in src, "the worker scope needs its own injection path (A-13)"
+    assert "Runtime.runIfWaitingForDebugger" in src, "a worker paused by waitForDebuggerOnStart must be released (A-13)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

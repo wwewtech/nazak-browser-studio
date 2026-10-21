@@ -52,9 +52,11 @@ def test_v170_stealth_webdriver_compliance(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth_js = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
-    # Property webdriver returns false without delete
-    assert "Object.defineProperty(Navigator.prototype, 'webdriver'" in stealth_js
-    assert "get: () => false" in stealth_js
+    # Property webdriver returns false without delete.
+    # Hunt A-13: it is applied through the dual-prototype helper so the
+    # WORKER scope (WorkerNavigator) is covered as well.
+    assert "__defineNav('webdriver'" in stealth_js
+    assert "__navGetter('webdriver', false)" in stealth_js
     assert "delete Navigator.prototype.webdriver" not in stealth_js
 
 
