@@ -1149,38 +1149,69 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)
     if ({str(fp.client_rects_noise).lower()}) {{
         try {{
-            // A fixed per-session constant is trivially detectable: read the
-            // same rect twice and the delta never changes, while a real
-            // renderer jitters within +-0.5px from frame to frame. The LCG below
-            // re-derives a fresh sub-pixel offset on every call, deterministic
-            // per profile (seeded) but varying per read.
+            // Hunt A-07: the jitter used to be re-derived from a CALL
+            // COUNTER, so measuring the SAME string twice returned two
+            // different widths (measured in a real Chrome: 8 measurements of
+            // one string -> 8 distinct values; a real browser returns the
+            // SAME width). A detector that measures a string twice and
+            // compares — the standard BrowserLeaks-style probe — sees the
+            // difference immediately.
+            //
+            // The offset is now derived from the TEXT itself: the same
+            // string always measures the same (as on a real device) while
+            // two different strings and two different profiles differ (the
+            // farm-wide uniqueness the noise exists for).
             const rectSeedBase = ({fp.canvas_noise_seed} >>> 0) || 1;
-            let rectCallCount = 0;
-            const nextRectJitter = function() {{
-                rectCallCount = (rectCallCount + 1) >>> 0;
-                let s = (rectSeedBase ^ (rectCallCount * 2654435761)) >>> 0;
+            const textJitter = function(text) {{
+                const str = String(text === undefined || text === null ? '' : text);
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < str.length; i++) {{
+                    h ^= str.charCodeAt(i);
+                    h = Math.imul(h, 16777619) >>> 0;
+                }}
+                let s = (rectSeedBase ^ h) >>> 0;
                 s = (s * 1664525 + 1013904223) >>> 0;
-                return (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0001;
+                return (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0002;
+            }};
+            // A per-element offset keeps the rect jitter stable for the same
+            // element (a real renderer only changes it when the layout
+            // changes) while different elements differ.
+            const rectOffsets = new WeakMap();
+            let rectSeedCounter = 0;
+            const nextRectJitter = function(element) {{
+                let off = rectOffsets.get(element);
+                if (!off) {{
+                    rectSeedCounter = (rectSeedCounter + 1) >>> 0;
+                    let s = (rectSeedBase ^ (rectSeedCounter * 2654435761)) >>> 0;
+                    s = (s * 1664525 + 1013904223) >>> 0;
+                    off = {{
+                        x: (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0001,
+                        y: (((s >>> 16) % 1000) / 1000 - 0.5) * 0.0001
+                    }};
+                    rectOffsets.set(element, off);
+                }}
+                return off;
             }};
             const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
             Element.prototype.getBoundingClientRect = makeNative(function() {{
                 const rect = origGetBoundingClientRect.apply(this, arguments);
                 if (!rect || rect.width === 0 || rect.height === 0) return rect;
-                const jx = nextRectJitter();
-                const jy = nextRectJitter();
-                return new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
+                const off = nextRectJitter(this);
+                // The WIDTH of a text element follows the same text-derived
+                // offset as the canvas measurement, so the canvas metric and
+                // the DOM metric stay consistent (a real browser reports the
+                // same width through both APIs).
+                const ownText = (this.textContent || '').trim();
+                const widthAdj = ownText ? textJitter(ownText) : 0;
+                return new DOMRect(rect.x + off.x, rect.y + off.y, rect.width + widthAdj, rect.height);
             }}, 'getBoundingClientRect');
 
-            let fontCallCount = 0;
             const origMeasureText = CanvasRenderingContext2D.prototype.measureText;
             CanvasRenderingContext2D.prototype.measureText = makeNative(function(text) {{
                 const metrics = origMeasureText.apply(this, arguments);
                 if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {{
                     try {{
-                        fontCallCount = (fontCallCount + 1) >>> 0;
-                        let s = (rectSeedBase ^ (fontCallCount * 40503)) >>> 0;
-                        s = (s * 1664525 + 1013904223) >>> 0;
-                        const fontJitter = (((s >>> 8) % 1000) / 1000 - 0.5) * 0.0002;
+                        const fontJitter = textJitter(text);
                         Object.defineProperty(metrics, 'width', {{
                             value: metrics.width + fontJitter,
                             configurable: true,

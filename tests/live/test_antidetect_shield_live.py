@@ -50,6 +50,9 @@ PROBE = """() => {
   t('tz_offset', () => new Date().getTimezoneOffset());
   t('canvas_hash_1', () => { const c=document.createElement('canvas'); c.width=300;c.height=80; const x=c.getContext('2d'); x.textBaseline='top'; x.font='14px Arial'; x.fillStyle='#f60'; x.fillRect(125,1,62,20); x.fillStyle='#069'; x.font='11pt Arial'; x.fillText('probe',2,15); return c.toDataURL(); });
   t('canvas_hash_2', () => { const c=document.createElement('canvas'); c.width=300;c.height=80; const x=c.getContext('2d'); x.textBaseline='top'; x.font='14px Arial'; x.fillStyle='#f60'; x.fillRect(125,1,62,20); x.fillStyle='#069'; x.font='11pt Arial'; x.fillText('probe',2,15); return c.toDataURL(); });
+  t('measure_1', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
+  t('measure_2', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
+  t('measure_3', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
   t('audio_render', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); return 'len=' + b.length + ' ch=' + b.numberOfChannels; });
   t('audio_channelData', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); const d=b.getChannelData(0); return 'len=' + d.length; });
   t('voices', () => speechSynthesis.getVoices().length);
@@ -143,5 +146,12 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         # "RangeError: Maximum call stack size exceeded").
         assert res["audio_render"].startswith("OK"), res["audio_render"]
         assert res["audio_channelData"].startswith("OK"), res["audio_channelData"]
+
+        # A-07: the same string must measure the SAME width on every read (a
+        # real browser returns one value; a per-call jitter is a tell).
+        assert res["measure_1"] == res["measure_2"] == res["measure_3"], (
+            f"the font metric is not stable for identical text (A-07): "
+            f"{res['measure_1']} / {res['measure_2']} / {res['measure_3']}"
+        )
     finally:
         launcher.stop(profile.id)

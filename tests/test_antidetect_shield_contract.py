@@ -179,6 +179,32 @@ def test_a06_audio_noise_is_applied_once():
     )
 
 
+def test_a07_font_jitter_is_text_derived_not_call_derived():
+    """A-07: the measureText jitter was re-derived from a CALL COUNTER, so
+    measuring the same string twice returned two different widths (measured in
+    a real Chrome: 8 measurements of one string -> 8 distinct values, while a
+    real browser returns the SAME width)."""
+    src = _generated_js()
+    assert "fontCallCount" not in src, (
+        "the font jitter must not depend on a call counter — the same string must measure the same on every read (A-07)"
+    )
+    assert "textJitter" in src, "the font jitter must be derived from the text itself (A-07)"
+    # the DOM rect width must follow the same text-derived offset, so the
+    # canvas metric and the DOM metric agree (as on a real browser)
+    assert "widthAdj" in src, "the DOM width must use the same text-derived offset (A-07)"
+
+
+def test_a07_rect_jitter_is_stable_per_element():
+    """A-07: the rect jitter was re-derived per CALL, so the same element
+    returned different coordinates on every read."""
+    src = _generated_js()
+    assert "rectCallCount" not in src, (
+        "the rect jitter must be stable per element — a real renderer only "
+        "changes the offset when the layout changes (A-07)"
+    )
+    assert "rectOffsets" in src, "the rect offsets must be cached per element (A-07)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

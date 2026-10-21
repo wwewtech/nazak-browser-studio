@@ -67,13 +67,19 @@ def test_audio_noise_phase_shifts_per_call(tmp_path):
     assert "applyAudioNoiseToChannel" not in helper
 
 
-def test_rect_and_font_jitter_vary_per_read(tmp_path):
+def test_rect_and_font_jitter_are_stable_per_element_and_text(tmp_path):
+    """Hunt A-07: the rect and font jitters used to be re-derived from a CALL
+    COUNTER, so the same element (or the same string) reported different
+    values on every read. A real renderer is stable per element, and a real
+    font metric is stable per string — the old behaviour was the tell."""
     js = _stealth(tmp_path, client_rects_noise=True, canvas_noise_seed=12345)
     assert "Element.prototype.getBoundingClientRect" in js
     assert "CanvasRenderingContext2D.prototype.measureText" in js
-    # Fresh sub-pixel offset per call instead of one session constant.
-    assert "rectCallCount" in js
-    assert "fontCallCount" in js
+    # Stable per element / per text — not per call.
+    assert "rectCallCount" not in js
+    assert "fontCallCount" not in js
+    assert "rectOffsets" in js, "the rect offset must be cached per element (A-07)"
+    assert "textJitter" in js, "the font offset must be derived from the text (A-07)"
     assert "((seed % 7) - 3) * 0.00005" not in js
     assert "((seed % 5) - 2) * 0.0001" not in js
 
@@ -86,7 +92,7 @@ def test_noise_hooks_still_present_after_rework(tmp_path):
         "HTMLCanvasElement.prototype.toDataURL",
         "HTMLCanvasElement.prototype.toBlob",
         "OfflineAudioContext.prototype.startRendering",
-        "fontJitter",
-        "rect.x + jx",
+        "textJitter",
+        "rect.x + off.x",
     ):
         assert hook in js, f"hook lost in rework: {hook}"

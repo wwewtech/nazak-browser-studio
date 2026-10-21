@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1075 passed, 6 deselected** (1081 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1077 passed, 6 deselected** (1083 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -48,6 +48,15 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 - **The audio noise was applied twice per read (A-06).** The offline-render helper called
   the SPOOFED `getChannelData`, which applied its own noise pass on top, and advanced the
   phase counter twice per read. The getter is now the single owner of the mutation.
+- **The font metric changed on every read (A-07).** The `measureText` jitter was
+  re-derived from a call counter: eight measurements of ONE string returned eight
+  different widths (measured in a real Chrome — a real browser returns the same width
+  every time). A detector that measures a string twice and compares — the standard
+  BrowserLeaks-style probe — saw the difference immediately. The offset is now derived
+  from the TEXT (stable per string, different between profiles), and the DOM rect width
+  follows the SAME offset, so the canvas metric and the DOM metric agree exactly as they
+  do in a real browser (measured delta 0.000000). The rect jitter is likewise stable per
+  element instead of per call.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
