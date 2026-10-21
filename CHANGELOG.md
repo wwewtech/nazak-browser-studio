@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1084 passed, 6 deselected** (1090 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1086 passed, 6 deselected** (1092 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -102,6 +102,19 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   and is not installed at all when no synchronizer sink exists (without one it could
   never be accepted anyway). After the fix the shielded browser has exactly the same
   1234 own window properties and no `__` key of its own.
+- **The font list was a lie — and contradicted the rendering (A-16).** The shield
+  returned a HARDCODED list of nine families regardless of the profile, while a real
+  Windows box reports 25-60 (measured on the audit host: 122 families installed, 40+
+  detectable by width). Worse, the list advertised a family the OS does not have, and a
+  detector does not trust `queryLocalFonts` at all: it MEASURES the rendered width of a
+  string in a candidate family and compares it with the fallback — a missing family
+  renders with the fallback, so the query answer and the rendering contradicted each
+  other. The font pool is now part of the profile (a realistic per-OS core plus a
+  random tail: 24-42 families, stable per profile, different between profiles), and the
+  families the host lacks are aliased to a real sibling of the same class through
+  `@font-face { src: local(...) }` — so the rendering matches the claim. Measured after
+  the fix: a Windows profile renders 38/38 of its claimed families, a macOS profile on
+  a Windows host went from 8/28 to 35/39.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
@@ -112,19 +125,25 @@ count, UA/Client-Hints version coherence).
 
 The same real-Chrome probe confirmed the remaining shield surfaces behave like a real
 device and like the profile: the media-device list (labels from the profile, stable
-across reads), the battery state (the profile's charging flag/level/times), the local
-font pool, the WebGPU adapter info (vendor/architecture/device from the profile), the
-`getBoundingClientRect` geometry, `matchMedia` (light scheme, no reduced motion, the
-profile's DPR), `performance.now()` (monotonic), the WebRTC candidate scrubber and the
-port-scan shield (the profile's own CDP port is unreachable from the page). The
-harvested ICE candidates carry only an mDNS `.local` name — no private IPv4 — so there
-is no local-IP leak (the same shape the host Chrome offers).
+across reads), the battery state (the profile's charging flag/level/times), the WebGPU
+adapter info (vendor/architecture/device from the profile), the `getBoundingClientRect`
+geometry, `matchMedia` (light scheme, no reduced motion, the profile's DPR),
+`performance.now()` (monotonic), the WebRTC candidate scrubber and the port-scan shield
+(the profile's own CDP port is unreachable from the page). The harvested ICE candidates
+carry only an mDNS `.local` name — no private IPv4 — so there is no local-IP leak (the
+same shape the host Chrome offers). The **ServiceWorker scope** and the **cross-origin
+iframe (OOPIF)** are covered as well: both report the profile's values (cores, memory,
+timezone, languages, screen) — the worker-scope fix of A-13 reaches them too.
+`navigator.connection` is left to Chrome on purpose: it randomises per profile
+(each profile has its own user-data-dir), the value is stable within a profile
+(5 reads identical) and differs between profiles — Chrome's own behaviour, already
+correct.
 
-Three suspected findings were **disproved** by the same comparison and are therefore
-NOT defects: a blocked external `fetch` and a blocked API-port `fetch` happen
-identically in a plain Chrome (CORS), and `navigator.webdriver === true` in the
-Playwright-driven comparison comes from Playwright itself (read through a raw CDP
-connection the page reports `false`).
+Four suspected findings were **disproved** by the same comparison and are therefore NOT
+defects: a blocked external `fetch` and a blocked API-port `fetch` happen identically in
+a plain Chrome (CORS), and `navigator.webdriver === true` in the Playwright-driven
+comparison comes from Playwright itself (read through a raw CDP connection the page
+reports `false`).
 
 ### Coverage added
 

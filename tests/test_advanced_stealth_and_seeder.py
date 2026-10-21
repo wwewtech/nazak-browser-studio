@@ -157,7 +157,10 @@ class TestAdvancedStealthEnhancements:
         assert "RTX 4090" in stealth_js
 
     def test_stealth_local_fonts_spoofing(self, tmp_path):
-        fp_win = FingerprintConfig(platform="Win32")
+        # Hunt A-16: the font list is part of the PROFILE now (a hardcoded
+        # nine-entry list was unrealistic and contradicted the rendering), and
+        # the families the OS lacks are aliased to a real sibling font.
+        fp_win = FingerprintConfig(platform="Win32", fonts=["Arial", "Calibri", "Segoe UI", "Tahoma"])
         p_win = BrowserProfile(id="p_win", name="Win Fonts", fingerprint=fp_win)
         stealth_win = (Path(generate_profile_extension(p_win, tmp_path / "win")) / "stealth.js").read_text(
             encoding="utf-8"
@@ -166,15 +169,19 @@ class TestAdvancedStealthEnhancements:
         assert "queryLocalFonts" in stealth_win
         assert "Segoe UI" in stealth_win
         assert "Calibri" in stealth_win
+        # the pool comes from the profile
+        assert "const profileFonts" in stealth_win
+        # and the rendering is aligned through @font-face aliases
+        assert "@font-face" in stealth_win
 
-        fp_mac = FingerprintConfig(platform="MacIntel")
+        fp_mac = FingerprintConfig(platform="MacIntel", fonts=["Helvetica Neue", "Menlo"])
         p_mac = BrowserProfile(id="p_mac", name="Mac Fonts", fingerprint=fp_mac)
         stealth_mac = (Path(generate_profile_extension(p_mac, tmp_path / "mac")) / "stealth.js").read_text(
             encoding="utf-8"
         )
 
-        assert "San Francisco" in stealth_mac
         assert "Helvetica Neue" in stealth_mac
+        assert "Menlo" in stealth_mac
 
     def test_stealth_speech_synthesis_voices(self, tmp_path):
         fp = FingerprintConfig(platform="Win32")

@@ -226,6 +226,262 @@ def calculate_tz_offset(tz_name: str) -> int:
         return 0  # unknown zone: UTC, not an arbitrary region
 
 
+# Anti-detect (audit A-16): the installed font pool is a fingerprint vector.
+# A real Windows 10/11 box reports 25-60 families through queryLocalFonts
+# (measured on the audit host: 389 font FILES, 40+ families visible to the
+# width probe), while the old shield returned a hardcoded list of NINE —
+# unrealistically few, and self-contradicting (it advertised a family the
+# host does not have, so the rendering probe and the query disagreed).
+# The pools below model the real distribution: a large common core plus a
+# random tail of optional families, so two profiles differ but both look
+# like a real machine.
+FONT_POOLS: dict[str, list[str]] = {
+    "windows": [
+        "Arial",
+        "Arial Black",
+        "Bahnschrift",
+        "Calibri",
+        "Cambria",
+        "Cambria Math",
+        "Candara",
+        "Comic Sans MS",
+        "Consolas",
+        "Constantia",
+        "Corbel",
+        "Courier New",
+        "Ebrima",
+        "Franklin Gothic Medium",
+        "Gabriola",
+        "Garamond",
+        "Georgia",
+        "HoloLens MDL2 Assets",
+        "Impact",
+        "Ink Free",
+        "Javanese Text",
+        "Leelawadee UI",
+        "Lucida Console",
+        "Lucida Sans Unicode",
+        "Malgun Gothic",
+        "Marlett",
+        "Microsoft Himalaya",
+        "Microsoft JhengHei",
+        "Microsoft New Tai Lue",
+        "Microsoft PhagsPa",
+        "Microsoft Sans Serif",
+        "Microsoft Tai Le",
+        "Microsoft YaHei",
+        "Microsoft Yi Baiti",
+        "MingLiU-ExtB",
+        "MS Gothic",
+        "MS PGothic",
+        "MS Sans Serif",
+        "MV Boli",
+        "Myanmar Text",
+        "Nirmala UI",
+        "Palatino Linotype",
+        "Segoe MDL2 Assets",
+        "Segoe Print",
+        "Segoe Script",
+        "Segoe UI",
+        "Segoe UI Emoji",
+        "Segoe UI Historic",
+        "Segoe UI Symbol",
+        "SimSun",
+        "Sitka Banner",
+        "Sitka Display",
+        "Sitka Heading",
+        "Sitka Small",
+        "Sitka Subheading",
+        "Sitka Text",
+        "Sylfaen",
+        "Symbol",
+        "Tahoma",
+        "Times New Roman",
+        "Trebuchet MS",
+        "Verdana",
+        "Webdings",
+        "Wingdings",
+        "Yu Gothic",
+    ],
+    "mac": [
+        "American Typewriter",
+        "Andale Mono",
+        "Arial",
+        "Arial Black",
+        "Arial Narrow",
+        "Arial Rounded MT Bold",
+        "Arial Unicode MS",
+        "Avenir",
+        "Avenir Next",
+        "Avenir Next Condensed",
+        "Baskerville",
+        "Big Caslon",
+        "Bodoni 72",
+        "Bradley Hand",
+        "Chalkboard",
+        "Cochin",
+        "Comic Sans MS",
+        "Copperplate",
+        "Courier",
+        "Courier New",
+        "Didot",
+        "Futura",
+        "Geneva",
+        "Georgia",
+        "Gill Sans",
+        "Helvetica",
+        "Helvetica Neue",
+        "Herculanum",
+        "Hoefler Text",
+        "Iowan Old Style",
+        "Kailasa",
+        "Kefa",
+        "Lucida Grande",
+        "Luminari",
+        "Marker Felt",
+        "Menlo",
+        "Monaco",
+        "Noteworthy",
+        "Optima",
+        "Palatino",
+        "Papyrus",
+        "Phosphate",
+        "Rockwell",
+        "Savoye LET",
+        "SignPainter",
+        "Skia",
+        "Snell Roundhand",
+        "Tahoma",
+        "Times",
+        "Trattatello",
+        "Trebuchet MS",
+        "Verdana",
+        "Zapfino",
+    ],
+    "linux": [
+        "DejaVu Sans",
+        "DejaVu Sans Mono",
+        "DejaVu Serif",
+        "Liberation Mono",
+        "Liberation Sans",
+        "Liberation Serif",
+        "Ubuntu",
+        "Ubuntu Condensed",
+        "Ubuntu Mono",
+        "Noto Sans",
+        "Noto Serif",
+        "Noto Mono",
+        "Cantarell",
+        "Droid Sans Fallback",
+        "FreeMono",
+        "FreeSans",
+        "FreeSerif",
+        "Nimbus Mono PS",
+        "Nimbus Roman",
+        "Nimbus Sans",
+        "Nimbus Sans Narrow",
+        "C059",
+        "P052",
+        "Z003",
+        "Standard Symbols PS",
+        "D050000L",
+        "S050000L",
+        "Ebrima",
+    ],
+}
+
+# The families a real machine ALWAYS has (the core) and the optional tail.
+# The core is an explicit list (not a prefix of the pool): the order of the
+# pool is alphabetical, but the core must contain the families a real
+# Windows/macOS/Linux box always ships.
+FONT_CORE: dict[str, list[str]] = {
+    "windows": [
+        "Arial",
+        "Arial Black",
+        "Calibri",
+        "Cambria",
+        "Consolas",
+        "Courier New",
+        "Georgia",
+        "Impact",
+        "Segoe UI",
+        "Tahoma",
+        "Times New Roman",
+        "Trebuchet MS",
+        "Verdana",
+        "Webdings",
+        "Wingdings",
+        "MS Gothic",
+        "Microsoft YaHei",
+        "SimSun",
+        "Marlett",
+        "Microsoft Sans Serif",
+        "MS Mincho",
+        "NSimSun",
+    ],
+    "mac": [
+        "Arial",
+        "Arial Black",
+        "Arial Narrow",
+        "Arial Rounded MT Bold",
+        "Arial Unicode MS",
+        "Avenir",
+        "Avenir Next",
+        "Courier",
+        "Courier New",
+        "Futura",
+        "Geneva",
+        "Georgia",
+        "Helvetica",
+        "Helvetica Neue",
+        "Lucida Grande",
+        "Marker Felt",
+        "Menlo",
+        "Monaco",
+        "Optima",
+        "Palatino",
+        "Times",
+        "Times New Roman",
+        "Trebuchet MS",
+        "Verdana",
+    ],
+    "linux": [
+        "DejaVu Sans",
+        "DejaVu Sans Mono",
+        "DejaVu Serif",
+        "Liberation Mono",
+        "Liberation Sans",
+        "Liberation Serif",
+        "Noto Sans",
+        "Noto Serif",
+        "Noto Mono",
+        "Ubuntu",
+        "Ubuntu Condensed",
+        "Ubuntu Mono",
+        "FreeMono",
+        "FreeSans",
+        "FreeSerif",
+    ],
+}
+FONT_TAIL_MIN = 6
+FONT_TAIL_MAX = 24
+
+
+def _pick_fonts(os_type: str) -> list[str]:
+    """Pick a realistic per-profile font pool.
+
+    The core families (always present on that OS) come first, then a random
+    tail of optional ones — so the list is plausible for the platform, stable
+    for the profile, and different between profiles.
+    """
+    pool = FONT_POOLS.get(os_type, FONT_POOLS["windows"])
+    core = [f for f in FONT_CORE.get(os_type, FONT_CORE["windows"]) if f in pool]
+    core_pool = [f for f in pool if f not in core]
+    tail_size = min(len(core_pool), random.randint(FONT_TAIL_MIN, FONT_TAIL_MAX))
+    tail = random.sample(core_pool, tail_size) if tail_size else []
+    return core + tail
+
+
 # Anti-detect (audit F-04): real machines carry wildly different audio/video
 # peripherals, and enumerateDevices() exposes the kind+label set even without
 # permission. A farm where every profile reports the SAME three labels is a
@@ -373,6 +629,7 @@ def generate_random_fingerprint(
 
     media_devs = _pick_media_devices()
     battery = _pick_battery()
+    fonts = _pick_fonts(os_type)
 
     return FingerprintConfig(
         user_agent=ua,
@@ -399,6 +656,7 @@ def generate_random_fingerprint(
         webgl_unmasked_vendor=str(gpu["unmasked_vendor"]),
         webgl_unmasked_renderer=str(gpu["unmasked_renderer"]),
         media_devices=media_devs,
+        fonts=fonts,
         canvas_noise=True,
         canvas_noise_seed=random.randint(10000, 999999),
         audio_noise=True,

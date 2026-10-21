@@ -222,6 +222,8 @@ chrome.webRequest.onAuthRequired.addListener(
         fp.languages if fp.languages else [lang.strip() for lang in fp.language.split(",") if lang.strip()]
     )
     media_devs_json = json.dumps([d.model_dump() for d in fp.media_devices])
+    # Hunt A-16: the installed font pool is part of the profile.
+    fonts_json = json.dumps(list(getattr(fp, "fonts", []) or []))
     geo_json = json.dumps(fp.geolocation.model_dump())
     battery_json = json.dumps(fp.battery.model_dump())
     platform_json = json.dumps(fp.platform)
@@ -858,36 +860,55 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // 10.1 Local Font Spoofing & queryLocalFonts
         if (__hasDom) {{
     try {{
+        // Hunt A-16: the old code returned a HARDCODED list of nine families
+        // regardless of the profile — while a real Windows box reports 25-60
+        // (measured on the audit host: 40+ families were detectable by width
+        // and 389 font files were installed). The list also advertised a
+        // family the host does not have, so the queryLocalFonts answer and
+        // the rendering probe contradicted each other. The pool is now part
+        // of the PROFILE (stable per profile, different between profiles) and
+        // the query returns it verbatim.
         const osPlatform = {platform_json}.toLowerCase();
+        const profileFonts = {fonts_json};
         let fontList = [];
-        if (osPlatform.includes('win')) {{
-            fontList = [
-                {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
-                {{ family: "Calibri", fullName: "Calibri", postscriptName: "Calibri", style: "Regular" }},
-                {{ family: "Cambria", fullName: "Cambria", postscriptName: "Cambria", style: "Regular" }},
-                {{ family: "Consolas", fullName: "Consolas", postscriptName: "Consolas", style: "Regular" }},
-                {{ family: "Segoe UI", fullName: "Segoe UI", postscriptName: "SegoeUI", style: "Regular" }},
-                {{ family: "Segoe UI Variable", fullName: "Segoe UI Variable", postscriptName: "SegoeUIVariable", style: "Regular" }},
-                {{ family: "Tahoma", fullName: "Tahoma", postscriptName: "Tahoma", style: "Regular" }},
-                {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }},
-                {{ family: "Verdana", fullName: "Verdana", postscriptName: "Verdana", style: "Regular" }}
-            ];
-        }} else if (osPlatform.includes('mac')) {{
-            fontList = [
-                {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
-                {{ family: "Helvetica", fullName: "Helvetica", postscriptName: "Helvetica", style: "Regular" }},
-                {{ family: "Helvetica Neue", fullName: "Helvetica Neue", postscriptName: "HelveticaNeue", style: "Regular" }},
-                {{ family: "San Francisco", fullName: "System Font", postscriptName: "SFProText-Regular", style: "Regular" }},
-                {{ family: "Monaco", fullName: "Monaco", postscriptName: "Monaco", style: "Regular" }},
-                {{ family: "Menlo", fullName: "Menlo", postscriptName: "Menlo-Regular", style: "Regular" }},
-                {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }}
-            ];
+        if (profileFonts && profileFonts.length) {{
+            fontList = profileFonts.map(function(family) {{
+                return {{
+                    family: family,
+                    fullName: family,
+                    postscriptName: family.replace(/[^A-Za-z0-9]/g, ''),
+                    style: 'Regular'
+                }};
+            }});
         }} else {{
-            fontList = [
-                {{ family: "DejaVu Sans", fullName: "DejaVu Sans", postscriptName: "DejaVuSans", style: "Regular" }},
-                {{ family: "Ubuntu", fullName: "Ubuntu", postscriptName: "Ubuntu", style: "Regular" }},
-                {{ family: "Liberation Sans", fullName: "Liberation Sans", postscriptName: "LiberationSans", style: "Regular" }}
-            ];
+            // Fallback for profiles created before the font pool existed.
+            if (osPlatform.includes('win')) {{
+                fontList = [
+                    {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
+                    {{ family: "Calibri", fullName: "Calibri", postscriptName: "Calibri", style: "Regular" }},
+                    {{ family: "Cambria", fullName: "Cambria", postscriptName: "Cambria", style: "Regular" }},
+                    {{ family: "Consolas", fullName: "Consolas", postscriptName: "Consolas", style: "Regular" }},
+                    {{ family: "Segoe UI", fullName: "Segoe UI", postscriptName: "SegoeUI", style: "Regular" }},
+                    {{ family: "Tahoma", fullName: "Tahoma", postscriptName: "Tahoma", style: "Regular" }},
+                    {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }},
+                    {{ family: "Verdana", fullName: "Verdana", postscriptName: "Verdana", style: "Regular" }}
+                ];
+            }} else if (osPlatform.includes('mac')) {{
+                fontList = [
+                    {{ family: "Arial", fullName: "Arial", postscriptName: "ArialMT", style: "Regular" }},
+                    {{ family: "Helvetica", fullName: "Helvetica", postscriptName: "Helvetica", style: "Regular" }},
+                    {{ family: "Helvetica Neue", fullName: "Helvetica Neue", postscriptName: "HelveticaNeue", style: "Regular" }},
+                    {{ family: "Menlo", fullName: "Menlo", postscriptName: "Menlo-Regular", style: "Regular" }},
+                    {{ family: "Monaco", fullName: "Monaco", postscriptName: "Monaco", style: "Regular" }},
+                    {{ family: "Times New Roman", fullName: "Times New Roman", postscriptName: "TimesNewRomanPSMT", style: "Regular" }}
+                ];
+            }} else {{
+                fontList = [
+                    {{ family: "DejaVu Sans", fullName: "DejaVu Sans", postscriptName: "DejaVuSans", style: "Regular" }},
+                    {{ family: "Liberation Sans", fullName: "Liberation Sans", postscriptName: "LiberationSans", style: "Regular" }},
+                    {{ family: "Ubuntu", fullName: "Ubuntu", postscriptName: "Ubuntu", style: "Regular" }}
+                ];
+            }}
         }}
 
         if ('queryLocalFonts' in window) {{
@@ -895,6 +916,116 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 return Promise.resolve(fontList);
             }}, 'queryLocalFonts');
         }}
+
+        // Hunt A-16 (rendering side): a detector does NOT trust
+        // queryLocalFonts — it measures the rendered width of a string in a
+        // candidate family and compares it with the fallback. A family the
+        // OS does not have renders with the DEFAULT font (measured: 404.02
+        // px for a missing family vs 399.90 for Arial), so the query answer
+        // and the rendering contradicted each other. The families the
+        // profile claims but the OS lacks are now redirected to a REAL
+        // sibling of the same class (a sans-serif for a sans-serif, a
+        // monospace for a monospace), so the rendering is plausible and the
+        // two answers agree. The mapping is per profile (the seed decides
+        // which real family backs each claimed one), so two profiles differ.
+        try {{
+            // Hunt A-16 (rendering side): a detector does NOT trust
+            // queryLocalFonts — it measures the rendered width of a string in
+            // a candidate family and compares it with the fallback. A family
+            // the OS does not have renders with the FALLBACK, so the query
+            // answer and the rendering contradicted each other (measured: a
+            // missing family and an unknown family render identically, while
+            // an installed one differs).
+            //
+            // NOTE 1: the CSS font shorthand is only applied when it is
+            // VALID — '72px "Missing"' without a fallback is invalid and the
+            // previous font stays in effect. Every probe therefore carries
+            // an explicit fallback.
+            // NOTE 2: at document_start the system fonts are not loaded yet,
+            // so a measurement taken there is unreliable (every family looks
+            // missing). The detection therefore runs again once the fonts
+            // are ready — the aliases are installed then.
+            const __widthWith = function(family, fallback) {{
+                const c = document.createElement('canvas');
+                const ctx = c.getContext('2d');
+                if (!ctx) return 0;
+                ctx.font = '72px "' + family + '", ' + fallback;
+                return ctx.measureText('mmmwwwiiil').width;
+            }};
+            const __isMonoLike = /mono|courier|consol|code|menlo/i;
+            const __isSerifLike = /times|georgia|garamond|palatino|cambria|constantia|book|song|mincho|ming|batang|gulim/i;
+            const __candidates = ['Arial', 'Helvetica', 'Segoe UI', 'Tahoma', 'Verdana', 'Trebuchet MS',
+                'Georgia', 'Times New Roman', 'Courier New', 'Consolas', 'DejaVu Sans',
+                'Liberation Sans', 'Liberation Mono', 'DejaVu Sans Mono', 'Monaco', 'Menlo',
+                'Courier', 'Noto Sans', 'Noto Mono', 'Ubuntu', 'Calibri', 'Cambria'];
+            let __aliasesInstalled = false;
+            const __installFontAliases = function() {{
+                if (__aliasesInstalled) return;
+                if (!document.fonts || !document.fonts.add) return;
+                const monoW = __widthWith('__no_such_family__', 'monospace');
+                const serifW = __widthWith('__no_such_family__', 'serif');
+                if (!monoW || !serifW) return;
+                // A family is missing when BOTH probes fall back — it renders
+                // exactly like the fallback in every fallback slot. A real
+                // monospace family matches the monospace fallback but NOT the
+                // serif one, so it is recognised as installed.
+                const __isMissing = function(family) {{
+                    const m = __widthWith(family, 'monospace');
+                    const s = __widthWith(family, 'serif');
+                    return Math.abs(m - monoW) < 0.01 && Math.abs(s - serifW) < 0.01;
+                }};
+                const __realFamilies = __candidates.filter(function(f) {{ return !__isMissing(f); }});
+                // The measurement is only trustworthy when at least one
+                // candidate was recognised as installed.
+                if (!__realFamilies.length) return;
+                const __serifReal = __realFamilies.filter(function(f) {{ return __isSerifLike.test(f); }});
+                const __monoReal = __realFamilies.filter(function(f) {{ return __isMonoLike.test(f); }});
+                const __sansReal = __realFamilies.filter(function(f) {{
+                    return !__isSerifLike.test(f) && !__isMonoLike.test(f);
+                }});
+                const __missing = fontList
+                    .map(function(f) {{ return f.family; }})
+                    .filter(function(f) {{ return __isMissing(f); }});
+                if (!__missing.length) {{
+                    __aliasesInstalled = true;
+                    return;
+                }}
+                const __style = document.createElement('style');
+                const __rules = [];
+                __missing.forEach(function(family, idx) {{
+                    let donor = null;
+                    if (__isMonoLike.test(family)) donor = __monoReal.length ? __monoReal[idx % __monoReal.length] : null;
+                    else if (__isSerifLike.test(family)) donor = __serifReal.length ? __serifReal[idx % __serifReal.length] : null;
+                    else donor = __sansReal.length ? __sansReal[idx % __sansReal.length] : null;
+                    if (!donor) return;
+                    const __safeFamily = family.replace(/"/g, '');
+                    const __safeDonor = donor.replace(/"/g, '');
+                    __rules.push('@font-face {{ font-family: "' + __safeFamily + '";'
+                        + ' src: local("' + __safeDonor + '");'
+                        + ' font-weight: normal; font-style: normal; }}');
+                }});
+                if (__rules.length) {{
+                    __style.textContent = __rules.join('\\n');
+                    (document.head || document.documentElement).appendChild(__style);
+                }}
+                __aliasesInstalled = true;
+            }};
+            try {{ __installFontAliases(); }} catch(e) {{}}
+            // Re-run once the fonts are ready (the first measurement at
+            // document_start is unreliable).
+            try {{
+                if (document.fonts && document.fonts.ready && document.fonts.ready.then) {{
+                    document.fonts.ready.then(function() {{
+                        try {{ __installFontAliases(); }} catch(e) {{}}
+                    }}).catch(function() {{}});
+                }}
+            }} catch(e) {{}}
+            try {{
+                document.addEventListener('DOMContentLoaded', function() {{
+                    try {{ __installFontAliases(); }} catch(e) {{}}
+                }}, {{once: true}});
+            }} catch(e) {{}}
+        }} catch(e) {{}}
     }} catch(e) {{}}
         }}
 

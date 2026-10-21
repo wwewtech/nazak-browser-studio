@@ -310,6 +310,38 @@ def test_a15_injector_hides_the_cdp_binding():
     )
 
 
+def test_a16_font_pool_is_part_of_the_profile():
+    """A-16: the shield returned a HARDCODED list of nine families regardless
+    of the profile, while a real Windows box reports 25-60 (measured: 122
+    families installed on the audit host, 40+ detectable by width). The list
+    also advertised a family the OS does not have, so the query answer and the
+    rendering contradicted each other."""
+    src = _generated_js()
+    assert "const profileFonts" in src, "the font list must come from the profile, not from a hardcoded list (A-16)"
+    assert "__installFontAliases" in src, (
+        "the families the OS lacks must be aliased to a real sibling font, so the "
+        "rendering matches the query answer (A-16)"
+    )
+    assert "@font-face" in src, "the font aliases are installed through @font-face (A-16)"
+
+
+def test_a16_font_pool_is_generated_per_profile():
+    """The font pool must be realistic for the platform and different between
+    profiles (a farm where every profile reports the same nine fonts is a
+    one-line cluster signature)."""
+    from nazak.core.fingerprint_generator import FONT_POOLS, generate_random_fingerprint
+
+    for os_name, pool in FONT_POOLS.items():
+        assert len(pool) >= 25, f"the {os_name} font pool is unrealistically small: {len(pool)}"
+    a = generate_random_fingerprint("windows")
+    b = generate_random_fingerprint("windows")
+    assert a.fonts, "a generated profile must carry a font pool"
+    assert len(a.fonts) >= 20, f"the font pool is too small to look real: {len(a.fonts)}"
+    assert a.fonts != b.fonts, "two profiles must not report the same font pool"
+    for core in ("Arial", "Calibri", "Segoe UI", "Tahoma", "Times New Roman", "Verdana"):
+        assert core in a.fonts, f"the core family {core} is missing from the pool"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

@@ -147,6 +147,15 @@ class FingerprintConfig(BaseModel):
     audio_noise_seed: float = Field(default_factory=lambda: random.uniform(0.0000005, 0.000005))
     client_rects_noise: bool = True
 
+    # 7b. Installed Font Pool (anti-detect A-16)
+    # The list of locally installed fonts is a fingerprint vector: a real
+    # Windows box reports 25-60 families through queryLocalFonts, and the
+    # RENDERED metrics of those fonts differ from the OS defaults. The pool
+    # is part of the profile (stable per profile, different between
+    # profiles) — a hardcoded 9-entry list was both unrealistic and
+    # self-contradicting (it advertised a family the host does not have).
+    fonts: list[str] = Field(default_factory=list)
+
     # 9. Hardware APIs Shielding
     battery: BatterySpoofConfig = Field(default_factory=BatterySpoofConfig)
     geolocation: GeolocationSpoofConfig = Field(default_factory=GeolocationSpoofConfig)
