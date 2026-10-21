@@ -88,6 +88,12 @@ PROBE = """() => {
   t('languages', () => navigator.languages.join(','));
   t('webgl_vendor', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37445) : 'no-ctx'; });
   t('webgl_renderer', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37446) : 'no-ctx'; });
+  // A-14/A-15: the shield must leave NO trace of its own on the globals.
+  t('nav_own_props', () => Object.getOwnPropertyNames(navigator).join(',') || '(none)');
+  t('win_dunder_own', () => Object.getOwnPropertyNames(window).filter(n => /^__/.test(n)).join(',') || '(none)');
+  t('win_dunder_keys', () => Object.keys(window).filter(n => /^__/.test(n)).join(',') || '(none)');
+  t('md_own_props', () => navigator.mediaDevices ? (Object.getOwnPropertyNames(navigator.mediaDevices).join(',') || '(none)') : 'no-mediaDevices');
+  t('speech_own_props', () => window.speechSynthesis ? (Object.getOwnPropertyNames(window.speechSynthesis).join(',') || '(none)') : 'no-speechSynthesis');
   return Promise.all([
     __workerProbe('self.postMessage(String(navigator.hardwareConcurrency));'),
     __workerProbe('self.postMessage(String(navigator.deviceMemory));'),
@@ -208,6 +214,25 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         )
         assert res["worker_tz"].endswith(str(fp.timezone_offset)), (
             f"the worker scope leaks the host's timezone offset (A-13): {res['worker_tz']}"
+        )
+
+        # A-14/A-15: the shield must not leave own properties on the globals —
+        # a real Chrome's navigator / mediaDevices / speechSynthesis instances
+        # carry none, and the window carries no "__" properties of ours.
+        assert res["nav_own_props"].endswith("(none)"), (
+            f"the shield added own properties to the navigator instance (A-14): {res['nav_own_props']}"
+        )
+        assert res["md_own_props"].endswith("(none)") or res["md_own_props"].endswith("no-mediaDevices"), (
+            f"the shield added own properties to navigator.mediaDevices (A-14): {res['md_own_props']}"
+        )
+        assert res["speech_own_props"].endswith("(none)") or res["speech_own_props"].endswith("no-speechSynthesis"), (
+            f"the shield added own properties to window.speechSynthesis (A-14): {res['speech_own_props']}"
+        )
+        assert res["win_dunder_own"].endswith("(none)"), (
+            f"the shield left its own properties on the window (A-15): {res['win_dunder_own']}"
+        )
+        assert res["win_dunder_keys"].endswith("(none)"), (
+            f"the shield left enumerable own properties on the window (A-15): {res['win_dunder_keys']}"
         )
     finally:
         launcher.stop(profile.id)

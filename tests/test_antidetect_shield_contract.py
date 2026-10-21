@@ -259,6 +259,57 @@ def test_a13_injector_reaches_worker_targets():
     assert "Runtime.runIfWaitingForDebugger" in src, "a worker paused by waitForDebuggerOnStart must be released (A-13)"
 
 
+def test_a14_shield_does_not_add_own_properties_to_the_instances():
+    """A-14: the shield ASSIGNED navigator.getBattery / mediaDevices.enumerateDevices
+    / geolocation.getCurrentPosition / speechSynthesis.getVoices / gpu.requestAdapter
+    — every assignment creates an OWN property on the instance, while a real
+    Chrome keeps them on the prototype (the navigator instance has NO own
+    properties at all). `Object.getOwnPropertyNames(navigator)` exposed the
+    patch in one line."""
+    src = _generated_js()
+    for forbidden in (
+        "navigator.getBattery =",
+        "navigator.mediaDevices.enumerateDevices =",
+        "navigator.geolocation.getCurrentPosition =",
+        "navigator.geolocation.watchPosition =",
+        "window.speechSynthesis.getVoices =",
+        "navigator.gpu.requestAdapter =",
+    ):
+        assert forbidden not in src, (
+            f"'{forbidden}' creates an own property on the instance — the override must live on the prototype (A-14)"
+        )
+
+
+def test_a15_shield_leaves_no_trace_in_the_window():
+    """A-15: the shield polluted the window with its own properties:
+    `__scopeIsWorker` (an enumerable top-level var — visible in
+    Object.keys(window)), `__nsi` (the idempotency flag) and the CDP binding
+    (installed enumerable by Runtime.addBinding). Measured: the real Chrome had
+    1234 own window properties, the shielded one 1237."""
+    src = _generated_js()
+    assert "\nvar __scopeIsWorker" not in src, "the scope flag must not become an own property of the window (A-15)"
+    assert "Symbol('nazakShieldIdempotent')" in src, (
+        "the idempotency flag must live under a symbol key — a string key shows up in "
+        "Object.getOwnPropertyNames(window) (A-15)"
+    )
+    assert "Object.defineProperty(window, '__nsi'" not in src, (
+        "the idempotency flag must not be an own property of the window (A-15)"
+    )
+
+
+def test_a15_injector_hides_the_cdp_binding():
+    """The CDP binding is installed as an ENUMERABLE own property of the
+    window — `Object.keys(window)` showed it. It must be hidden, and it must
+    not be installed at all when no synchronizer sink exists (without one it
+    could never be accepted: binding_event_allowed -> 'no-sink')."""
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    assert "_hide_binding" in src, "the CDP binding must be hidden from Object.keys (A-15)"
+    assert "enumerable: false" in src, "the binding must be redefined as non-enumerable (A-15)"
+    assert "if self.opts.event_sink:" in src, (
+        "the binding must only be installed when a synchronizer sink exists (A-15)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

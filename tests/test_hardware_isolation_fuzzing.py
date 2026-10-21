@@ -115,11 +115,17 @@ def test_extension_generator_stealth_script_content(tmp_path):
     assert "WebGLRenderingContext.prototype" in content
     assert "navigator.mediaDevices.enumerateDevices" in content
     assert "navigator.getBattery" in content
-    assert "navigator.geolocation.getCurrentPosition" in content
+    assert "'getCurrentPosition'" in content
     assert "CanvasRenderingContext2D.prototype.getImageData" in content
     assert "AudioBuffer.prototype.getChannelData" in content
     assert "Element.prototype.getBoundingClientRect" in content
     assert "127.0.0.1" in content
+    # Hunt A-14: the instance-level overrides moved to their prototypes, so
+    # the media devices / battery / geolocation hooks are now installed on
+    # MediaDevices.prototype / Navigator.prototype / Geolocation.prototype.
+    assert "MediaDevices.prototype" in content
+    assert "'getBattery'" in content
+    assert "Geolocation.prototype" in content
 
 
 def test_extension_generator_auth_background_script(tmp_path):

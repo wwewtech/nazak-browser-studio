@@ -261,11 +261,14 @@ def test_stealth_js_contains_valid_iife_syntax(tmp_path):
     # Double-apply guard (extension content script + CDP injector may both run):
     # audit R3-round2 — брендовый флаг заменён на неперечислимое свойство, чтобы
     # страница не могла определить продукт одним if.
+    # Hunt A-15: even a non-enumerable own property is visible in
+    # Object.getOwnPropertyNames(window) — the flag now lives under a SYMBOL.
     assert "window.__nazakShieldApplied" not in stealth
-    assert "window.__nsi" in stealth
+    assert "Symbol('nazakShieldIdempotent')" in stealth
+    assert "Object.defineProperty(window, '__nsi'" not in stealth
     assert "enumerable: false" in stealth
     assert "(function() {" in stealth
-    assert stealth.strip().endswith("})();\n}")
+    assert stealth.strip().endswith("})();\n}\n})();")
 
 
 # ---------------------------------------------------------------------------

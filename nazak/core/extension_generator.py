@@ -264,16 +264,33 @@ chrome.webRequest.onAuthRequired.addListener(
 // the profile's). `window` does not exist in a worker, so the guard and the
 // DOM-only sections must be skipped there — but the navigator/Intl/Date
 // sections are scope-independent and DO apply.
-var __scopeIsWorker = (typeof window === 'undefined');
-if (!__scopeIsWorker && window.__nsi) {{
+//
+// Hunt A-15: this file is injected as a classic script, so a top-level `var`
+// becomes an OWN property of the window — and an enumerable one, visible in
+// Object.keys(window). A detector that lists the window's own properties saw
+// "__scopeIsWorker" (measured: the real Chrome had 1234 own properties, the
+// shielded one 1237, one of them enumerable). The flag is therefore captured
+// in an IIFE — it never touches the global object.
+(function() {{
+const __scopeIsWorker = (typeof window === 'undefined');
+// Hunt A-15: the idempotency flag must not be an own property of the window —
+// even a non-enumerable one shows up in Object.getOwnPropertyNames(window),
+// which is a one-line detector (measured: the real Chrome had 1234 own
+// properties, the shielded one 1237). A SYMBOL key is invisible to
+// getOwnPropertyNames / Object.keys / for-in, so the flag is stored under a
+// per-run symbol. The symbol itself is held in a closure, so the page cannot
+// read or forge it.
+const __nsiKey = (typeof Symbol === 'function')
+    ? Symbol('nazakShieldIdempotent')
+    : '__nsi';
+const __global = (typeof globalThis !== 'undefined')
+    ? globalThis
+    : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : {{}}));
+if (!__scopeIsWorker && __global[__nsiKey]) {{
     // Already applied on this document (extension content script + CDP injector may both run).
 }} else {{
 if (!__scopeIsWorker) {{
-// Audit R3-round2: this used to be a branded flag of the form window.__nazak*,
-// by which any anti-fraud system could identify the product in a single line. The
-// idempotency flag is still here, but it was renamed and made non-enumerable so it
-// does not appear in the ordinary enumeration of window properties.
-Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enumerable: false, writable: false}});
+Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, enumerable: false, writable: false}});
 }}
 (function() {{
     'use strict';
@@ -609,7 +626,13 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 device: {webgl_renderer_json},
                 description: {webgl_renderer_json}
             }};
-            navigator.gpu.requestAdapter = makeNative(function() {{
+            // Hunt A-14: the override lives on GPU.prototype — a real Chrome
+            // keeps requestAdapter there and the navigator.gpu INSTANCE has
+            // no own properties (an own property there is a one-line tell).
+            const gpuHost = (typeof GPU !== 'undefined' && GPU.prototype && GPU.prototype.requestAdapter)
+                ? GPU.prototype
+                : navigator.gpu;
+            const patchedRequestAdapter = makeNative(function() {{
                 return origRequestAdapter.apply(this, arguments).then(adapter => {{
                     if (!adapter) return adapter;
                     if (adapter.requestAdapterInfo) {{
@@ -627,6 +650,12 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                     return adapter;
                 }});
             }}, 'requestAdapter');
+            Object.defineProperty(gpuHost, 'requestAdapter', {{
+                value: patchedRequestAdapter,
+                configurable: true,
+                writable: true,
+                enumerable: false
+            }});
         }}
     }} catch(e) {{}}
         }}
@@ -634,17 +663,31 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 9. Media Devices Shield (Mocks Webcams, Microphones, Audio Outputs)
         if (__hasDom) {{
     try {{
+        // Hunt A-14: the old code ASSIGNED navigator.mediaDevices.enumerateDevices
+        // — that creates an OWN property on the mediaDevices INSTANCE, while a
+        // real Chrome keeps the method on MediaDevices.prototype and the
+        // instance carries no own properties at all. `Object.getOwnPropertyNames
+        // (navigator.mediaDevices)` then exposed the patch. The override now
+        // lives on the prototype.
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {{
             const spoofedDevices = {media_devs_json};
-            navigator.mediaDevices.enumerateDevices = makeNative(function() {{
-                return Promise.resolve(spoofedDevices.map((d, i) => ({{
-                    deviceId: d.device_id || ("dev_" + i),
-                    kind: d.kind,
-                    label: d.label,
-                    groupId: d.group_id || ("grp_" + i),
-                    toJSON: function() {{ return this; }}
-                }})));
-            }}, 'enumerateDevices');
+            const mdHost = (typeof MediaDevices !== 'undefined' && MediaDevices.prototype && MediaDevices.prototype.enumerateDevices)
+                ? MediaDevices.prototype
+                : navigator.mediaDevices;
+            Object.defineProperty(mdHost, 'enumerateDevices', {{
+                value: makeNative(function() {{
+                    return Promise.resolve(spoofedDevices.map((d, i) => ({{
+                        deviceId: d.device_id || ("dev_" + i),
+                        kind: d.kind,
+                        label: d.label,
+                        groupId: d.group_id || ("grp_" + i),
+                        toJSON: function() {{ return this; }}
+                    }})));
+                }}, 'enumerateDevices'),
+                configurable: true,
+                writable: true,
+                enumerable: false
+            }});
         }}
     }} catch(e) {{}}
         }}
@@ -740,18 +783,34 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
     // 10. Battery API Shield
         if (__hasDom) {{
     try {{
-        if (navigator.getBattery) {{
+        // Hunt A-14: the old code ASSIGNED navigator.getBattery, which creates
+        // an OWN property on the navigator INSTANCE. A real Chrome keeps
+        // getBattery on Navigator.prototype, and the navigator instance has
+        // NO own properties at all — so a single
+        // `Object.getOwnPropertyNames(navigator)` exposed the patch
+        // (measured: the real Chrome returned "(none)", the shielded one
+        // returned "getBattery"). The override now lives on the prototype.
+        const __batteryHost = (typeof Navigator !== 'undefined' && Navigator.prototype && Navigator.prototype.getBattery)
+            ? Navigator.prototype
+            : navigator;
+        if (__batteryHost.getBattery) {{
             const batData = {battery_json};
-            navigator.getBattery = makeNative(function() {{
-                return Promise.resolve({{
-                    charging: batData.charging,
-                    chargingTime: batData.charging_time,
-                    dischargingTime: batData.discharging_time,
-                    level: batData.level,
-                    addEventListener: makeNative(function() {{}}, 'addEventListener'),
-                    removeEventListener: makeNative(function() {{}}, 'removeEventListener')
-                }});
-            }}, 'getBattery');
+            const origGetBattery = __batteryHost.getBattery;
+            Object.defineProperty(__batteryHost, 'getBattery', {{
+                value: makeNative(function() {{
+                    return Promise.resolve({{
+                        charging: batData.charging,
+                        chargingTime: batData.charging_time,
+                        dischargingTime: batData.discharging_time,
+                        level: batData.level,
+                        addEventListener: makeNative(function() {{}}, 'addEventListener'),
+                        removeEventListener: makeNative(function() {{}}, 'removeEventListener')
+                    }});
+                }}, 'getBattery'),
+                configurable: true,
+                writable: true,
+                enumerable: false
+            }});
         }}
     }} catch(e) {{}}
         }}
@@ -773,13 +832,25 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 }},
                 timestamp: Date.now()
             }};
-            navigator.geolocation.getCurrentPosition = makeNative(function(success, error, options) {{
-                if (typeof success === 'function') success(spoofedPos);
-            }}, 'getCurrentPosition');
-            navigator.geolocation.watchPosition = makeNative(function(success, error, options) {{
-                if (typeof success === 'function') success(spoofedPos);
-                return 1;
-            }}, 'watchPosition');
+            // Hunt A-14: the geolocation methods live on Geolocation.prototype
+            // in a real Chrome — assigning them to the INSTANCE would add own
+            // properties that a detector can list with one line.
+            const geoHost = (typeof Geolocation !== 'undefined' && Geolocation.prototype && Geolocation.prototype.getCurrentPosition)
+                ? Geolocation.prototype
+                : navigator.geolocation;
+            Object.defineProperty(geoHost, 'getCurrentPosition', {{
+                value: makeNative(function(success, error, options) {{
+                    if (typeof success === 'function') success(spoofedPos);
+                }}, 'getCurrentPosition'),
+                configurable: true, writable: true, enumerable: false
+            }});
+            Object.defineProperty(geoHost, 'watchPosition', {{
+                value: makeNative(function(success, error, options) {{
+                    if (typeof success === 'function') success(spoofedPos);
+                    return 1;
+                }}, 'watchPosition'),
+                configurable: true, writable: true, enumerable: false
+            }});
         }}
     }} catch(e) {{}}
         }}
@@ -922,9 +993,17 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
                 }});
                 return inst;
             }});
-            window.speechSynthesis.getVoices = makeNative(function() {{
-                return voiceObjects;
-            }}, 'getVoices');
+            // Hunt A-14: getVoices lives on SpeechSynthesis.prototype in a
+            // real Chrome; the speechSynthesis INSTANCE has no own properties.
+            const speechHost = (typeof SpeechSynthesis !== 'undefined' && SpeechSynthesis.prototype && SpeechSynthesis.prototype.getVoices)
+                ? SpeechSynthesis.prototype
+                : window.speechSynthesis;
+            Object.defineProperty(speechHost, 'getVoices', {{
+                value: makeNative(function() {{
+                    return voiceObjects;
+                }}, 'getVoices'),
+                configurable: true, writable: true, enumerable: false
+            }});
         }}
     }} catch(e) {{}}
         }}
@@ -1438,6 +1517,7 @@ Object.defineProperty(window, '__nsi', {{value: true, configurable: false, enume
 
 }})();
 }}
+}})();
 """
     with open(ext_dir / "stealth.js", "w", encoding="utf-8") as f:
         f.write(stealth_js.strip() + "\n")

@@ -240,6 +240,8 @@ class StealthInjector:
         self.immediate_inject_skipped = 0
         # Hunt A-13: how many worker scopes the shield reached.
         self.worker_sessions_applied = 0
+        # Hunt A-15: how many CDP bindings were hidden from Object.keys.
+        self.binding_hidden = 0
         self._ws: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._next_id = 0
@@ -394,6 +396,36 @@ class StealthInjector:
             self._session_is_page[session_id] = target_type == "page"
         await self._apply_session(session_id)
 
+    async def _hide_binding(self, session_id: str) -> None:
+        """Make the CDP binding invisible in Object.keys(window) (A-15).
+
+        ``Runtime.addBinding`` installs the binding as an ENUMERABLE own
+        property of the window — one line of JavaScript
+        (``Object.keys(window)``) then reveals it. Redefining the same
+        property as non-enumerable keeps the function working (the runtime
+        calls the function object, not the descriptor) while removing it from
+        the ordinary enumeration.
+        """
+        name = json.dumps(self._binding_name)
+        expr = (
+            f"(() => {{ try {{ const d = Object.getOwnPropertyDescriptor(window, {name});"
+            " if (d && d.configurable) {"
+            f" Object.defineProperty(window, {name}, {{value: d.value, get: d.get, set: d.set,"
+            " enumerable: false, configurable: true, writable: true}); return 'hidden'; }"
+            " return 'not-configurable'; } catch (e) { return 'err'; } })()"
+        )
+        try:
+            res = await self._command(
+                "Runtime.evaluate",
+                {"expression": expr, "returnByValue": True, "awaitPromise": False},
+                session_id=session_id,
+            )
+            value = (res.get("result") or {}).get("value")
+            if value == "hidden":
+                self.binding_hidden += 1
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     async def _apply_worker_session(self, session_id: str) -> None:
         """Inject the shield into a worker target's global scope.
 
@@ -455,7 +487,17 @@ class StealthInjector:
             )
             await self._command("Runtime.enable", {}, session_id=session_id)
             # Anti-detect (F-05): per-profile random binding name.
-            await self._command("Runtime.addBinding", {"name": self._binding_name}, session_id=session_id)
+            # Hunt A-15: the binding is an ENUMERABLE own property of the
+            # window, so `Object.keys(window)` revealed it (measured: the real
+            # Chrome had 1234 own properties, the shielded one 1237). Two
+            # changes: the property is redefined as non-enumerable right after
+            # the install, and the binding is only installed at all when a
+            # synchronizer sink exists — without one the binding could never
+            # be accepted anyway (binding_event_allowed -> "no-sink"), so it
+            # was pure fingerprinting.
+            if self.opts.event_sink:
+                await self._command("Runtime.addBinding", {"name": self._binding_name}, session_id=session_id)
+                await self._hide_binding(session_id)
             # Proxy 407 challenges are answered via CDP (extension SW never loads).
             # handleAuthRequests is REQUIRED: without it Chrome never emits
             # Fetch.authRequired and the credential answer below stays dead.

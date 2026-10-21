@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1081 passed, 6 deselected** (1087 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1084 passed, 6 deselected** (1090 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -82,6 +82,26 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   worker is paused at start and released afterwards), the shield patches BOTH navigator
   prototypes, and the DOM-only sections are skipped where there is no DOM. After the fix
   the worker reports the profile's values (cores, memory, timezone, languages).
+- **The shield left its own properties on the globals (A-14).** The overrides were
+  ASSIGNED (`navigator.getBattery = ...`, `navigator.mediaDevices.enumerateDevices = ...`,
+  `navigator.geolocation.getCurrentPosition = ...`, `window.speechSynthesis.getVoices = ...`,
+  `navigator.gpu.requestAdapter = ...`). An assignment creates an OWN property on the
+  instance, while a real Chrome keeps all of them on the prototype — the navigator
+  instance carries no own properties at all. Measured: `Object.getOwnPropertyNames
+  (navigator)` returned "getBattery" for the shielded browser and "(none)" for the real
+  one — a one-line detector. All five overrides now live on their prototypes.
+- **The shield polluted the window with three of its own properties (A-15).** A top-level
+  `var` in an injected script becomes an enumerable own property of the window, and even
+  a non-enumerable one shows up in `Object.getOwnPropertyNames(window)`. Measured: the
+  real Chrome had **1234** own window properties, the shielded one **1237**
+  (`__scopeIsWorker` — enumerable, visible in `Object.keys(window)`; `__nsi` — the
+  idempotency flag; `__nse_ev_…` — the CDP binding, installed enumerable by
+  `Runtime.addBinding`). The scope flag moved into an IIFE, the idempotency flag is
+  stored under a per-run **Symbol** (invisible to `getOwnPropertyNames`, `Object.keys`
+  and `for-in`), the CDP binding is redefined as non-enumerable right after the install
+  and is not installed at all when no synchronizer sink exists (without one it could
+  never be accepted anyway). After the fix the shielded browser has exactly the same
+  1234 own window properties and no `__` key of its own.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,

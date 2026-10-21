@@ -275,4 +275,8 @@ def test_r3b_generated_stealth_js_has_no_branded_marker(tmp_path):
     profile = BrowserProfile(id="prof_marker", name="Marker Probe")
     js = (Path(eg.generate_profile_extension(profile, tmp_path / "ext")) / "stealth.js").read_text(encoding="utf-8")
     assert "__nazakShieldApplied" not in js
-    assert "window.__nsi" in js
+    # Hunt A-15: the idempotency flag is stored under a SYMBOL, so it is not
+    # an own property of the window any more (a string key would show up in
+    # Object.getOwnPropertyNames(window) — a one-line detector).
+    assert "Symbol('nazakShieldIdempotent')" in js
+    assert "Object.defineProperty(window, '__nsi'" not in js
