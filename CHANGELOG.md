@@ -63,6 +63,20 @@ hash, a working audio path, and every probed value matching the PROFILE (timezon
 offset, screen, cores, languages, GPU vendor and renderer, plugins, mimeTypes, voice
 count, UA/Client-Hints version coherence).
 
+### Verified as working (no change needed)
+
+The same real-Chrome probe confirmed the remaining shield surfaces behave like a real
+device and like the profile: the media-device list (labels from the profile, stable
+across reads), the battery state (the profile's charging flag/level/times), the local
+font pool, the WebGPU adapter info (vendor/architecture/device from the profile), the
+`getBoundingClientRect` geometry, `matchMedia` (light scheme, no reduced motion, the
+profile's DPR), `performance.now()` (monotonic), the WebRTC candidate scrubber (no
+private/local candidate in the SDP) and the port-scan shield (the profile's own CDP
+port is unreachable from the page). Two suspected findings were **disproved** by the
+same comparison and are therefore NOT defects: a blocked external `fetch` and a blocked
+API-port `fetch` happen identically in a plain Chrome (CORS), i.e. they are not caused
+by the shield.
+
 ### Coverage added
 
 - `tests/test_antidetect_shield_contract.py` — six source-level contracts in the repo's
