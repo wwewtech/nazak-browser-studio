@@ -47,11 +47,12 @@ def test_canvas_hash_is_stable_for_identical_content(tmp_path):
     """The noise must be written into a COPY: the live canvas keeps its clean
     pixels, so a second toDataURL() of the same content hashes identically."""
     js = _stealth(tmp_path, canvas_noise=True, canvas_noise_seed=777888)
-    anchor = js.find("HTMLCanvasElement.prototype.toDataURL")
-    block = js[anchor : anchor + 2200]
-    code = "\n".join(line for line in block.splitlines() if not line.strip().startswith("//"))
-    assert "ctx.putImageData" not in code, "the noise must not be written back into the live canvas (A-04)"
-    assert "copyCtx.putImageData" in code, "the noise must be applied to a copy (A-04)"
+    # Hunt A-22: the copy helper moved — the noise is applied ONCE, on the
+    # raw pixels, and the copy is encoded from them.
+    helper = js[js.find("const noisyCopy") :][:900]
+    assert "copyCtx.putImageData" in helper, "the noise must be applied to a copy (A-04)"
+    assert "rawImageData(ctx" in helper, "the copy must read the raw pixels (A-22)"
+    assert "ctx.putImageData" not in helper, "the noise must not be written back into the live canvas (A-04)"
 
 
 def test_audio_noise_phase_shifts_per_call(tmp_path):

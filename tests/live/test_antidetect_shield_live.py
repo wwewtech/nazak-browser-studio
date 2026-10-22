@@ -53,6 +53,18 @@ PROBE = """() => {
   t('measure_1', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
   t('measure_2', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
   t('measure_3', () => { const c=document.createElement('canvas').getContext('2d'); c.font='16px Arial'; return c.measureText('probe').width; });
+  // A-22: a main canvas and an OffscreenCanvas with the SAME content must
+  // produce the SAME pixels (a plain Chrome: 0 differing bytes).
+  t('canvas_offscreen_match', () => {
+    const draw = (ctx) => { ctx.textBaseline='top'; ctx.font='14px Arial'; ctx.fillStyle='#f60'; ctx.fillRect(125,1,62,20); ctx.fillStyle='#069'; ctx.font='11pt Arial'; ctx.fillText('probe',2,15); };
+    const oc = new OffscreenCanvas(300, 80); draw(oc.getContext('2d'));
+    const c = document.createElement('canvas'); c.width=300; c.height=80; draw(c.getContext('2d'));
+    const a = oc.getContext('2d').getImageData(0,0,300,80).data;
+    const b = c.getContext('2d').getImageData(0,0,300,80).data;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
+    return 'diff=' + diff;
+  });
   t('audio_render', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); return 'len=' + b.length + ' ch=' + b.numberOfChannels; });
   t('audio_channelData', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); const d=b.getChannelData(0); return 'len=' + d.length; });
   t('voices', () => speechSynthesis.getVoices().length);
@@ -210,6 +222,12 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["measure_1"] == res["measure_2"] == res["measure_3"], (
             f"the font metric is not stable for identical text (A-07): "
             f"{res['measure_1']} / {res['measure_2']} / {res['measure_3']}"
+        )
+
+        # A-22: the main canvas and the OffscreenCanvas must agree
+        assert res["canvas_offscreen_match"].endswith("diff=0"), (
+            f"the main and offscreen canvases render different images for the same "
+            f"content (A-22): {res['canvas_offscreen_match']}"
         )
 
         # A-13: the WORKER scope must be shielded too — a page reads the real

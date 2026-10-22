@@ -145,7 +145,12 @@ def test_a04_to_data_url_does_not_mutate_the_live_canvas():
         "toDataURL must not write the noise back into the live canvas — the hash of "
         "identical content must stay stable (A-04)"
     )
-    assert "copyCtx.putImageData" in code, "the noise must be written into the COPY (A-04)"
+    # the copy lives in the shared noisyCopy helper (hunt A-22 moved it there)
+    helper = src[src.find("const noisyCopy") : src.find("const noisyCopy") + 900]
+    assert "copyCtx.putImageData" in helper, "the noise must be written into the COPY (A-04)"
+    assert "rawImageData(ctx" in helper, (
+        "the copy must read the RAW pixels — the hooked getImageData would apply the noise twice (A-22)"
+    )
     assert "noisyCopy" in code, "toDataURL must hash a noised COPY of the canvas (A-04)"
 
 
@@ -368,6 +373,25 @@ def test_a18_client_hints_platform_is_the_os_name():
         "the uaData platform must not use the legacy navigator.platform string (A-18)"
     )
     assert "NavigatorUAData" in src, "the userAgentData object must be built on the real UAData prototype (A-18)"
+
+
+def test_a22_canvas_noise_is_applied_once_on_every_path():
+    """A-22: the noise was applied in getImageData AND again in the
+    toDataURL/toBlob copy, so the main canvas carried it twice while the
+    OffscreenCanvas carried it once — two different images for the SAME
+    content (measured: 6908 differing bytes; a plain Chrome reports 0)."""
+    src = _generated_js()
+    assert "const rawImageData" in src, (
+        "the copy must read the RAW pixels — the hooked getImageData would apply the noise a second time (A-22)"
+    )
+    assert "OffscreenCanvas.prototype.convertToBlob" in src, (
+        "the OffscreenCanvas encoding path must be covered as well (A-22)"
+    )
+    raw_block = src[src.find("const rawImageData") : src.find("const rawImageData") + 700]
+    assert "origGetImageData.call" in raw_block, "the raw reader must use the original getImageData (A-22)"
+    assert "origOffscreenGetImageData.call" in raw_block, (
+        "the raw reader must use the offscreen original — it is a different class (A-22)"
+    )
 
 
 def test_generated_shield_is_valid_javascript():

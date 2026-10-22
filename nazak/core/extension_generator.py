@@ -1227,13 +1227,22 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             }};
 
             const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+            // Hunt A-22: the noise is applied EXACTLY ONCE, at the point
+            // where the pixels are read. The old code applied it in
+            // getImageData AND again in the toDataURL/toBlob copy, so the
+            // main canvas carried the noise twice while the OffscreenCanvas
+            // carried it once — two different images for the SAME content
+            // (measured: 6908 differing bytes; a plain Chrome reports 0).
+            // The copy now encodes the ALREADY-NOISED pixels.
+            const origOffscreenGetImageData = (window.OffscreenCanvasRenderingContext2D)
+                ? OffscreenCanvasRenderingContext2D.prototype.getImageData
+                : null;
             CanvasRenderingContext2D.prototype.getImageData = makeNative(function(sx, sy, sw, sh) {{
                 const imageData = origGetImageData.apply(this, arguments);
                 return mutateCanvasData(imageData);
             }}, 'getImageData');
 
             if (window.OffscreenCanvasRenderingContext2D) {{
-                const origOffscreenGetImageData = OffscreenCanvasRenderingContext2D.prototype.getImageData;
                 OffscreenCanvasRenderingContext2D.prototype.getImageData = makeNative(function() {{
                     const img = origOffscreenGetImageData.apply(this, arguments);
                     return mutateCanvasData(img);
@@ -1250,10 +1259,31 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // instability a canvas probe looks for. The noise is now
             // applied to a scratch canvas: the live canvas keeps its clean
             // pixels, and the SAME content always yields the SAME hash.
+            //
+            // Hunt A-22: the copy must read the RAW pixels — the hooked
+            // getImageData would apply the noise a SECOND time (the main
+            // canvas was noised twice, the OffscreenCanvas once, and
+            // OffscreenCanvas.convertToBlob not at all — three different
+            // images for ONE content, measured: the main PNG was 14314
+            // bytes against the offscreen 9540, while a plain Chrome
+            // produced the same image in both). All paths now share ONE
+            // noise application on the raw pixels.
+            const rawImageData = function(ctx, sx, sy, sw, sh) {{
+                if (window.OffscreenCanvasRenderingContext2D
+                    && ctx instanceof OffscreenCanvasRenderingContext2D
+                    && origOffscreenGetImageData) {{
+                    return origOffscreenGetImageData.call(ctx, sx, sy, sw, sh);
+                }}
+                return origGetImageData.call(ctx, sx, sy, sw, sh);
+            }};
+            // The noised COPY of a canvas — the SINGLE place where the noise
+            // is applied to the encoded output. The source pixels are read
+            // raw and noised exactly once, so every encoding path (toDataURL,
+            // toBlob, OffscreenCanvas.convertToBlob) yields the SAME image.
             const noisyCopy = function(source) {{
                 const ctx = source.getContext('2d');
                 if (!ctx || source.width <= 0 || source.height <= 0) return null;
-                const img = ctx.getImageData(0, 0, source.width, source.height);
+                const img = rawImageData(ctx, 0, 0, source.width, source.height);
                 mutateCanvasData(img);
                 const copy = document.createElement('canvas');
                 copy.width = source.width;
@@ -1263,6 +1293,29 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 copyCtx.putImageData(img, 0, 0);
                 return copy;
             }};
+            // The OffscreenCanvas path: the same content must produce the same
+            // image as the main canvas, so convertToBlob encodes a noised
+            // COPY as well.
+            if (window.OffscreenCanvas && window.OffscreenCanvas.prototype
+                && window.OffscreenCanvas.prototype.convertToBlob) {{
+                const origConvertToBlob = OffscreenCanvas.prototype.convertToBlob;
+                OffscreenCanvas.prototype.convertToBlob = makeNative(function() {{
+                    try {{
+                        const ctx = this.getContext('2d');
+                        if (ctx && this.width > 0 && this.height > 0) {{
+                            const img = rawImageData(ctx, 0, 0, this.width, this.height);
+                            mutateCanvasData(img);
+                            const copy = new OffscreenCanvas(this.width, this.height);
+                            const copyCtx = copy.getContext('2d');
+                            if (copyCtx) {{
+                                copyCtx.putImageData(img, 0, 0);
+                                return origConvertToBlob.apply(copy, arguments);
+                            }}
+                        }}
+                    }} catch(err) {{}}
+                    return origConvertToBlob.apply(this, arguments);
+                }}, 'convertToBlob');
+            }}
             HTMLCanvasElement.prototype.toDataURL = makeNative(function() {{
                 try {{
                     const copy = noisyCopy(this);

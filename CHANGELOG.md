@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1088 passed, 6 deselected** (1094 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1089 passed, 6 deselected** (1095 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -130,6 +130,17 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   `userAgentData` object is built on the real `NavigatorUAData.prototype` instead of a
   plain object (a plain object carries Object.prototype's methods — measured: the real
   Chrome's prototype lists exactly brands/mobile/platform/getHighEntropyValues/toJSON).
+- **The main canvas and the OffscreenCanvas rendered different images (A-22).** The
+  noise was applied in `getImageData` AND again in the `toDataURL`/`toBlob` copy, so the
+  main canvas carried it twice while the OffscreenCanvas carried it once — and
+  `OffscreenCanvas.convertToBlob` was not covered at all. Since the noise is derived
+  from the CONTENT (A-04), a second application produced a *different* image: measured
+  6908 differing bytes between the two canvases for the same content, while a plain
+  Chrome reports 0. The noise is now applied exactly once, on the raw pixels (the copy
+  reads the ORIGINAL `getImageData` of the context's own class — an OffscreenCanvas
+  context is a different class), and every encoding path (toDataURL, toBlob,
+  OffscreenCanvas.convertToBlob) encodes the same noised image. Measured after the fix:
+  0 differing bytes, and both canvases are stable across repeated reads.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
