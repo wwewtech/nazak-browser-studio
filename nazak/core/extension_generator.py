@@ -570,6 +570,9 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // 7. WebGL & GPU Hardware Spoofing (Shields actual host graphics card)
         if (__hasDom) {{
     try {{
+        // Hunt A-24: the contexts that requested the WEBGL_debug_renderer_info
+        // extension — the UNMASKED_* parameters answer null until then.
+        const __extRequested = new WeakSet();
         const webglParams = {{
             37445: {webgl_vendor_json},           // UNMASKED_VENDOR_WEBGL
             37446: {webgl_renderer_json},         // UNMASKED_RENDERER_WEBGL
@@ -619,7 +622,21 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 7937: 'WebKit WebGL',
             }};
             const merged = Object.assign({{}}, webglParams, derived);
+            // Hunt A-24: UNMASKED_VENDOR_WEBGL (37445) and
+            // UNMASKED_RENDERER_WEBGL (37446) are EXTENSION parameters: in a
+            // real Chrome they return NULL until the extension has been
+            // requested, and only then the real values (measured in a plain
+            // Chrome: before getExtension -> null, after -> the vendor).
+            // The shield answered with the profile's string in BOTH cases,
+            // so a detector that reads the parameter without asking for the
+            // extension saw a value a real browser never produces. The
+            // contexts that requested the extension are tracked, and the
+            // parameter answers null until then.
             proto.getParameter = makeNative(function(param) {{
+                if (param === 37445 || param === 37446) {{
+                    if (!__extRequested.has(this)) return null;
+                    return merged[param];
+                }}
                 if (param in merged) return merged[param];
                 return origGetParam.apply(this, arguments);
             }}, 'getParameter');
@@ -639,20 +656,29 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // WEBGL_debug_info extension exposes UNMASKED_VENDOR/RENDERER through
         // getParameter on the *extension* object — the old hook never covered
         // it, leaking the host GPU. Wrap the extension getter itself.
-        try {{
-            const origGetExt = WebGLRenderingContext.prototype.getExtension;
-            WebGLRenderingContext.prototype.getExtension = makeNative(function(name) {{
+        //
+        // Hunt A-24: the hook covered ONLY WebGLRenderingContext.prototype —
+        // a WebGL2 context has a DIFFERENT prototype (measured: the two
+        // prototypes are not the same object), so on a WebGL2 context the
+        // extension was not hooked and the host GPU leaked. Both prototypes
+        // are hooked now. The extension object itself is left untouched (a
+        // real WEBGL_debug_renderer_info has no getParameter method — the
+        // old code added one, which was itself a tell).
+        const hookDebugExtension = function(proto) {{
+            if (!proto || !proto.getExtension) return;
+            const origGetExt = proto.getExtension;
+            proto.getExtension = makeNative(function(name) {{
                 const ext = origGetExt.apply(this, arguments);
-                if (name === 'WEBGL_debug_info' && ext) {{
-                    const origExtGetParam = ext.getParameter;
-                    ext.getParameter = makeNative(function(p) {{
-                        if (p === 37445) return {webgl_vendor_json};
-                        if (p === 37446) return {webgl_renderer_json};
-                        return origExtGetParam.apply(ext, arguments);
-                    }}, 'getParameter');
+                if (name === 'WEBGL_debug_renderer_info' && ext) {{
+                    // the context now answers the UNMASKED_* parameters
+                    try {{ __extRequested.add(this); }} catch(e) {{}}
                 }}
                 return ext;
             }}, 'getExtension');
+        }};
+        try {{
+            hookDebugExtension(WebGLRenderingContext.prototype);
+            if (window.WebGL2RenderingContext) hookDebugExtension(WebGL2RenderingContext.prototype);
         }} catch(e) {{}}
     }} catch(e) {{}}
         }}

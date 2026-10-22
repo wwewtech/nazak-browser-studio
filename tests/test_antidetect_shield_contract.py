@@ -394,6 +394,29 @@ def test_a22_canvas_noise_is_applied_once_on_every_path():
     )
 
 
+def test_a24_unmasked_parameters_follow_the_extension_semantics():
+    """A-24: UNMASKED_VENDOR_WEBGL (37445) and UNMASKED_RENDERER_WEBGL (37446)
+    are EXTENSION parameters: in a real Chrome they return NULL until the
+    extension has been requested (measured: before getExtension -> null,
+    after -> the vendor). The shield always answered with the profile's
+    string. It also hooked getExtension on WebGLRenderingContext.prototype
+    only — a WebGL2 context has a DIFFERENT prototype, so the host GPU
+    leaked there."""
+    src = _generated_js()
+    assert "__extRequested" in src, "the UNMASKED_* parameters must answer null until the extension is requested (A-24)"
+    assert "if (!__extRequested.has(this)) return null;" in src, (
+        "the parameter must be null before the extension is requested (A-24)"
+    )
+    assert "hookDebugExtension(WebGL2RenderingContext.prototype)" in src, (
+        "the getExtension hook must cover the WebGL2 prototype too — it is a different "
+        "prototype, and the host GPU leaked there (A-24)"
+    )
+    assert "ext.getParameter = makeNative" not in src, (
+        "the extension object must keep its native shape — a real "
+        "WEBGL_debug_renderer_info has no getParameter method (A-24)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

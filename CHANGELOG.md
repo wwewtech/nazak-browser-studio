@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1089 passed, 6 deselected** (1095 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1090 passed, 6 deselected** (1096 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -141,6 +141,19 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   context is a different class), and every encoding path (toDataURL, toBlob,
   OffscreenCanvas.convertToBlob) encodes the same noised image. Measured after the fix:
   0 differing bytes, and both canvases are stable across repeated reads.
+- **The WebGL UNMASKED_* parameters ignored the extension semantics (A-24).**
+  `UNMASKED_VENDOR_WEBGL` (37445) and `UNMASKED_RENDERER_WEBGL` (37446) are EXTENSION
+  parameters: a real Chrome returns **null** until the extension has been requested
+  (measured in a plain Chrome: before `getExtension` -> null, after -> the vendor). The
+  shield always answered with the profile's string, so a detector that reads the
+  parameter without asking for the extension saw a value a real browser never produces.
+  Two further defects: the `getExtension` hook covered only
+  `WebGLRenderingContext.prototype` while a **WebGL2 context has a different
+  prototype** (measured: the two prototypes are not the same object), so the host GPU
+  leaked there; and the shield ADDED a `getParameter` method to the extension object,
+  which a real `WEBGL_debug_renderer_info` does not have. The parameters now follow the
+  native semantics (null before the extension, the profile's vendor after), both
+  prototypes are hooked, and the extension object keeps its native shape.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
@@ -171,15 +184,24 @@ patch. The **Client Hints** are coherent too: the UA string, the brands, the
 high-entropy hints and the `Sec-CH-UA` HTTP headers all carry the same version, and the
 JS-side `userAgentData` agrees with the header side. The **error stack** shape, the
 computed style, the storage quota, the touch coherence, the `Intl` number/date formats
-and the WebGL extension list are identical to a plain Chrome.
+and the WebGL extension list are identical to a plain Chrome. The **WebGL2** context,
+the **WebGL pixel output**, the **shader precision formats**, the **CSS engine's**
+feature detection (@supports: grid/subgrid/lab()/oklch()/container queries/:has()/
+view-transition — all identical), the **AudioContext** state and sample rate, the
+**requestAnimationFrame** cadence (16.66 ms — the display rate), the **clock skew**
+between `performance.now()` and `Date.now()`, and the **Client Hints** on the HTTP side
+(the `Sec-CH-UA-*` headers agree with the JS-side values, including the high-entropy
+hints when the server asks for them with `Accept-CH`).
 
 Five suspected findings were **disproved** by the same comparison and are therefore NOT
 defects: a blocked external `fetch` and a blocked API-port `fetch` happen identically in
 a plain Chrome (CORS), `navigator.webdriver === true` in the Playwright-driven
 comparison comes from Playwright itself (read through a raw CDP connection the page
 reports `false`), the `Date`/`Intl` discrepancy is the profile's own timezone (the
-isolated world agrees), and the Client Hints version mismatch was the deliberate
-runtime-version override (UA, brands and headers agree with each other).
+isolated world agrees), the Client Hints version mismatch was the deliberate
+runtime-version override (UA, brands and headers agree with each other), and the
+`platformVersion` difference between the shield and a plain Chrome is the profile's own
+Windows build (the headers and the JS agree with each other).
 
 ### Coverage added
 

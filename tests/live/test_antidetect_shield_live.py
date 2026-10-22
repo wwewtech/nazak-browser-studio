@@ -98,8 +98,10 @@ PROBE = """() => {
            ' outer=' + w.ow + 'x' + w.oh + ' avail=' + s.w + 'x' + s.h;
   });
   t('languages', () => navigator.languages.join(','));
-  t('webgl_vendor', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37445) : 'no-ctx'; });
-  t('webgl_renderer', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37446) : 'no-ctx'; });
+  t('webgl_vendor', () => { const c=document.createElement('canvas'); const g=c.getContext('webgl'); if (!g) return 'no-ctx';
+      g.getExtension('WEBGL_debug_renderer_info'); return g.getParameter(37445); });
+  t('webgl_renderer', () => { const c=document.createElement('canvas'); const g=c.getContext('webgl'); if (!g) return 'no-ctx';
+      g.getExtension('WEBGL_debug_renderer_info'); return g.getParameter(37446); });
   // A-17: the aliased ranges are PAIRS and come back as Float32Array
   t('webgl_aliased', () => {
     const c = document.createElement('canvas').getContext('webgl');
@@ -113,6 +115,27 @@ PROBE = """() => {
   // a real UAData instance.
   t('ch_platform', () => navigator.userAgentData ? navigator.userAgentData.platform : 'none');
   t('ch_proto', () => navigator.userAgentData ? Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.userAgentData)).join(',') : 'none');
+  // A-24: the UNMASKED_* parameters answer null until the extension is
+  // requested (the native semantics), on BOTH the WebGL1 and WebGL2 context.
+  t('webgl_unmasked_before', () => {
+    const c1 = document.createElement('canvas'); const g1 = c1.getContext('webgl');
+    const c2 = document.createElement('canvas'); const g2 = c2.getContext('webgl2');
+    if (!g1 || !g2) return 'no-ctx';
+    return 'webgl1=' + String(g1.getParameter(37445)) + ' webgl2=' + String(g2.getParameter(37445));
+  });
+  t('webgl_unmasked_after', () => {
+    const c1 = document.createElement('canvas'); const g1 = c1.getContext('webgl');
+    const c2 = document.createElement('canvas'); const g2 = c2.getContext('webgl2');
+    if (!g1 || !g2) return 'no-ctx';
+    g1.getExtension('WEBGL_debug_renderer_info');
+    g2.getExtension('WEBGL_debug_renderer_info');
+    return 'webgl1=' + String(g1.getParameter(37445)) + ' webgl2=' + String(g2.getParameter(37445));
+  });
+  t('webgl_ext_shape', () => {
+    const c1 = document.createElement('canvas'); const g1 = c1.getContext('webgl');
+    const ext = g1.getExtension('WEBGL_debug_renderer_info');
+    return ext ? ('getParameter=' + typeof ext.getParameter) : 'no-ext';
+  });
   // A-14/A-15: the shield must leave NO trace of its own on the globals.
   t('nav_own_props', () => Object.getOwnPropertyNames(navigator).join(',') || '(none)');
   t('win_dunder_own', () => Object.getOwnPropertyNames(window).filter(n => /^__/.test(n)).join(',') || '(none)');
@@ -279,6 +302,19 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         )
         assert "getHighEntropyValues" in res["ch_proto"], (
             f"the userAgentData object must be a real UAData instance (A-18): {res['ch_proto']}"
+        )
+
+        # A-24: the UNMASKED_* parameters follow the native semantics — null
+        # before the extension is requested, the profile's vendor after.
+        assert res["webgl_unmasked_before"].endswith("webgl1=null webgl2=null"), (
+            f"the UNMASKED_* parameters must be null before the extension is requested "
+            f"(A-24): {res['webgl_unmasked_before']}"
+        )
+        assert fp.webgl_vendor in res["webgl_unmasked_after"], (
+            f"the UNMASKED_VENDOR must be the profile's after the extension (A-24): {res['webgl_unmasked_after']}"
+        )
+        assert res["webgl_ext_shape"].endswith("getParameter=undefined"), (
+            f"the extension object must keep its native shape (A-24): {res['webgl_ext_shape']}"
         )
     finally:
         launcher.stop(profile.id)
