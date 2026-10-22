@@ -342,6 +342,34 @@ def test_a16_font_pool_is_generated_per_profile():
         assert core in a.fonts, f"the core family {core} is missing from the pool"
 
 
+def test_a17_webgl_aliased_ranges_are_float32_arrays():
+    """A-17: the ALIASED_*_RANGE parameters are PAIRS and WebGL returns them
+    as a Float32Array — the shield substituted plain numbers (and mixed up the
+    pnumbs: 33901 is the POINT size range, 33902 the LINE width range).
+    Measured: the host returned Float32Array(1, 1024) where the shield
+    returned the scalar 1 — the type alone exposed the patch."""
+    src = _generated_js()
+    assert "33901: new Float32Array([1, 1])" in src, "ALIASED_POINT_SIZE_RANGE must be a Float32Array pair (A-17)"
+    assert "33902: new Float32Array([1, 1024])" in src, "ALIASED_LINE_WIDTH_RANGE must be a Float32Array pair (A-17)"
+    assert "33901: 1," not in src and "33902: 255," not in src, "the aliased ranges must not be plain numbers (A-17)"
+
+
+def test_a18_client_hints_platform_is_the_os_name():
+    """A-18: the Client Hints `platform` is the OS NAME ("Windows", "macOS",
+    "Linux") while `navigator.platform` is the legacy API string ("Win32").
+    The shield used the legacy string for both, so userAgentData.platform
+    reported "Win32" — a value the UA-CH spec never produces."""
+    src = _generated_js()
+    # the OS name is substituted into the generated JS as a literal
+    assert '"Windows"' in src or '"macOS"' in src or '"Linux"' in src, (
+        "the Client Hints platform must be the OS name, not navigator.platform (A-18)"
+    )
+    assert "platform: {platform_json}" not in src, (
+        "the uaData platform must not use the legacy navigator.platform string (A-18)"
+    )
+    assert "NavigatorUAData" in src, "the userAgentData object must be built on the real UAData prototype (A-18)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

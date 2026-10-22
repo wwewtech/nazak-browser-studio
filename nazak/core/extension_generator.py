@@ -227,6 +227,19 @@ chrome.webRequest.onAuthRequired.addListener(
     geo_json = json.dumps(fp.geolocation.model_dump())
     battery_json = json.dumps(fp.battery.model_dump())
     platform_json = json.dumps(fp.platform)
+    # Hunt A-18: the Client Hints `platform` is the OS NAME ("Windows",
+    # "macOS", "Linux") while `navigator.platform` is the legacy API string
+    # ("Win32", "MacIntel", "Linux x86_64"). The shield used the legacy
+    # string for both, so `navigator.userAgentData.platform` reported
+    # "Win32" — a value the UA-CH spec never produces (measured: the real
+    # Chrome reports "Windows"), and a one-line check.
+    _ch_platform = "Windows"
+    _pf_lower = str(fp.platform).lower()
+    if "mac" in _pf_lower:
+        _ch_platform = "macOS"
+    elif "linux" in _pf_lower or "android" in _pf_lower:
+        _ch_platform = "Linux"
+    ch_platform_json = json.dumps(_ch_platform)
     vendor_json = json.dumps(fp.vendor)
     architecture_json = json.dumps(fp.architecture)
     bitness_json = json.dumps(fp.bitness)
@@ -394,15 +407,30 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // 3. User-Agent Data & High-Entropy Client Hints
     try {{
         const brandsData = {brands_json};
-        const uaData = {{
-            brands: brandsData,
-            mobile: {str(fp.mobile).lower()},
-            platform: {platform_json},
-            getHighEntropyValues: makeNative(function(hints) {{
+        // Hunt A-18: the uaData object must be a real UAData instance — a
+        // plain object has Object.prototype's methods, while the real one
+        // carries brands/mobile/platform/getHighEntropyValues/toJSON on its
+        // OWN prototype (measured: the real Chrome's prototype lists exactly
+        // those five). A plain object is a one-line tell.
+        const uaDataProto = (typeof NavigatorUAData !== 'undefined' && NavigatorUAData.prototype)
+            ? NavigatorUAData.prototype
+            : Object.prototype;
+        const uaData = Object.create(uaDataProto);
+        Object.defineProperty(uaData, 'brands', {{
+            value: brandsData, configurable: true, enumerable: true
+        }});
+        Object.defineProperty(uaData, 'mobile', {{
+            value: {str(fp.mobile).lower()}, configurable: true, enumerable: true
+        }});
+        Object.defineProperty(uaData, 'platform', {{
+            value: {ch_platform_json}, configurable: true, enumerable: true
+        }});
+        Object.defineProperty(uaData, 'getHighEntropyValues', {{
+            value: makeNative(function(hints) {{
                 return Promise.resolve({{
                     brands: brandsData,
                     mobile: {str(fp.mobile).lower()},
-                    platform: {platform_json},
+                    platform: {ch_platform_json},
                     architecture: {architecture_json},
                     bitness: {bitness_json},
                     model: {model_json},
@@ -410,10 +438,14 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     uaFullVersion: {ua_full_version_json}
                 }});
             }}, 'getHighEntropyValues'),
-            toJSON: makeNative(function() {{
-                return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {platform_json} }};
-            }}, 'toJSON')
-        }};
+            configurable: true, enumerable: false, writable: true
+        }});
+        Object.defineProperty(uaData, 'toJSON', {{
+            value: makeNative(function() {{
+                return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {ch_platform_json} }};
+            }}, 'toJSON'),
+            configurable: true, enumerable: false, writable: true
+        }});
         __defineNav('userAgentData', __navGetter('userAgentData', uaData));
     }} catch(e) {{}}
 
@@ -571,10 +603,18 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 3415: 8,                         // ALPHA_BITS
                 32773: 16384,                    // MAX_ELEMENTS_VERTICES (varies)
                 32774: 16384,                    // MAX_ELEMENTS_INDICES
-                33901: 1,                        // ALIASED_POINT_SIZE_RANGE (min)
-                33902: 255,                      // ALIASED_POINT_SIZE_RANGE (max)
-                33903: 1,                        // ALIASED_LINE_WIDTH_RANGE (min)
-                33904: 1,                        // ALIASED_LINE_WIDTH_RANGE (max)
+                // Hunt A-17: the ALIASED_*_RANGE parameters are PAIRS, and
+                // WebGL returns them as a Float32Array — the old code
+                // substituted plain numbers and mixed up the two pnumbs
+                // (33901 is the POINT size range, 33902/33903/33904 the LINE
+                // width range). Measured: the host returned
+                // ALIASED_LINE_WIDTH_RANGE = Float32Array(1, 1024) while the
+                // shield returned the scalar 1 — the type alone exposed the
+                // patch, and the max/min pair was inconsistent.
+                33901: new Float32Array([1, 1]),      // ALIASED_POINT_SIZE_RANGE
+                33902: new Float32Array([1, 1024]),   // ALIASED_LINE_WIDTH_RANGE
+                33903: new Float32Array([1, 1]),      // (legacy aliases)
+                33904: new Float32Array([1, 1024]),
                 7936: {platform_json}.includes('Win') ? 'WebKit' : 'WebKit',
                 7937: 'WebKit WebGL',
             }};

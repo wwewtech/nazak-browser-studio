@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1086 passed, 6 deselected** (1092 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1088 passed, 6 deselected** (1094 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -115,6 +115,21 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   `@font-face { src: local(...) }` — so the rendering matches the claim. Measured after
   the fix: a Windows profile renders 38/38 of its claimed families, a macOS profile on
   a Windows host went from 8/28 to 35/39.
+- **The WebGL aliased ranges had the wrong type and the wrong pnums (A-17).**
+  `ALIASED_POINT_SIZE_RANGE` and `ALIASED_LINE_WIDTH_RANGE` are PAIRS that WebGL
+  returns as a `Float32Array`; the shield substituted plain numbers and mixed up the
+  pnumbs (33901 is the POINT size range, 33902 the LINE width range). Measured: the host
+  returned `Float32Array(1, 1024)` where the shield returned the scalar `1` — the type
+  alone exposed the patch, and the min/max pair contradicted itself. Both are now
+  Float32Array pairs with the real GPU values.
+- **The Client Hints platform reported the legacy API string (A-18).**
+  `navigator.userAgentData.platform` is the OS NAME ("Windows", "macOS", "Linux") while
+  `navigator.platform` is the legacy string ("Win32"); the shield used the legacy string
+  for both, so the page saw `platform: "Win32"` — a value the UA-CH spec never produces
+  (measured: the real Chrome reports "Windows"). The two are now separate, and the
+  `userAgentData` object is built on the real `NavigatorUAData.prototype` instead of a
+  plain object (a plain object carries Object.prototype's methods — measured: the real
+  Chrome's prototype lists exactly brands/mobile/platform/getHighEntropyValues/toJSON).
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,
@@ -137,13 +152,23 @@ timezone, languages, screen) — the worker-scope fix of A-13 reaches them too.
 `navigator.connection` is left to Chrome on purpose: it randomises per profile
 (each profile has its own user-data-dir), the value is stable within a profile
 (5 reads identical) and differs between profiles — Chrome's own behaviour, already
-correct.
+correct. The **timezone** is coherent end to end: the offset, the `Intl` zone and the
+`Date.prototype.toString` string all agree, and a raw CDP read in an ISOLATED world
+(where the shield does not run) returns exactly the same values — so the timezone comes
+from the browser's own `Emulation.setTimezoneOverride`, not from a partial page-level
+patch. The **Client Hints** are coherent too: the UA string, the brands, the
+high-entropy hints and the `Sec-CH-UA` HTTP headers all carry the same version, and the
+JS-side `userAgentData` agrees with the header side. The **error stack** shape, the
+computed style, the storage quota, the touch coherence, the `Intl` number/date formats
+and the WebGL extension list are identical to a plain Chrome.
 
-Four suspected findings were **disproved** by the same comparison and are therefore NOT
+Five suspected findings were **disproved** by the same comparison and are therefore NOT
 defects: a blocked external `fetch` and a blocked API-port `fetch` happen identically in
-a plain Chrome (CORS), and `navigator.webdriver === true` in the Playwright-driven
+a plain Chrome (CORS), `navigator.webdriver === true` in the Playwright-driven
 comparison comes from Playwright itself (read through a raw CDP connection the page
-reports `false`).
+reports `false`), the `Date`/`Intl` discrepancy is the profile's own timezone (the
+isolated world agrees), and the Client Hints version mismatch was the deliberate
+runtime-version override (UA, brands and headers agree with each other).
 
 ### Coverage added
 

@@ -88,6 +88,19 @@ PROBE = """() => {
   t('languages', () => navigator.languages.join(','));
   t('webgl_vendor', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37445) : 'no-ctx'; });
   t('webgl_renderer', () => { const c=document.createElement('canvas').getContext('webgl'); return c ? c.getParameter(37446) : 'no-ctx'; });
+  // A-17: the aliased ranges are PAIRS and come back as Float32Array
+  t('webgl_aliased', () => {
+    const c = document.createElement('canvas').getContext('webgl');
+    if (!c) return 'no-ctx';
+    const p = c.getParameter(33901), l = c.getParameter(33902);
+    return 'point=' + (p && p.constructor ? p.constructor.name : typeof p) +
+           ' line=' + (l && l.constructor ? l.constructor.name : typeof l) +
+           ' lineValues=' + (l ? Array.from(l).join('/') : 'n/a');
+  });
+  // A-18: the Client Hints platform is the OS NAME, and the uaData object is
+  // a real UAData instance.
+  t('ch_platform', () => navigator.userAgentData ? navigator.userAgentData.platform : 'none');
+  t('ch_proto', () => navigator.userAgentData ? Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.userAgentData)).join(',') : 'none');
   // A-14/A-15: the shield must leave NO trace of its own on the globals.
   t('nav_own_props', () => Object.getOwnPropertyNames(navigator).join(',') || '(none)');
   t('win_dunder_own', () => Object.getOwnPropertyNames(window).filter(n => /^__/.test(n)).join(',') || '(none)');
@@ -233,6 +246,21 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         )
         assert res["win_dunder_keys"].endswith("(none)"), (
             f"the shield left enumerable own properties on the window (A-15): {res['win_dunder_keys']}"
+        )
+
+        # A-17: the WebGL aliased ranges must come back as Float32Array pairs
+        # (the host's shape) — a scalar there exposes the patch.
+        assert "point=Float32Array" in res["webgl_aliased"], res["webgl_aliased"]
+        assert "line=Float32Array" in res["webgl_aliased"], res["webgl_aliased"]
+
+        # A-18: the Client Hints platform is the OS name, and the uaData object
+        # carries the real UAData prototype members.
+        expected_ch = "Windows" if "Win" in fp.platform else ("macOS" if "Mac" in fp.platform else "Linux")
+        assert res["ch_platform"].endswith(expected_ch), (
+            f"the Client Hints platform must be the OS name (A-18): {res['ch_platform']}"
+        )
+        assert "getHighEntropyValues" in res["ch_proto"], (
+            f"the userAgentData object must be a real UAData instance (A-18): {res['ch_proto']}"
         )
     finally:
         launcher.stop(profile.id)
