@@ -87,15 +87,21 @@ def test_a02_intl_constructors_keep_their_static_side():
 def test_a03_voices_use_defineproperty_not_assign():
     """A-03: SpeechSynthesisVoice.prototype.name is a GETTER-ONLY accessor.
     Object.assign() onto such an instance throws, and the throw aborted the
-    whole voice section — the page kept the HOST's voices."""
+    whole voice section — the page kept the HOST's voices.
+
+    Hunt A-28 superseded the defineProperty construction: the values now
+    live on a prototype layer (the native voice has NO own properties), and
+    a prototype layer needs no assignment at all — which fixes the A-03
+    getter-only crash for good."""
     src = _generated_js()
-    voice_block = src[src.find("voiceObjects") - 400 : src.find("voiceObjects") + 600]
+    voice_block = src[src.find("voiceObjects") - 400 : src.find("voiceObjects") + 1000]
     assert "Object.assign(Object.create" not in voice_block, (
         "the voice objects must not be built with Object.assign — the SpeechSynthesisVoice "
         "prototype has getter-only properties and the assignment throws (A-03)"
     )
-    assert "Object.defineProperty(inst" in voice_block, (
-        "the voice objects must define their own properties with defineProperty (A-03)"
+    assert "__makeNativeLike(voiceProto, v)" in voice_block, (
+        "the voices must be built on a prototype layer — the native voice has no own "
+        "properties, and the layer also avoids the getter-only assignment (A-03/A-28)"
     )
 
 
@@ -441,6 +447,36 @@ def test_a27_font_aliases_are_hidden_from_the_font_set():
     assert "__aliasFamilies" in src, "the alias families must be tracked so they can be hidden (A-27)"
     assert "forEach" in src, "the FontFaceSet enumeration must skip the aliases (A-27)"
     assert "get size" in src, "the FontFaceSet size must exclude the aliases (A-27)"
+
+
+def test_a28_voices_have_the_native_shape():
+    """A-28: the voice objects carried FIVE own properties while a native
+    SpeechSynthesisVoice has none (measured: the real Chrome's voice has
+    own="(none)"; ours listed name/lang/default/localService/voiceURI). The
+    same class of defect as A-26."""
+    src = _generated_js()
+    voice_block = src[src.find("const voiceObjects") : src.find("const voiceObjects") + 900]
+    assert "__makeNativeLike(voiceProto, v)" in voice_block, (
+        "the voices must be built on a prototype layer over the native prototype — "
+        "own properties on the instance are a one-line tell (A-28)"
+    )
+    assert "Object.defineProperty(inst" not in voice_block, (
+        "the old defineProperty-per-voice construction left own properties (A-28)"
+    )
+
+
+def test_a29_font_aliases_are_never_duplicated():
+    """A-29: the deferred alias install can run TWICE (fonts.ready and
+    DOMContentLoaded), and an icon font without latin glyphs is always
+    reported "missing" by the width probe — so the same family was aliased
+    twice (measured: two identical @font-face rules for
+    "HoloLens MDL2 Assets")."""
+    src = _generated_js()
+    assert "__aliasedFamilies" in src, (
+        "the already-aliased families must be tracked — the deferred install runs "
+        "twice and duplicated the same @font-face rule (A-29)"
+    )
+    assert "if (__aliasedFamilies.indexOf(family) !== -1) return;" in src, "a family must never be aliased twice (A-29)"
 
 
 def test_generated_shield_is_valid_javascript():

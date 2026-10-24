@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1092 passed, 6 deselected** (1098 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1094 passed, 6 deselected** (1100 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -170,6 +170,22 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   status "unloaded" — a family the machine does not have, listed by the CSS font API.
   The aliases stay registered (that is what makes the family render) but the FontFaceSet's
   `size`, `forEach` and iterators now skip them.
+- **The voice objects carried own properties (A-28).** The profile's voices were built
+  with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
+  `SpeechSynthesisVoice` has **no own properties at all**: its values live on the
+  prototype (measured: the real Chrome's voice has `own="(none)"`, ours listed
+  name/lang/default/localService/voiceURI). The same class of defect as A-26. The voices
+  are now built with the same prototype-layer helper — which also makes the A-03
+  getter-only crash structurally impossible.
+- **The font aliases were installed twice (A-29).** The deferred install runs on BOTH
+  `document.fonts.ready` and `DOMContentLoaded`, and an icon font without latin glyphs is
+  always reported "missing" by the width probe — so the SAME family was aliased twice
+  (measured: two identical `@font-face` rules for "HoloLens MDL2 Assets"). The
+  already-aliased families are now tracked; three consecutive install passes produce
+  exactly one rule (verified). Along the way the audit also established that
+  `document.fonts.check()` answers **true for any family name** in Chrome (even a
+  nonexistent one) — it cannot serve as a detector, and the shield does not need to
+  defend against it.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,

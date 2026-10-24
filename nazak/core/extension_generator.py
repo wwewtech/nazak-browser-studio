@@ -1095,6 +1095,13 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // so a measurement taken there is unreliable (every family looks
             // missing). The detection therefore runs again once the fonts
             // are ready — the aliases are installed then.
+            // Hunt A-29: the deferred install can run TWICE (fonts.ready and
+            // DOMContentLoaded), and an icon font with no latin glyphs is
+            // always reported "missing" by the width probe — so the SAME
+            // family was aliased twice (measured: two identical @font-face
+            // rules for "HoloLens MDL2 Assets"). The already-aliased families
+            // are tracked and never duplicated.
+            const __aliasedFamilies = [];
             const __widthWith = function(family, fallback) {{
                 const c = document.createElement('canvas');
                 const ctx = c.getContext('2d');
@@ -1144,6 +1151,8 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 const __rules = [];
                 const __aliasFamilies = [];
                 __missing.forEach(function(family, idx) {{
+                    // Hunt A-29: never alias the same family twice
+                    if (__aliasedFamilies.indexOf(family) !== -1) return;
                     let donor = null;
                     if (__isMonoLike.test(family)) donor = __monoReal.length ? __monoReal[idx % __monoReal.length] : null;
                     else if (__isSerifLike.test(family)) donor = __serifReal.length ? __serifReal[idx % __serifReal.length] : null;
@@ -1152,6 +1161,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     const __safeFamily = family.replace(/"/g, '');
                     const __safeDonor = donor.replace(/"/g, '');
                     __aliasFamilies.push(__safeFamily);
+                    __aliasedFamilies.push(family);
                     __rules.push('@font-face {{ font-family: "' + __safeFamily + '";'
                         + ' src: local("' + __safeDonor + '");'
                         + ' font-weight: normal; font-style: normal; }}');
@@ -1332,16 +1342,16 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // are now defined with defineProperty, which works on a
             // getter-only prototype.
             const voiceObjects = voicesData.map(v => {{
-                const proto = window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype;
-                const inst = Object.create(proto);
-                Object.keys(v).forEach(function(k) {{
-                    try {{
-                        Object.defineProperty(inst, k, {{
-                            value: v[k], configurable: true, enumerable: true, writable: true
-                        }});
-                    }} catch(e) {{}}
-                }});
-                return inst;
+                // Hunt A-28: the native voices carry NO own properties —
+                // their values live on the prototype (measured: the real
+                // Chrome's SpeechSynthesisVoice has own="(none)"; ours listed
+                // name/lang/default/localService/voiceURI). The same class of
+                // defect as A-26 (the battery/devices/GPU info). The values
+                // now live on a prototype layer over the NATIVE prototype,
+                // so defineProperty is not even needed (which also fixes the
+                // A-03 getter-only crash for good).
+                const voiceProto = window.SpeechSynthesisVoice ? SpeechSynthesisVoice.prototype : Object.prototype;
+                return __makeNativeLike(voiceProto, v);
             }});
             // Hunt A-14: getVoices lives on SpeechSynthesis.prototype in a
             // real Chrome; the speechSynthesis INSTANCE has no own properties.

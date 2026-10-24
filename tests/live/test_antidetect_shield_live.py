@@ -69,6 +69,13 @@ PROBE = """() => {
   t('audio_channelData', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); const d=b.getChannelData(0); return 'len=' + d.length; });
   t('voices', () => speechSynthesis.getVoices().length);
   t('voice0', () => { const v = speechSynthesis.getVoices()[0]; return v ? v.name : 'none'; });
+  // A-28: the voice objects must have the native shape (no own properties)
+  t('voice_shape', () => {
+    const v = speechSynthesis.getVoices()[0];
+    if (!v) return 'no-voices-yet';
+    return 'proto=' + Object.getPrototypeOf(v).constructor.name +
+           ' own=' + (Object.getOwnPropertyNames(v).join(',') || '(none)');
+  });
   t('plugins', () => navigator.plugins.length);
   t('mimeTypes', () => navigator.mimeTypes.length);
   t('webdriver', () => navigator.webdriver);
@@ -253,6 +260,13 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         voices = int(res["voices"].split()[-1])
         assert 8 <= voices <= 12, f"the host's voice pool leaked through: {voices} voices"
         assert "Microsoft" in res["voice0"] or "Google" in res["voice0"], res["voice0"]
+        # A-28: the voice objects must carry NO own properties (the native
+        # SpeechSynthesisVoice keeps its values on the prototype).
+        if res["voice_shape"] != "OK no-voices-yet":
+            assert "proto=SpeechSynthesisVoice" in res["voice_shape"], res["voice_shape"]
+            assert "own=(none)" in res["voice_shape"], (
+                f"the voice objects carry own properties (A-28): {res['voice_shape']}"
+            )
 
         # A-04: the same content must hash the SAME on every read (an unstable
         # canvas hash is a one-line automation tell).
