@@ -205,7 +205,8 @@ class TestAdvancedStealthEnhancements:
         prof = BrowserProfile(id="p_audio_adv", name="Audio Adv", fingerprint=fp)
         stealth_js = (Path(generate_profile_extension(prof, tmp_path)) / "stealth.js").read_text(encoding="utf-8")
 
-        assert "OfflineAudioContext.prototype.startRendering" in stealth_js
+        # Stealth core (round 12): the hook is a Proxy over the native.
+        assert "__replaceWithProxy(OfflineAudioContext.prototype, 'startRendering'" in stealth_js
         assert "applyAudioNoise" in stealth_js
 
     def test_stealth_measure_text_jitter(self, tmp_path):
@@ -213,7 +214,8 @@ class TestAdvancedStealthEnhancements:
         prof = BrowserProfile(id="p_measure", name="Measure Text", fingerprint=fp)
         stealth_js = (Path(generate_profile_extension(prof, tmp_path)) / "stealth.js").read_text(encoding="utf-8")
 
-        assert "CanvasRenderingContext2D.prototype.measureText" in stealth_js
+        # Stealth core (round 12): the hook is a Proxy over the native.
+        assert "__replaceWithProxy(CanvasRenderingContext2D.prototype, 'measureText'" in stealth_js
         assert "fontJitter" in stealth_js
 
     def test_stealth_webrtc_private_ip_sanitization(self, tmp_path):
@@ -221,12 +223,13 @@ class TestAdvancedStealthEnhancements:
         stealth_js = (Path(generate_profile_extension(prof, tmp_path)) / "stealth.js").read_text(encoding="utf-8")
 
         assert "sanitizeSdp" in stealth_js
-        assert "RTCPeerConnection.prototype.createOffer" in stealth_js
-        assert "RTCPeerConnection.prototype.setLocalDescription" in stealth_js
+        # Stealth core (round 12): the hooks are Proxies over the natives.
+        assert "__replaceWithProxy(RTCPeerConnection.prototype, 'createOffer'" in stealth_js
+        assert "__replaceWithProxy(RTCPeerConnection.prototype, 'setLocalDescription'" in stealth_js
         # Trickle-ICE + answering side: createAnswer and RTCIceCandidate must be
         # covered too, otherwise host candidates leak past the SDP hooks.
-        assert "RTCPeerConnection.prototype.createAnswer" in stealth_js
-        assert "RTCIceCandidate" in stealth_js
+        assert "__replaceWithProxy(RTCPeerConnection.prototype, 'createAnswer'" in stealth_js
+        assert "__replaceWithProxy(window, 'RTCIceCandidate'" in stealth_js
 
 
 class TestBrowserLauncherTimezone:

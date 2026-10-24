@@ -410,7 +410,9 @@ def test_a24_unmasked_parameters_follow_the_extension_semantics():
     leaked there."""
     src = _generated_js()
     assert "__extRequested" in src, "the UNMASKED_* parameters must answer null until the extension is requested (A-24)"
-    assert "if (!__extRequested.has(this)) return null;" in src, (
+    # Stealth core (round 12): the hook is a Proxy trap, so the receiver is
+    # thisArg — not `this` of a plain function.
+    assert "if (!__extRequested.has(thisArg)) return null;" in src, (
         "the parameter must be null before the extension is requested (A-24)"
     )
     assert "hookDebugExtension(WebGL2RenderingContext.prototype)" in src, (
@@ -477,6 +479,27 @@ def test_a29_font_aliases_are_never_duplicated():
         "twice and duplicated the same @font-face rule (A-29)"
     )
     assert "if (__aliasedFamilies.indexOf(family) !== -1) return;" in src, "a family must never be aliased twice (A-29)"
+
+
+def test_stealth_core_replaces_functions_with_native_proxies():
+    """Round 12 (the CreepJS lie-detector replay): the shield used to REPLACE
+    native functions with plain JS functions, failing every structural
+    invariant a real one satisfies — 'prototype' in fn, ownKeys, extendability
+    and the illegal-invocation TypeError. Measured: 33 of 53 scanned APIs were
+    reported as "corrupted" by a port of creepjs/src/lies/index.ts. The core
+    ports the puppeteer-extra-stealth approach: a Proxy over the NATIVE
+    function, so only the behaviour changes, never the shape."""
+    src = _generated_js()
+    assert "__replaceWithProxy" in src, "method hooks must be Proxies over the NATIVE functions (round 12)"
+    assert "__replaceGetterWithProxy" in src, "getter hooks must be Proxies over the NATIVE getters (round 12)"
+    assert "__stripProxyFromErrors" in src, "the trap frames must be stripped from error stacks (round 12)"
+    assert "__nativeCache" in src, "the natives must be cached before any hook exists (round 12)"
+    # the getter trap must run the native getter first (the illegal-invocation
+    # TypeError is what a real getter throws on a receiver-less access)
+    getter_block = src[src.find("const __replaceGetterWithProxy") : src.find("const __replaceGetterWithProxy") + 900]
+    assert "reflectApply(target, thisArg, args)" in getter_block, (
+        "the native getter must run first so the illegal-invocation TypeError fires (round 12)"
+    )
 
 
 def test_generated_shield_is_valid_javascript():

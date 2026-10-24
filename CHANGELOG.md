@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1094 passed, 6 deselected** (1100 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1095 passed, 6 deselected** (1101 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -170,6 +170,38 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   status "unloaded" — a family the machine does not have, listed by the CSS font API.
   The aliases stay registered (that is what makes the family render) but the FontFaceSet's
   `size`, `forEach` and iterators now skip them.
+
+### The shield was detectable by its own function shapes (round 12 — the CreepJS replay)
+
+A faithful port of the **CreepJS lie detector** (all ~20 checks of `queryLies` from
+`creepjs/src/lies/index.ts`, driven over the same API targets) was replayed against the
+product's real launch path, with a plain Chrome as the control. The control reported
+**0 corrupted APIs**; the shield reported **33 of 53**. The spoofed VALUES were correct —
+the *fact of spoofing* was visible from the function shapes alone:
+
+- **16 getters answered without a receiver.** A native getter throws the
+  illegal-invocation `TypeError` when accessed through `Navigator.prototype` without an
+  instance; our arrow-function getters silently returned the value. Every `Navigator.*`
+  and `Screen.*` getter was flagged with "failed illegal error".
+- **13 method hooks lost the native function shape.** A plain JS function has an own
+  `prototype`, extra own keys, is extendable (`class X extends fn {}` stops throwing)
+  and survives `new fn()` — none of which is true for a native method. Seven CreepJS
+  checks fired on every canvas/audio/WebGL/Element/Date/Intl hook at once.
+- **The `Function.prototype.toString` Proxy leaked in error stacks.** The TypeError that
+  `Object.create(fn).toString()` must produce anchored at `at Function.toString (`
+  natively; ours showed `at Object.toString (` — and the recursion check produced a
+  `RangeError` instead of a `TypeError`.
+
+The fix ports the **puppeteer-extra-stealth** core (`_utils/index.js`): the shield no
+longer *replaces* functions — every hook is now a **Proxy over the NATIVE function**
+(`__replaceWithProxy` / `__replaceGetterWithProxy`), with the natives cached before any
+hook exists, the trap frames stripped from error stacks (`__stripProxyFromErrors`) and
+`toString` redirected to the replaced native's exact signature. The getter traps run the
+native getter first, so the illegal-invocation TypeError still fires with its native
+stack; the worker-scope getters whose property lives higher up the prototype chain walk
+it for the native getter. After the migration the same replay reports **0 corrupted APIs
+of 36 scanned**, and every spoofed value (cores, memory, screen, timezone, WebGL vendor)
+stays intact — verified in the same run.
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
   `SpeechSynthesisVoice` has **no own properties at all**: its values live on the

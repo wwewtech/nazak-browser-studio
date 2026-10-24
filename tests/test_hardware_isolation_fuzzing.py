@@ -110,15 +110,17 @@ def test_extension_generator_stealth_script_content(tmp_path):
     assert "__defineNav('webdriver'" in content
     assert "__defineNav('hardwareConcurrency'" in content
     assert "__defineNav('deviceMemory'" in content
-    assert "Screen.prototype, 'width'" in content
-    assert "Screen.prototype, 'height'" in content
+    # Stealth core (round 12): the screen/canvas/audio/geometry hooks are
+    # Proxies over the NATIVE functions (getter/method), not replacements.
+    assert "__replaceGetterWithProxy(Screen.prototype, 'width'" in content
+    assert "__replaceGetterWithProxy(Screen.prototype, 'height'" in content
     assert "WebGLRenderingContext.prototype" in content
     assert "navigator.mediaDevices.enumerateDevices" in content
     assert "navigator.getBattery" in content
     assert "'getCurrentPosition'" in content
-    assert "CanvasRenderingContext2D.prototype.getImageData" in content
-    assert "AudioBuffer.prototype.getChannelData" in content
-    assert "Element.prototype.getBoundingClientRect" in content
+    assert "__replaceWithProxy(CanvasRenderingContext2D.prototype, 'getImageData'" in content
+    assert "__replaceWithProxy(AudioBuffer.prototype, 'getChannelData'" in content
+    assert "__replaceWithProxy(Element.prototype, 'getBoundingClientRect'" in content
     assert "127.0.0.1" in content
     # Hunt A-14: the instance-level overrides moved to their prototypes, so
     # the media devices / battery / geolocation hooks are now installed on

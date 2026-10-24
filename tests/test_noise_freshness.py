@@ -57,7 +57,10 @@ def test_canvas_hash_is_stable_for_identical_content(tmp_path):
 
 def test_audio_noise_phase_shifts_per_call(tmp_path):
     js = _stealth(tmp_path, audio_noise=True, audio_noise_seed=0.00002)
-    assert "AudioBuffer.prototype.getChannelData" in js
+    # Stealth core (round 12): the hooks are Proxies over the NATIVE methods
+    # — __replaceWithProxy(proto, 'method', ...) — so the textual form of the
+    # assignment is gone, but the hook itself is present.
+    assert "__replaceWithProxy(AudioBuffer.prototype, 'getChannelData'" in js
     assert "applyAudioNoise" in js
     assert "audioCallCount" in js
     # The old fixed pattern must be gone from both application sites.
@@ -74,8 +77,9 @@ def test_rect_and_font_jitter_are_stable_per_element_and_text(tmp_path):
     values on every read. A real renderer is stable per element, and a real
     font metric is stable per string — the old behaviour was the tell."""
     js = _stealth(tmp_path, client_rects_noise=True, canvas_noise_seed=12345)
-    assert "Element.prototype.getBoundingClientRect" in js
-    assert "CanvasRenderingContext2D.prototype.measureText" in js
+    # Stealth core (round 12): Proxies over the NATIVE geometry methods.
+    assert "__replaceWithProxy(Element.prototype, 'getBoundingClientRect'" in js
+    assert "__replaceWithProxy(CanvasRenderingContext2D.prototype, 'measureText'" in js
     # Stable per element / per text — not per call.
     assert "rectCallCount" not in js
     assert "fontCallCount" not in js
@@ -87,12 +91,14 @@ def test_rect_and_font_jitter_are_stable_per_element_and_text(tmp_path):
 
 def test_noise_hooks_still_present_after_rework(tmp_path):
     js = _stealth(tmp_path, canvas_noise=True, audio_noise=True, client_rects_noise=True)
+    # Stealth core (round 12): every hook is __replaceWithProxy over the
+    # native method — the hook must still be present in the new form.
     for hook in (
-        "CanvasRenderingContext2D.prototype.getImageData",
-        "OffscreenCanvasRenderingContext2D.prototype.getImageData",
-        "HTMLCanvasElement.prototype.toDataURL",
-        "HTMLCanvasElement.prototype.toBlob",
-        "OfflineAudioContext.prototype.startRendering",
+        "__replaceWithProxy(CanvasRenderingContext2D.prototype, 'getImageData'",
+        "__replaceWithProxy(OffscreenCanvasRenderingContext2D.prototype, 'getImageData'",
+        "__replaceWithProxy(HTMLCanvasElement.prototype, 'toDataURL'",
+        "__replaceWithProxy(HTMLCanvasElement.prototype, 'toBlob'",
+        "__replaceWithProxy(OfflineAudioContext.prototype, 'startRendering'",
         "textJitter",
         "rect.x + off.x",
     ):

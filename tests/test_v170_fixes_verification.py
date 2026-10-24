@@ -67,7 +67,8 @@ def test_v170_stealth_canvas_multi_channel_and_todataurl(tmp_path):
     stealth_js = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
     assert "mutateCanvasData" in stealth_js
-    assert "HTMLCanvasElement.prototype.toDataURL" in stealth_js
+    # Stealth core (round 12): the hook is a Proxy over the native.
+    assert "__replaceWithProxy(HTMLCanvasElement.prototype, 'toDataURL'" in stealth_js
     assert "1664525" in stealth_js  # LCG constant
     assert "777888" in stealth_js
 
@@ -78,7 +79,8 @@ def test_v170_stealth_audio_noise_spectral(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth_js = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
-    assert "AudioBuffer.prototype.getChannelData" in stealth_js
+    # Stealth core (round 12): the hook is a Proxy over the native.
+    assert "__replaceWithProxy(AudioBuffer.prototype, 'getChannelData'" in stealth_js
     assert "Math.floor(data.length / 100)" in stealth_js
 
 
@@ -88,7 +90,8 @@ def test_v170_stealth_client_rects_subpixel_noise(tmp_path):
     ext_dir = Path(generate_profile_extension(prof, tmp_path))
     stealth_js = (ext_dir / "stealth.js").read_text(encoding="utf-8")
 
-    assert "Element.prototype.getBoundingClientRect" in stealth_js
+    # Stealth core (round 12): the hook is a Proxy over the native.
+    assert "__replaceWithProxy(Element.prototype, 'getBoundingClientRect'" in stealth_js
     assert "jitter" in stealth_js
     # Hunt A-07: the sub-pixel offset is STABLE per element (a real renderer
     # only changes it when the layout changes). It used to be re-derived from

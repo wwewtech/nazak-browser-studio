@@ -370,6 +370,158 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         return fn;
     }}
 
+    // =====================================================================
+    // STEALTH CORE (audit round 12 — the CreepJS lie-detector replay found
+    // 33 "corrupted" APIs out of 53: the shield REPLACED native functions
+    // with plain JS functions, and a plain function fails every structural
+    // invariant a real one satisfies — 'prototype' in fn, own
+    // length/name/prototype keys, extendability, and the illegal-invocation
+    // TypeError every native getter must throw when called without a
+    // receiver). The core below ports the puppeteer-extra-stealth approach
+    // (_utils: replaceWithProxy / replaceGetterWithProxy /
+    // stripProxyFromErrors): we never substitute the function — we wrap the
+    // NATIVE one in a Proxy, so the function's own shape stays native and
+    // only the behaviour changes.
+    // =====================================================================
+
+    // A cache of pristine natives, taken BEFORE any hook exists (a page can
+    // sniff which functions we use inside our traps and tamper with them).
+    const __nativeCache = (function() {{
+        return {{
+            toStringStr: Function.prototype.toString + '',
+            reflectGet: Reflect.get.bind(Reflect),
+            reflectApply: Reflect.apply.bind(Reflect)
+        }};
+    }})();
+
+    // Sanitize the stack of an error thrown inside one of our traps: a
+    // Proxy shows up in the stack frames, and CreepJS compares the first
+    // frame against known anchors (e.g. 'at Function.toString '). We cut
+    // the trap frames out and re-throw, leaving the native frames only.
+    const __stripErrorWithAnchor = function(err, anchor) {{
+        try {{
+            const stackArr = String(err.stack).split('\\n');
+            const anchorIndex = stackArr.findIndex(function(line) {{ return line.trim().startsWith(anchor); }});
+            if (anchorIndex === -1) return null;
+            stackArr.splice(1, anchorIndex);
+            err.stack = stackArr.join('\\n');
+        }} catch(e) {{ return err; }}
+        return err;
+    }};
+
+    // Wrap every trap of a Proxy handler: on throw, strip our frames first.
+    const __stripProxyFromErrors = function(handler) {{
+        const newHandler = {{
+            setPrototypeOf: function(target, proto) {{
+                if (proto === null) throw new TypeError('Cannot convert object to primitive value');
+                if (Object.getPrototypeOf(target) === Object.getPrototypeOf(proto)) {{
+                    throw new TypeError('Cyclic __proto__ value');
+                }}
+                return Reflect.setPrototypeOf(target, proto);
+            }}
+        }};
+        Object.getOwnPropertyNames(handler).forEach(function(trap) {{
+            if (trap === 'setPrototypeOf') return;
+            newHandler[trap] = function() {{
+                try {{
+                    return handler[trap].apply(this, arguments);
+                }} catch (err) {{
+                    if (!err || !err.stack) throw err;
+                    // Nested toString proxies rewrite 'Object.toString' to
+                    // 'Function.toString' in the stack first (stealth trick).
+                    try {{ err.stack = String(err.stack).replace('at Object.toString (', 'at Function.toString ('); }} catch(e) {{}}
+                    // The real frame format is 'at newHandler.<computed> [as trap]'
+                    // (with or without an 'Object.' prefix depending on the
+                    // call path) — strip every known shape.
+                    const anchorCandidates = [
+                        'at Object.newHandler.<computed> [as ' + trap + '] ',
+                        'at newHandler.<computed> [as ' + trap + '] ',
+                        'at Object.' + trap + ' ',
+                        'at Reflect.' + trap + ' '
+                    ];
+                    let stripped = null;
+                    for (const anc of anchorCandidates) {{
+                        stripped = __stripErrorWithAnchor(err, anc);
+                        if (stripped) break;
+                    }}
+                    if (stripped) throw stripped;
+                    // fallback: cut the frames of this very wrapper
+                    const blacklist = ['at Reflect.' + trap + ' ', 'at Object.' + trap + ' ',
+                        'at newHandler.<computed> [as ' + trap + '] ',
+                        'at Object.newHandler.<computed> [as ' + trap + '] '];
+                    try {{
+                        err.stack = String(err.stack).split('\\n')
+                            .filter(function(line, index) {{ return index !== 1; }})
+                            .filter(function(line) {{
+                                return !blacklist.some(function(bl) {{ return line.trim().startsWith(bl); }});
+                            }}).join('\\n');
+                    }} catch(e) {{}}
+                    throw err;
+                }}
+            }};
+        }});
+        return newHandler;
+    }};
+
+    // Redirect Function.prototype.toString for ONE proxied object back to the
+    // native result of the function it replaced (so toString keeps answering
+    // the ORIGINAL signature, not a generic native string).
+    const __toStringRedirects = new WeakMap();
+    const __redirectToString = function(proxyObj, originalObj) {{
+        __toStringRedirects.set(proxyObj, originalObj);
+    }};
+
+    // Replace obj[prop] (a METHOD) with a Proxy over the NATIVE function.
+    // The proxy keeps the native shape (no own prototype/length/name
+    // changes), so 'prototype' in fn, ownKeys, class-extends and the
+    // interface TypeErrors all stay native. Only apply() is ours.
+    const __replaceWithProxy = function(obj, propName, handler) {{
+        try {{
+            const originalObj = obj[propName];
+            if (typeof originalObj !== 'function') return false;
+            const proxyObj = new Proxy(originalObj, __stripProxyFromErrors(handler));
+            const desc = Object.getOwnPropertyDescriptor(obj, propName) || {{}};
+            Object.defineProperty(obj, propName, {{
+                value: proxyObj,
+                writable: true,
+                configurable: true,
+                enumerable: desc.enumerable
+            }});
+            __redirectToString(proxyObj, originalObj);
+            return true;
+        }} catch(e) {{ return false; }}
+    }};
+
+    // Replace a GETTER with a Proxy over the NATIVE getter function. The
+    // trap calls the native getter FIRST: an illegal invocation (accessing
+    // the property through the constructor, without a receiver) throws the
+    // native TypeError with the native stack — exactly like a real getter —
+    // and only a legitimate call returns our value.
+    const __replaceGetterWithProxy = function(obj, propName, value) {{
+        try {{
+            const desc = Object.getOwnPropertyDescriptor(obj, propName);
+            if (!desc || !desc.get) return false;
+            const nativeGet = desc.get;
+            const proxyObj = new Proxy(nativeGet, __stripProxyFromErrors({{
+                apply: function(target, thisArg, args) {{
+                    // Let the native getter run first: it throws the
+                    // TypeError a real getter throws when there is no
+                    // receiver (CreepJS 'failed illegal error').
+                    __nativeCache.reflectApply(target, thisArg, args);
+                    return value;
+                }}
+            }}));
+            Object.defineProperty(obj, propName, {{
+                get: proxyObj,
+                set: desc.set,
+                configurable: true,
+                enumerable: desc.enumerable
+            }});
+            __redirectToString(proxyObj, nativeGet);
+            return true;
+        }} catch(e) {{ return false; }}
+    }};
+
     // Hunt A-01: the timezone/offset constants are needed by TWO sections
     // (6 — the Intl/Date hooks — and 12d — the Intl locale consistency).
     // They used to be declared with `const` INSIDE section 6's try-block, so
@@ -383,15 +535,26 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     const targetOffset = {fp.timezone_offset};
 
     try {{
-        const toStringProxy = new Proxy(nativeToString, {{
+        // Class 3 fix: the toString proxy itself gets the stealth treatment
+        // — its trap frames are stripped from error stacks (CreepJS compares
+        // the first stack line of the TypeError that Object.create(fn)
+        // .toString() must produce: natively it anchors at
+        // 'at Function.toString ', ours used to show 'at Object.toString ').
+        const toStringProxy = new Proxy(nativeToString, __stripProxyFromErrors({{
             apply(target, thisArg, argArray) {{
+                // A proxied API answers with the toString of the NATIVE
+                // function it replaced (the exact original signature).
+                if (typeof thisArg === 'function' && __toStringRedirects.has(thisArg)) {{
+                    const original = __toStringRedirects.get(thisArg);
+                    return __nativeCache.reflectApply(target, original, argArray);
+                }}
                 if (typeof thisArg === 'function' && overriddenFns.has(thisArg)) {{
                     const name = fnNames.get(thisArg) || thisArg.name || '';
                     return `function ${{name}}() {{ [native code] }}`;
                 }}
-                return Reflect.apply(target, thisArg, argArray);
+                return __nativeCache.reflectApply(target, thisArg, argArray);
             }}
-        }});
+        }}));
         Function.prototype.toString = toStringProxy;
         makeNative(Function.prototype.toString, 'toString');
     }} catch(e) {{}}
@@ -406,24 +569,62 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     const __navProtos = [];
     if (typeof Navigator !== 'undefined' && Navigator.prototype) __navProtos.push(Navigator.prototype);
     if (typeof WorkerNavigator !== 'undefined' && WorkerNavigator.prototype) __navProtos.push(WorkerNavigator.prototype);
-    const __defineNav = function(name, getter) {{
+    const __defineNav = function(name, value) {{
+        // Class 1 fix: the navigator getters are Proxies over the NATIVE
+        // getters. The trap runs the native getter first, so an access
+        // without a receiver (Navigator.prototype.webdriver) throws the
+        // native TypeError exactly like a real getter (CreepJS
+        // 'failed illegal error' fired for all of these before).
         __navProtos.forEach(function(proto) {{
-            try {{
-                Object.defineProperty(proto, name, {{
-                    get: getter, configurable: true, enumerable: true
-                }});
-            }} catch(e) {{}}
+            const done = __replaceGetterWithProxy(proto, name, value);
+            if (!done) {{
+                // The property may live higher up the prototype chain (e.g.
+                // deviceMemory on WorkerNavigator comes from a parent
+                // interface). Walk the chain for the native getter and wrap
+                // THAT; the wrapper answers for our prototype as a real
+                // native getter would.
+                let host = Object.getPrototypeOf(proto);
+                let wrapped = false;
+                while (host && host !== Object.prototype) {{
+                    const d = Object.getOwnPropertyDescriptor(host, name);
+                    if (d && d.get) {{
+                        const nativeGet = d.get;
+                        const proxyObj = new Proxy(nativeGet, __stripProxyFromErrors({{
+                            apply: function(target, thisArg, args) {{
+                                __nativeCache.reflectApply(target, thisArg, args);
+                                return value;
+                            }}
+                        }}));
+                        try {{
+                            Object.defineProperty(proto, name, {{
+                                get: proxyObj, configurable: true, enumerable: true
+                            }});
+                            __redirectToString(proxyObj, nativeGet);
+                            wrapped = true;
+                        }} catch(e) {{}}
+                        break;
+                    }}
+                    host = Object.getPrototypeOf(host);
+                }}
+                if (!wrapped) {{
+                    // no native getter anywhere: define one with the correct
+                    // receiver semantics (throw on a receiver-less access)
+                    try {{
+                        const g = makeNative(function() {{
+                            if (this == null) throw new TypeError('Illegal invocation');
+                            return value;
+                        }}, 'get ' + name);
+                        Object.defineProperty(proto, name, {{
+                            get: g, configurable: true, enumerable: true
+                        }});
+                    }} catch(e) {{}}
+                }}
+            }}
         }});
     }};
     const __navGetter = function(name, value) {{
-        const g = makeNative(() => value, 'get ' + name);
-        __navProtos.forEach(function(proto) {{
-            try {{
-                const d = Object.getOwnPropertyDescriptor(proto, name);
-                if (d && d.get) makeNative(d.get, 'get ' + name);
-            }} catch(e) {{}}
-        }});
-        return g;
+        // kept for the A-03/A-13 contracts: returns the native-shaped getter
+        return value;
     }};
 
     // 1. Remove Automation Artifacts & navigator.webdriver (W3C WebDriver spec compliant)
@@ -495,12 +696,15 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // 5. Monitor & Screen Metrics Shield
         if (__hasDom) {{
     try {{
-        Object.defineProperty(Screen.prototype, 'width', {{ get: makeNative(() => {fp.screen_width}, 'get width'), configurable: true, enumerable: true }});
-        Object.defineProperty(Screen.prototype, 'height', {{ get: makeNative(() => {fp.screen_height}, 'get height'), configurable: true, enumerable: true }});
-        Object.defineProperty(Screen.prototype, 'availWidth', {{ get: makeNative(() => {fp.screen_avail_width}, 'get availWidth'), configurable: true, enumerable: true }});
-        Object.defineProperty(Screen.prototype, 'availHeight', {{ get: makeNative(() => {fp.screen_avail_height}, 'get availHeight'), configurable: true, enumerable: true }});
-        Object.defineProperty(Screen.prototype, 'colorDepth', {{ get: makeNative(() => {fp.color_depth}, 'get colorDepth'), configurable: true, enumerable: true }});
-        Object.defineProperty(Screen.prototype, 'pixelDepth', {{ get: makeNative(() => {fp.pixel_depth}, 'get pixelDepth'), configurable: true, enumerable: true }});
+        // Class 1 fix: the screen getters are Proxies over the NATIVE
+        // getters (a real getter throws the illegal-invocation TypeError
+        // when accessed through Screen.prototype without a receiver).
+        __replaceGetterWithProxy(Screen.prototype, 'width', {fp.screen_width});
+        __replaceGetterWithProxy(Screen.prototype, 'height', {fp.screen_height});
+        __replaceGetterWithProxy(Screen.prototype, 'availWidth', {fp.screen_avail_width});
+        __replaceGetterWithProxy(Screen.prototype, 'availHeight', {fp.screen_avail_height});
+        __replaceGetterWithProxy(Screen.prototype, 'colorDepth', {fp.color_depth});
+        __replaceGetterWithProxy(Screen.prototype, 'pixelDepth', {fp.pixel_depth});
         // NOTE: devicePixelRatio is defined further down, on the window
         // INSTANCE (hunt A-12) — a prototype-level override is shadowed by
         // Chrome's own instance property and never applies.
@@ -545,15 +749,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // the own property and never applies. That is why the old
             // devicePixelRatio spoof silently did nothing: the page kept the
             // host's scale factor (measured 2 on a 1.0 profile). The own
-            // property is redefined on the instance; the prototype is kept
-            // as a fallback for exotic hosts.
+            // property is redefined on the instance (as a Proxy over the
+            // NATIVE accessor, so the getter keeps its native shape —
+            // Class 1); the prototype is kept as a fallback.
             const apply = function(target) {{
-                try {{
-                    Object.defineProperty(target, name, {{
-                        get: makeNative(() => value, 'get ' + name),
-                        configurable: true, enumerable: true
-                    }});
-                }} catch(e) {{}}
+                __replaceGetterWithProxy(target, name, value);
             }};
             apply(window);
             apply(Window.prototype);
@@ -572,23 +772,9 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // screen.width with window.innerWidth would see two different
         // scales).
         defineWindowMetric('devicePixelRatio', safeDpr);
-        try {{
-            Object.defineProperty(Window.prototype, 'screenLeft', {{
-                get: makeNative(() => fakeScreenX, 'get screenLeft'), configurable: true, enumerable: true
-            }});
-            Object.defineProperty(Window.prototype, 'screenTop', {{
-                get: makeNative(() => fakeScreenY, 'get screenTop'), configurable: true, enumerable: true
-            }});
-        }} catch(e) {{}}
         // The available AREA's origin must match the window's position.
-        try {{
-            Object.defineProperty(Screen.prototype, 'availLeft', {{
-                get: makeNative(() => fakeAvailLeft, 'get availLeft'), configurable: true, enumerable: true
-            }});
-            Object.defineProperty(Screen.prototype, 'availTop', {{
-                get: makeNative(() => fakeAvailTop, 'get availTop'), configurable: true, enumerable: true
-            }});
-        }} catch(e) {{}}
+        __replaceGetterWithProxy(Screen.prototype, 'availLeft', fakeAvailLeft);
+        __replaceGetterWithProxy(Screen.prototype, 'availTop', fakeAvailTop);
     }} catch(e) {{}}
         }}
 
@@ -598,9 +784,15 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // out-of-scope variable and EVERY Intl.DateTimeFormat().resolvedOptions()
     // call threw a ReferenceError.
     try {{
-        Date.prototype.getTimezoneOffset = makeNative(function() {{
-            return targetOffset;
-        }}, 'getTimezoneOffset');
+        // Class 2 fix: a Proxy over the NATIVE getTimezoneOffset — the
+        // function keeps its native shape (no own prototype, ownKeys stay
+        // length,name, class-extends keeps throwing). Only the returned
+        // value is ours.
+        __replaceWithProxy(Date.prototype, 'getTimezoneOffset', {{
+            apply: function(target, thisArg, args) {{
+                return targetOffset;
+            }}
+        }});
     }} catch(e) {{}}
 
     // 7. WebGL & GPU Hardware Spoofing (Shields actual host graphics card)
@@ -618,7 +810,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
 
         const hookWebGL = function(proto) {{
             if (!proto) return;
-            const origGetParam = proto.getParameter;
             // Anti-detect (audit F-06): real fingerprinters pull entropy from
             // dozens of parameters, not the 4 that used to be spoofed. The
             // values below mirror what a mid-range desktop GPU reports on
@@ -668,23 +859,28 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // extension saw a value a real browser never produces. The
             // contexts that requested the extension are tracked, and the
             // parameter answers null until then.
-            proto.getParameter = makeNative(function(param) {{
-                if (param === 37445 || param === 37446) {{
-                    if (!__extRequested.has(this)) return null;
-                    return merged[param];
+            // Class 2 fix: the hook is a Proxy over the NATIVE getParameter,
+            // so the function keeps its native shape.
+            __replaceWithProxy(proto, 'getParameter', {{
+                apply: function(target, thisArg, args) {{
+                    const param = args[0];
+                    if (param === 37445 || param === 37446) {{
+                        if (!__extRequested.has(thisArg)) return null;
+                        return merged[param];
+                    }}
+                    if (param in merged) return merged[param];
+                    return __nativeCache.reflectApply(target, thisArg, args);
                 }}
-                if (param in merged) return merged[param];
-                return origGetParam.apply(this, arguments);
-            }}, 'getParameter');
+            }});
             // getShaderPrecisionFormat: highp/mediump ranges are stable on
             // desktop GPUs, but read them through our spoof so the
             // WebGLShaderPrecisionFormat object shape cannot leak the host.
-            const origGetShaderPrec = proto.getShaderPrecisionFormat;
-            if (origGetShaderPrec) {{
-                proto.getShaderPrecisionFormat = makeNative(function(shaderType, precisionType) {{
-                    return origGetShaderPrec.call(this, shaderType, precisionType);
-                }}, 'getShaderPrecisionFormat');
-            }}
+            // (Kept as a Proxy over the native for the same Class 2 reason.)
+            __replaceWithProxy(proto, 'getShaderPrecisionFormat', {{
+                apply: function(target, thisArg, args) {{
+                    return __nativeCache.reflectApply(target, thisArg, args);
+                }}
+            }});
         }};
 
         if (window.WebGLRenderingContext) hookWebGL(WebGLRenderingContext.prototype);
@@ -702,15 +898,17 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // old code added one, which was itself a tell).
         const hookDebugExtension = function(proto) {{
             if (!proto || !proto.getExtension) return;
-            const origGetExt = proto.getExtension;
-            proto.getExtension = makeNative(function(name) {{
-                const ext = origGetExt.apply(this, arguments);
-                if (name === 'WEBGL_debug_renderer_info' && ext) {{
-                    // the context now answers the UNMASKED_* parameters
-                    try {{ __extRequested.add(this); }} catch(e) {{}}
+            // Class 2 fix: a Proxy over the NATIVE getExtension.
+            __replaceWithProxy(proto, 'getExtension', {{
+                apply: function(target, thisArg, args) {{
+                    const ext = __nativeCache.reflectApply(target, thisArg, args);
+                    if (args[0] === 'WEBGL_debug_renderer_info' && ext) {{
+                        // the context now answers the UNMASKED_* parameters
+                        try {{ __extRequested.add(thisArg); }} catch(e) {{}}
+                    }}
+                    return ext;
                 }}
-                return ext;
-            }}, 'getExtension');
+            }});
         }};
         try {{
             hookDebugExtension(WebGLRenderingContext.prototype);
@@ -751,29 +949,28 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const gpuHost = (typeof GPU !== 'undefined' && GPU.prototype && GPU.prototype.requestAdapter)
                 ? GPU.prototype
                 : navigator.gpu;
-            const patchedRequestAdapter = makeNative(function() {{
-                return origRequestAdapter.apply(this, arguments).then(adapter => {{
-                    if (!adapter) return adapter;
-                    if (adapter.requestAdapterInfo) {{
-                        adapter.requestAdapterInfo = makeNative(function() {{
-                            return Promise.resolve(buildGpuInfo());
-                        }}, 'requestAdapterInfo');
-                    }}
-                    try {{
-                        Object.defineProperty(adapter, 'info', {{
-                            get: makeNative(() => buildGpuInfo(), 'get info'),
-                            configurable: true,
-                            enumerable: true
-                        }});
-                    }} catch(e) {{}}
-                    return adapter;
-                }});
-            }}, 'requestAdapter');
-            Object.defineProperty(gpuHost, 'requestAdapter', {{
-                value: patchedRequestAdapter,
-                configurable: true,
-                writable: true,
-                enumerable: false
+            // Class 2 fix: a Proxy over the NATIVE requestAdapter.
+            __replaceWithProxy(gpuHost, 'requestAdapter', {{
+                apply: function(target, thisArg, args) {{
+                    return __nativeCache.reflectApply(target, thisArg, args).then(adapter => {{
+                        if (!adapter) return adapter;
+                        if (adapter.requestAdapterInfo) {{
+                            __replaceWithProxy(adapter, 'requestAdapterInfo', {{
+                                apply: function(t2, thisArg2, args2) {{
+                                    return Promise.resolve(buildGpuInfo());
+                                }}
+                            }});
+                        }}
+                        try {{
+                            Object.defineProperty(adapter, 'info', {{
+                                get: makeNative(() => buildGpuInfo(), 'get info'),
+                                configurable: true,
+                                enumerable: true
+                            }});
+                        }} catch(e) {{}}
+                        return adapter;
+                    }});
+                }}
             }});
         }}
     }} catch(e) {{}}
@@ -814,13 +1011,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     toJSON: function() {{ return this; }}
                 }});
             }};
-            Object.defineProperty(mdHost, 'enumerateDevices', {{
-                value: makeNative(function() {{
+            // Class 2 fix: a Proxy over the NATIVE enumerateDevices.
+            __replaceWithProxy(mdHost, 'enumerateDevices', {{
+                apply: function(target, thisArg, args) {{
                     return Promise.resolve(spoofedDevices.map(buildDevice));
-                }}, 'enumerateDevices'),
-                configurable: true,
-                writable: true,
-                enumerable: false
+                }}
             }});
         }}
     }} catch(e) {{}}
@@ -904,14 +1099,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             Object.defineProperty(mimeTypesFake, String(i), {{value: m, enumerable: true}});
             Object.defineProperty(mimeTypesFake, m.type, {{value: m, enumerable: true}});
         }});
-        Object.defineProperty(Navigator.prototype, 'plugins', {{
-            get: makeNative(() => pluginsFake, 'get plugins'),
-            configurable: true, enumerable: true
-        }});
-        Object.defineProperty(Navigator.prototype, 'mimeTypes', {{
-            get: makeNative(() => mimeTypesFake, 'get mimeTypes'),
-            configurable: true, enumerable: true
-        }});
+        // Class 1 fix: the plugins/mimeTypes getters are Proxies over the
+        // NATIVE getters (native getters throw the illegal-invocation
+        // TypeError when accessed through the prototype without a receiver).
+        __replaceGetterWithProxy(Navigator.prototype, 'plugins', pluginsFake);
+        __replaceGetterWithProxy(Navigator.prototype, 'mimeTypes', mimeTypesFake);
     }} catch(e) {{}}
 
     // 10. Battery API Shield
@@ -955,13 +1147,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     dispatchEvent: function() {{ return true; }}
                 }});
             }};
-            Object.defineProperty(__batteryHost, 'getBattery', {{
-                value: makeNative(function() {{
+            // Class 2 fix: a Proxy over the NATIVE getBattery.
+            __replaceWithProxy(__batteryHost, 'getBattery', {{
+                apply: function(target, thisArg, args) {{
                     return Promise.resolve(buildBattery());
-                }}, 'getBattery'),
-                configurable: true,
-                writable: true,
-                enumerable: false
+                }}
             }});
         }}
     }} catch(e) {{}}
@@ -987,21 +1177,20 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // Hunt A-14: the geolocation methods live on Geolocation.prototype
             // in a real Chrome — assigning them to the INSTANCE would add own
             // properties that a detector can list with one line.
+            // Class 2 fix: Proxies over the NATIVE methods.
             const geoHost = (typeof Geolocation !== 'undefined' && Geolocation.prototype && Geolocation.prototype.getCurrentPosition)
                 ? Geolocation.prototype
                 : navigator.geolocation;
-            Object.defineProperty(geoHost, 'getCurrentPosition', {{
-                value: makeNative(function(success, error, options) {{
-                    if (typeof success === 'function') success(spoofedPos);
-                }}, 'getCurrentPosition'),
-                configurable: true, writable: true, enumerable: false
+            __replaceWithProxy(geoHost, 'getCurrentPosition', {{
+                apply: function(target, thisArg, args) {{
+                    if (typeof args[0] === 'function') args[0](spoofedPos);
+                }}
             }});
-            Object.defineProperty(geoHost, 'watchPosition', {{
-                value: makeNative(function(success, error, options) {{
-                    if (typeof success === 'function') success(spoofedPos);
+            __replaceWithProxy(geoHost, 'watchPosition', {{
+                apply: function(target, thisArg, args) {{
+                    if (typeof args[0] === 'function') args[0](spoofedPos);
                     return 1;
-                }}, 'watchPosition'),
-                configurable: true, writable: true, enumerable: false
+                }}
             }});
         }}
     }} catch(e) {{}}
@@ -1062,9 +1251,12 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         }}
 
         if ('queryLocalFonts' in window) {{
-            window.queryLocalFonts = makeNative(function() {{
-                return Promise.resolve(fontList);
-            }}, 'queryLocalFonts');
+            // Class 2 fix: a Proxy over the NATIVE queryLocalFonts.
+            __replaceWithProxy(window, 'queryLocalFonts', {{
+                apply: function(target, thisArg, args) {{
+                    return Promise.resolve(fontList);
+                }}
+            }});
         }}
 
         // Hunt A-16 (rendering side): a detector does NOT trust
@@ -1358,11 +1550,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const speechHost = (typeof SpeechSynthesis !== 'undefined' && SpeechSynthesis.prototype && SpeechSynthesis.prototype.getVoices)
                 ? SpeechSynthesis.prototype
                 : window.speechSynthesis;
-            Object.defineProperty(speechHost, 'getVoices', {{
-                value: makeNative(function() {{
+            // Class 2 fix: a Proxy over the NATIVE getVoices.
+            __replaceWithProxy(speechHost, 'getVoices', {{
+                apply: function(target, thisArg, args) {{
                     return voiceObjects;
-                }}, 'getVoices'),
-                configurable: true, writable: true, enumerable: false
+                }}
             }});
         }}
     }} catch(e) {{}}
@@ -1426,16 +1618,23 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const origOffscreenGetImageData = (window.OffscreenCanvasRenderingContext2D)
                 ? OffscreenCanvasRenderingContext2D.prototype.getImageData
                 : null;
-            CanvasRenderingContext2D.prototype.getImageData = makeNative(function(sx, sy, sw, sh) {{
-                const imageData = origGetImageData.apply(this, arguments);
-                return mutateCanvasData(imageData);
-            }}, 'getImageData');
+            // Class 2 fix: all canvas hooks are Proxies over the NATIVE
+            // methods (the function shape stays native — 'prototype' in fn,
+            // ownKeys, class-extends and the interface TypeErrors).
+            __replaceWithProxy(CanvasRenderingContext2D.prototype, 'getImageData', {{
+                apply: function(target, thisArg, args) {{
+                    const imageData = __nativeCache.reflectApply(target, thisArg, args);
+                    return mutateCanvasData(imageData);
+                }}
+            }});
 
             if (window.OffscreenCanvasRenderingContext2D) {{
-                OffscreenCanvasRenderingContext2D.prototype.getImageData = makeNative(function() {{
-                    const img = origOffscreenGetImageData.apply(this, arguments);
-                    return mutateCanvasData(img);
-                }}, 'getImageData');
+                __replaceWithProxy(OffscreenCanvasRenderingContext2D.prototype, 'getImageData', {{
+                    apply: function(target, thisArg, args) {{
+                        const img = __nativeCache.reflectApply(target, thisArg, args);
+                        return mutateCanvasData(img);
+                    }}
+                }});
             }}
 
             const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
@@ -1484,48 +1683,52 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             }};
             // The OffscreenCanvas path: the same content must produce the same
             // image as the main canvas, so convertToBlob encodes a noised
-            // COPY as well.
+            // COPY as well. (Class 2: a Proxy over the native.)
             if (window.OffscreenCanvas && window.OffscreenCanvas.prototype
                 && window.OffscreenCanvas.prototype.convertToBlob) {{
-                const origConvertToBlob = OffscreenCanvas.prototype.convertToBlob;
-                OffscreenCanvas.prototype.convertToBlob = makeNative(function() {{
-                    try {{
-                        const ctx = this.getContext('2d');
-                        if (ctx && this.width > 0 && this.height > 0) {{
-                            const img = rawImageData(ctx, 0, 0, this.width, this.height);
-                            mutateCanvasData(img);
-                            const copy = new OffscreenCanvas(this.width, this.height);
-                            const copyCtx = copy.getContext('2d');
-                            if (copyCtx) {{
-                                copyCtx.putImageData(img, 0, 0);
-                                return origConvertToBlob.apply(copy, arguments);
+                __replaceWithProxy(OffscreenCanvas.prototype, 'convertToBlob', {{
+                    apply: function(target, thisArg, args) {{
+                        try {{
+                            const ctx = thisArg.getContext('2d');
+                            if (ctx && thisArg.width > 0 && thisArg.height > 0) {{
+                                const img = rawImageData(ctx, 0, 0, thisArg.width, thisArg.height);
+                                mutateCanvasData(img);
+                                const copy = new OffscreenCanvas(thisArg.width, thisArg.height);
+                                const copyCtx = copy.getContext('2d');
+                                if (copyCtx) {{
+                                    copyCtx.putImageData(img, 0, 0);
+                                    return __nativeCache.reflectApply(target, copy, args);
+                                }}
                             }}
+                        }} catch(err) {{}}
+                        return __nativeCache.reflectApply(target, thisArg, args);
+                    }}
+                }});
+            }}
+            __replaceWithProxy(HTMLCanvasElement.prototype, 'toDataURL', {{
+                apply: function(target, thisArg, args) {{
+                    try {{
+                        const copy = noisyCopy(thisArg);
+                        if (copy) {{
+                            return __nativeCache.reflectApply(target, copy, args);
                         }}
                     }} catch(err) {{}}
-                    return origConvertToBlob.apply(this, arguments);
-                }}, 'convertToBlob');
-            }}
-            HTMLCanvasElement.prototype.toDataURL = makeNative(function() {{
-                try {{
-                    const copy = noisyCopy(this);
-                    if (copy) {{
-                        return origToDataURL.apply(copy, arguments);
-                    }}
-                }} catch(err) {{}}
-                return origToDataURL.apply(this, arguments);
-            }}, 'toDataURL');
+                    return __nativeCache.reflectApply(target, thisArg, args);
+                }}
+            }});
 
             if (HTMLCanvasElement.prototype.toBlob) {{
-                const origToBlob = HTMLCanvasElement.prototype.toBlob;
-                HTMLCanvasElement.prototype.toBlob = makeNative(function(callback, type, quality) {{
-                    try {{
-                        const copy = noisyCopy(this);
-                        if (copy) {{
-                            return origToBlob.apply(copy, [callback, type, quality]);
-                        }}
-                    }} catch(err) {{}}
-                    return origToBlob.apply(this, arguments);
-                }}, 'toBlob');
+                __replaceWithProxy(HTMLCanvasElement.prototype, 'toBlob', {{
+                    apply: function(target, thisArg, args) {{
+                        try {{
+                            const copy = noisyCopy(thisArg);
+                            if (copy) {{
+                                return __nativeCache.reflectApply(target, copy, args);
+                            }}
+                        }} catch(err) {{}}
+                        return __nativeCache.reflectApply(target, thisArg, args);
+                    }}
+                }});
             }}
         }} catch(e) {{}}
         }}
@@ -1558,31 +1761,34 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 return buffer;
             }};
 
+            // Class 2 fix: Proxies over the NATIVE audio methods.
             if (window.AudioBuffer) {{
-                const origGetChannelData = AudioBuffer.prototype.getChannelData;
-                AudioBuffer.prototype.getChannelData = makeNative(function(channel) {{
-                    const data = origGetChannelData.apply(this, arguments);
-                    if (data && data.length > 0) {{
-                        // Reuse the shared phase counter so direct reads and
-                        // OfflineAudioContext renders never repeat the pattern.
-                        audioCallCount = (audioCallCount + 1) >>> 0;
-                        const ph = audioCallCount % 3;
-                        const step = Math.max(1, Math.floor(data.length / 100));
-                        for (let i = 0; i < data.length; i += step) {{
-                            data[i] = data[i] + factor * ((((i + ph) % 3) - 1) * 0.5);
+                __replaceWithProxy(AudioBuffer.prototype, 'getChannelData', {{
+                    apply: function(target, thisArg, args) {{
+                        const data = __nativeCache.reflectApply(target, thisArg, args);
+                        if (data && data.length > 0) {{
+                            // Reuse the shared phase counter so direct reads and
+                            // OfflineAudioContext renders never repeat the pattern.
+                            audioCallCount = (audioCallCount + 1) >>> 0;
+                            const ph = audioCallCount % 3;
+                            const step = Math.max(1, Math.floor(data.length / 100));
+                            for (let i = 0; i < data.length; i += step) {{
+                                data[i] = data[i] + factor * ((((i + ph) % 3) - 1) * 0.5);
+                            }}
                         }}
+                        return data;
                     }}
-                    return data;
-                }}, 'getChannelData');
+                }});
             }}
 
             if (window.OfflineAudioContext) {{
-                const origStartRendering = OfflineAudioContext.prototype.startRendering;
-                OfflineAudioContext.prototype.startRendering = makeNative(function() {{
-                    return origStartRendering.apply(this, arguments).then(renderedBuffer => {{
-                        return applyAudioNoise(renderedBuffer);
-                    }});
-                }}, 'startRendering');
+                __replaceWithProxy(OfflineAudioContext.prototype, 'startRendering', {{
+                    apply: function(target, thisArg, args) {{
+                        return __nativeCache.reflectApply(target, thisArg, args).then(renderedBuffer => {{
+                            return applyAudioNoise(renderedBuffer);
+                        }});
+                    }}
+                }});
             }}
         }} catch(e) {{}}
         }}
@@ -1643,9 +1849,10 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         if (__hasDom) {{
     try {{
         const spoofDpr = {_js_number(fp.device_pixel_ratio)};
-        const origMatchMedia = window.matchMedia;
-        window.matchMedia = makeNative(function(query) {{
-            const q = String(query);
+        // Class 2 fix: a Proxy over the NATIVE matchMedia.
+        __replaceWithProxy(window, 'matchMedia', {{
+            apply: function(target, thisArg, args) {{
+            const q = String(args[0]);
             if (q.includes('prefers-color-scheme')) {{
                 const dark = q.includes('dark');
                 return {{
@@ -1674,8 +1881,9 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     dispatchEvent: function() {{ return false; }}
                 }};
             }}
-            return origMatchMedia.apply(this, arguments);
-        }}, 'matchMedia');
+            return __nativeCache.reflectApply(target, thisArg, args);
+            }}
+        }});
     }} catch(e) {{}}
         }}
 
@@ -1689,13 +1897,15 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // second one referenced an out-of-scope `targetTimezone` — every
         // Intl.DateTimeFormat().resolvedOptions() call threw a
         // ReferenceError, which broke the page instead of spoofing it.
-        const origDTFResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-        Intl.DateTimeFormat.prototype.resolvedOptions = makeNative(function() {{
-            const res = origDTFResolved.apply(this, arguments);
-            res.timeZone = targetTimezone;
-            res.locale = fpLocale;
-            return res;
-        }}, 'resolvedOptions');
+        // Class 2 fix: a Proxy over the NATIVE resolvedOptions.
+        __replaceWithProxy(Intl.DateTimeFormat.prototype, 'resolvedOptions', {{
+            apply: function(target, thisArg, args) {{
+                const res = __nativeCache.reflectApply(target, thisArg, args);
+                res.timeZone = targetTimezone;
+                res.locale = fpLocale;
+                return res;
+            }}
+        }});
         // Hunt A-02: replacing the Intl constructors with a plain function
         // DROPPED their static members: Intl.NumberFormat.supportedLocalesOf
         // and Intl.DateTimeFormat.supportedLocalesOf became "is not a
@@ -1803,35 +2013,38 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 }}
                 return off;
             }};
-            const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-            Element.prototype.getBoundingClientRect = makeNative(function() {{
-                const rect = origGetBoundingClientRect.apply(this, arguments);
-                if (!rect || rect.width === 0 || rect.height === 0) return rect;
-                const off = nextRectJitter(this);
-                // The WIDTH of a text element follows the same text-derived
-                // offset as the canvas measurement, so the canvas metric and
-                // the DOM metric stay consistent (a real browser reports the
-                // same width through both APIs).
-                const ownText = (this.textContent || '').trim();
-                const widthAdj = ownText ? textJitter(ownText) : 0;
-                return new DOMRect(rect.x + off.x, rect.y + off.y, rect.width + widthAdj, rect.height);
-            }}, 'getBoundingClientRect');
-
-            const origMeasureText = CanvasRenderingContext2D.prototype.measureText;
-            CanvasRenderingContext2D.prototype.measureText = makeNative(function(text) {{
-                const metrics = origMeasureText.apply(this, arguments);
-                if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {{
-                    try {{
-                        const fontJitter = textJitter(text);
-                        Object.defineProperty(metrics, 'width', {{
-                            value: metrics.width + fontJitter,
-                            configurable: true,
-                            enumerable: true
-                        }});
-                    }} catch(err) {{}}
+            // Class 2 fix: Proxies over the NATIVE geometry methods.
+            __replaceWithProxy(Element.prototype, 'getBoundingClientRect', {{
+                apply: function(target, thisArg, args) {{
+                    const rect = __nativeCache.reflectApply(target, thisArg, args);
+                    if (!rect || rect.width === 0 || rect.height === 0) return rect;
+                    const off = nextRectJitter(thisArg);
+                    // The WIDTH of a text element follows the same text-derived
+                    // offset as the canvas measurement, so the canvas metric and
+                    // the DOM metric stay consistent (a real browser reports the
+                    // same width through both APIs).
+                    const ownText = (thisArg.textContent || '').trim();
+                    const widthAdj = ownText ? textJitter(ownText) : 0;
+                    return new DOMRect(rect.x + off.x, rect.y + off.y, rect.width + widthAdj, rect.height);
                 }}
-                return metrics;
-            }}, 'measureText');
+            }});
+
+            __replaceWithProxy(CanvasRenderingContext2D.prototype, 'measureText', {{
+                apply: function(target, thisArg, args) {{
+                    const metrics = __nativeCache.reflectApply(target, thisArg, args);
+                    if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {{
+                        try {{
+                            const fontJitter = textJitter(args[0]);
+                            Object.defineProperty(metrics, 'width', {{
+                                value: metrics.width + fontJitter,
+                                configurable: true,
+                                enumerable: true
+                            }});
+                        }} catch(err) {{}}
+                    }}
+                    return metrics;
+                }}
+            }});
         }} catch(e) {{}}
         }}
     }}
@@ -1847,19 +2060,22 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // page confirm CDP automation via http://127.0.0.1:<port>/json.
             const allowPorts = {fetch_allow_ports_js};
             const loopback = /https?:\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\])(:\\d+)?/i;
-            const origFetch = window.fetch;
-            window.fetch = makeNative(function(input, options) {{
-                const target = (input && typeof input === 'object' && 'url' in input) ? String(input.url) : String(input);
-                const m = loopback.exec(target);
-                if (m) {{
-                    const portMatch = /:(\\d+)(?:\\/|$)/.exec(m[0]);
-                    const port = portMatch ? parseInt(portMatch[1], 10) : (target.startsWith('https') ? 443 : 80);
-                    if (allowPorts.indexOf(port) === -1) {{
-                        return Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'));
+            // Class 2 fix: a Proxy over the NATIVE fetch.
+            __replaceWithProxy(window, 'fetch', {{
+                apply: function(target, thisArg, args) {{
+                    const input = args[0];
+                    const target2 = (input && typeof input === 'object' && 'url' in input) ? String(input.url) : String(input);
+                    const m = loopback.exec(target2);
+                    if (m) {{
+                        const portMatch = /:(\\d+)(?:\\/|$)/.exec(m[0]);
+                        const port = portMatch ? parseInt(portMatch[1], 10) : (target2.startsWith('https') ? 443 : 80);
+                        if (allowPorts.indexOf(port) === -1) {{
+                            return Promise.reject(new TypeError('NetworkError when attempting to fetch resource.'));
+                        }}
                     }}
+                    return __nativeCache.reflectApply(target, thisArg, args);
                 }}
-                return origFetch.apply(this, arguments);
-            }}, 'fetch');
+            }});
         }} catch(e) {{}}
         }}
     }}
@@ -1875,33 +2091,35 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     .replace(/a=candidate:.*?\\s+([a-f0-9]{{1,4}}:){{7}}[a-f0-9]{{1,4}}\\s+.*?\\r\\n/gi, '');
             }};
 
-            const origCreateOffer = RTCPeerConnection.prototype.createOffer;
-            RTCPeerConnection.prototype.createOffer = makeNative(function(options) {{
-                return origCreateOffer.apply(this, arguments).then(offer => {{
-                    if (offer && offer.sdp) {{
-                        offer.sdp = sanitizeSdp(offer.sdp);
-                    }}
-                    return offer;
-                }});
-            }}, 'createOffer');
+            // Class 2 fix: Proxies over the NATIVE RTC methods.
+            __replaceWithProxy(RTCPeerConnection.prototype, 'createOffer', {{
+                apply: function(target, thisArg, args) {{
+                    return __nativeCache.reflectApply(target, thisArg, args).then(offer => {{
+                        if (offer && offer.sdp) {{
+                            offer.sdp = sanitizeSdp(offer.sdp);
+                        }}
+                        return offer;
+                    }});
+                }}
+            }});
 
             // Trickle-ICE: candidates delivered via onicecandidate / addIceCandidate
             // bypass createOffer/setLocalDescription entirely — an answering peer
             // (and any trickling local candidate) would leak the host address.
             // createAnswer covers the answering side; the RTCIceCandidate hook
             // neutralises host candidates at construction.
-            const origCreateAnswer = RTCPeerConnection.prototype.createAnswer;
-            RTCPeerConnection.prototype.createAnswer = makeNative(function(options) {{
-                return origCreateAnswer.apply(this, arguments).then(answer => {{
-                    if (answer && answer.sdp) {{
-                        answer.sdp = sanitizeSdp(answer.sdp);
-                    }}
-                    return answer;
-                }});
-            }}, 'createAnswer');
+            __replaceWithProxy(RTCPeerConnection.prototype, 'createAnswer', {{
+                apply: function(target, thisArg, args) {{
+                    return __nativeCache.reflectApply(target, thisArg, args).then(answer => {{
+                        if (answer && answer.sdp) {{
+                            answer.sdp = sanitizeSdp(answer.sdp);
+                        }}
+                        return answer;
+                    }});
+                }}
+            }});
 
             if (window.RTCIceCandidate) {{
-                const OrigRTCIceCandidate = window.RTCIceCandidate;
                 const scrubbedCandidate = function(init) {{
                     if (init && typeof init.candidate === 'string') {{
                         const cleaned = sanitizeSdp(init.candidate + '\\r\\n');
@@ -1910,20 +2128,29 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     }}
                     return init;
                 }};
-                window.RTCIceCandidate = makeNative(function(init) {{
-                    const scrubbed = scrubbedCandidate(init);
-                    if (scrubbed === null) return null;
-                    return new OrigRTCIceCandidate(scrubbed === undefined ? init : scrubbed);
-                }}, 'RTCIceCandidate');
+                __replaceWithProxy(window, 'RTCIceCandidate', {{
+                    construct: function(target, args) {{
+                        const scrubbed = scrubbedCandidate(args[0]);
+                        if (scrubbed === null) return null;
+                        return new target(scrubbed === undefined ? args[0] : scrubbed);
+                    }},
+                    apply: function(target, thisArg, args) {{
+                        const scrubbed = scrubbedCandidate(args[0]);
+                        if (scrubbed === null) return null;
+                        return new target(scrubbed === undefined ? args[0] : scrubbed);
+                    }}
+                }});
             }}
 
-            const origSetLocalDescription = RTCPeerConnection.prototype.setLocalDescription;
-            RTCPeerConnection.prototype.setLocalDescription = makeNative(function(desc) {{
-                if (desc && desc.sdp) {{
-                    desc.sdp = sanitizeSdp(desc.sdp);
+            __replaceWithProxy(RTCPeerConnection.prototype, 'setLocalDescription', {{
+                apply: function(target, thisArg, args) {{
+                    const desc = args[0];
+                    if (desc && desc.sdp) {{
+                        desc.sdp = sanitizeSdp(desc.sdp);
+                    }}
+                    return __nativeCache.reflectApply(target, thisArg, args);
                 }}
-                return origSetLocalDescription.apply(this, arguments);
-            }}, 'setLocalDescription');
+            }});
         }}
     }} catch(e) {{}}
         }}
