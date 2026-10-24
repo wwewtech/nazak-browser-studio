@@ -142,14 +142,39 @@ PROBE = """() => {
   t('win_dunder_keys', () => Object.keys(window).filter(n => /^__/.test(n)).join(',') || '(none)');
   t('md_own_props', () => navigator.mediaDevices ? (Object.getOwnPropertyNames(navigator.mediaDevices).join(',') || '(none)') : 'no-mediaDevices');
   t('speech_own_props', () => window.speechSynthesis ? (Object.getOwnPropertyNames(window.speechSynthesis).join(',') || '(none)') : 'no-speechSynthesis');
+  // A-27: the @font-face aliases must not be visible in the FontFaceSet
+  t('fontset', () => {
+    const faces = [];
+    try { document.fonts.forEach((f) => faces.push(f.family)); } catch (e) { faces.push('ERR'); }
+    return 'size=' + document.fonts.size + ' faces=' + (faces.join(',') || '(none)');
+  });
   return Promise.all([
     __workerProbe('self.postMessage(String(navigator.hardwareConcurrency));'),
     __workerProbe('self.postMessage(String(navigator.deviceMemory));'),
-    __workerProbe('self.postMessage(String(new Date().getTimezoneOffset()));')
+    __workerProbe('self.postMessage(String(new Date().getTimezoneOffset()));'),
+    // A-26: the spoofed objects must have the native shape — the right
+    // prototype and NO own properties (the values live on the prototype).
+    (typeof navigator.getBattery === 'function'
+      ? navigator.getBattery().then((b) => 'proto=' + Object.getPrototypeOf(b).constructor.name +
+          ' own=' + (Object.getOwnPropertyNames(b).join(',') || '(none)'))
+      : Promise.resolve('no-battery-api')),
+    (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices
+      ? navigator.mediaDevices.enumerateDevices().then((d) => (!d.length ? 'no-devices' :
+          'proto=' + Object.getPrototypeOf(d[0]).constructor.name +
+          ' own=' + (Object.getOwnPropertyNames(d[0]).join(',') || '(none)')))
+      : Promise.resolve('no-mediaDevices')),
+    (navigator.gpu && navigator.gpu.requestAdapter
+      ? navigator.gpu.requestAdapter().then((a) => (!a || !a.info ? 'no-adapter' :
+          'proto=' + Object.getPrototypeOf(a.info).constructor.name +
+          ' own=' + (Object.getOwnPropertyNames(a.info).join(',') || '(none)')))
+      : Promise.resolve('no-gpu'))
   ]).then((vals) => {
     out.worker_cores = 'OK ' + vals[0];
     out.worker_dm = 'OK ' + vals[1];
     out.worker_tz = 'OK ' + vals[2];
+    out.battery_shape = 'OK ' + vals[3];
+    out.mediadev_shape = 'OK ' + vals[4];
+    out.gpuinfo_shape = 'OK ' + vals[5];
     return out;
   });
 }"""
@@ -282,6 +307,22 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["speech_own_props"].endswith("(none)") or res["speech_own_props"].endswith("no-speechSynthesis"), (
             f"the shield added own properties to window.speechSynthesis (A-14): {res['speech_own_props']}"
         )
+
+        # A-26: the spoofed objects must have the native shape — the right
+        # prototype class and NO own properties.
+        if res["battery_shape"] != "OK no-battery-api":
+            assert res["battery_shape"].startswith("OK proto=BatteryManager"), res["battery_shape"]
+            assert res["battery_shape"].endswith("own=(none)"), res["battery_shape"]
+        if res["mediadev_shape"] != "OK no-mediaDevices":
+            assert res["mediadev_shape"].startswith("OK proto=InputDeviceInfo"), res["mediadev_shape"]
+            assert res["mediadev_shape"].endswith("own=(none)"), res["mediadev_shape"]
+        if res["gpuinfo_shape"] != "OK no-gpu":
+            assert res["gpuinfo_shape"].startswith("OK proto=GPUAdapterInfo"), res["gpuinfo_shape"]
+            assert res["gpuinfo_shape"].endswith("own=(none)"), res["gpuinfo_shape"]
+
+        # A-27: the font aliases must not be visible in the FontFaceSet
+        assert "size=0" in res["fontset"], f"the font aliases are visible (A-27): {res['fontset']}"
+        assert "faces=(none)" in res["fontset"], f"the font aliases are visible (A-27): {res['fontset']}"
         assert res["win_dunder_own"].endswith("(none)"), (
             f"the shield left its own properties on the window (A-15): {res['win_dunder_own']}"
         )

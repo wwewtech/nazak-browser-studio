@@ -317,6 +317,42 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // skipped via __hasDom.
     const __hasDom = (typeof window !== 'undefined' && typeof document !== 'undefined');
 
+    // Hunt A-26: the objects the shield returns (the battery, the media
+    // devices, the GPU adapter info) must look like the native ones: the
+    // native instances carry NO own properties — their values live on the
+    // prototype as getters (measured: the native BatteryManager's
+    // Object.getOwnPropertyNames is "(none)", ours listed seven). A
+    // detector reads the prototype chain and the own-property list.
+    //
+    // The helper builds an instance whose values live on an INTERMEDIATE
+    // prototype layer: the instance itself has no own properties, the
+    // getters look like native ones, and the native prototypes are never
+    // touched (so the host's own objects keep working).
+    const __makeNativeLike = function(baseProto, values, methods) {{
+        const layer = Object.create(baseProto || Object.prototype);
+        Object.keys(values).forEach(function(k) {{
+            try {{
+                Object.defineProperty(layer, k, {{
+                    get: makeNative(function() {{ return values[k]; }}, 'get ' + k),
+                    configurable: true, enumerable: true
+                }});
+            }} catch(e) {{}}
+        }});
+        // the METHODS also live on the layer, so the instance itself stays
+        // free of own properties (exactly like the native objects)
+        if (methods) {{
+            Object.keys(methods).forEach(function(k) {{
+                try {{
+                    Object.defineProperty(layer, k, {{
+                        value: makeNative(methods[k], k),
+                        configurable: true, enumerable: true
+                    }});
+                }} catch(e) {{}}
+            }});
+        }}
+        return Object.create(layer);
+    }};
+
     // 0. Native Function Cloaking Engine (Bypasses CreepJS & DataDome toString tampering detection)
     const nativeToString = Function.prototype.toString;
     const overriddenFns = new WeakSet();
@@ -688,12 +724,27 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     try {{
         if (navigator.gpu && navigator.gpu.requestAdapter) {{
             const origRequestAdapter = navigator.gpu.requestAdapter;
-            const spoofedGpuInfo = {{
-                vendor: {webgpu_vendor_json},
-                architecture: {webgpu_arch_json},
-                device: {webgl_renderer_json},
-                description: {webgl_renderer_json}
+            // Hunt A-26: the info object was a PLAIN object — a real
+            // GPUAdapterInfo has its own prototype and NO own properties
+            // (measured: the real Chrome's info has an empty own-property
+            // list, ours had four). A detector reads
+            // Object.getPrototypeOf(adapter.info).constructor.name and sees
+            // "Object" instead of "GPUAdapterInfo".
+            const gpuInfoProto = (typeof GPUAdapterInfo !== 'undefined' && GPUAdapterInfo.prototype)
+                ? GPUAdapterInfo.prototype
+                : Object.prototype;
+            const buildGpuInfo = function() {{
+                // Hunt A-26: the values live on a prototype layer, so the
+                // instance itself carries no own properties (like the native
+                // GPUAdapterInfo).
+                return __makeNativeLike(gpuInfoProto, {{
+                    vendor: {webgpu_vendor_json},
+                    architecture: {webgpu_arch_json},
+                    device: {webgl_renderer_json},
+                    description: {webgl_renderer_json}
+                }});
             }};
+            const spoofedGpuInfo = buildGpuInfo();
             // Hunt A-14: the override lives on GPU.prototype — a real Chrome
             // keeps requestAdapter there and the navigator.gpu INSTANCE has
             // no own properties (an own property there is a one-line tell).
@@ -705,12 +756,12 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     if (!adapter) return adapter;
                     if (adapter.requestAdapterInfo) {{
                         adapter.requestAdapterInfo = makeNative(function() {{
-                            return Promise.resolve(spoofedGpuInfo);
+                            return Promise.resolve(buildGpuInfo());
                         }}, 'requestAdapterInfo');
                     }}
                     try {{
                         Object.defineProperty(adapter, 'info', {{
-                            get: makeNative(() => spoofedGpuInfo, 'get info'),
+                            get: makeNative(() => buildGpuInfo(), 'get info'),
                             configurable: true,
                             enumerable: true
                         }});
@@ -742,15 +793,30 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const mdHost = (typeof MediaDevices !== 'undefined' && MediaDevices.prototype && MediaDevices.prototype.enumerateDevices)
                 ? MediaDevices.prototype
                 : navigator.mediaDevices;
+            // Hunt A-26: the device entries were PLAIN objects; a real
+            // Chrome returns InputDeviceInfo instances (own properties:
+            // none, the values live on the prototype). A detector reads
+            // Object.getPrototypeOf(device).constructor.name and sees
+            // "Object" instead of "InputDeviceInfo".
+            const deviceProto = (typeof InputDeviceInfo !== 'undefined' && InputDeviceInfo.prototype)
+                ? InputDeviceInfo.prototype
+                : Object.prototype;
+            const buildDevice = function(d, i) {{
+                // Hunt A-26: the values live on a prototype layer, so the
+                // instance itself carries no own properties (like the native
+                // InputDeviceInfo).
+                return __makeNativeLike(deviceProto, {{
+                    deviceId: d.device_id || ("dev_" + i),
+                    kind: d.kind,
+                    label: d.label,
+                    groupId: d.group_id || ("grp_" + i)
+                }}, {{
+                    toJSON: function() {{ return this; }}
+                }});
+            }};
             Object.defineProperty(mdHost, 'enumerateDevices', {{
                 value: makeNative(function() {{
-                    return Promise.resolve(spoofedDevices.map((d, i) => ({{
-                        deviceId: d.device_id || ("dev_" + i),
-                        kind: d.kind,
-                        label: d.label,
-                        groupId: d.group_id || ("grp_" + i),
-                        toJSON: function() {{ return this; }}
-                    }})));
+                    return Promise.resolve(spoofedDevices.map(buildDevice));
                 }}, 'enumerateDevices'),
                 configurable: true,
                 writable: true,
@@ -864,16 +930,34 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         if (__batteryHost.getBattery) {{
             const batData = {battery_json};
             const origGetBattery = __batteryHost.getBattery;
+            // Hunt A-26: the battery object was a PLAIN object — a real
+            // Chrome returns a BatteryManager instance whose values live on
+            // the prototype (measured: the real one has NO own properties,
+            // ours had six). A detector reads
+            // Object.getPrototypeOf(battery).constructor.name and sees
+            // "Object" instead of "BatteryManager".
+            const batteryProto = (typeof BatteryManager !== 'undefined' && BatteryManager.prototype)
+                ? BatteryManager.prototype
+                : Object.prototype;
+            const buildBattery = function() {{
+                // Hunt A-26: the values live on a prototype layer, so the
+                // instance itself carries no own properties (like the native
+                // BatteryManager).
+                return __makeNativeLike(batteryProto, {{
+                    charging: batData.charging,
+                    chargingTime: batData.charging_time,
+                    dischargingTime: batData.discharging_time,
+                    level: batData.level
+                }}, {{
+                    // the event API must exist and be callable
+                    addEventListener: function() {{}},
+                    removeEventListener: function() {{}},
+                    dispatchEvent: function() {{ return true; }}
+                }});
+            }};
             Object.defineProperty(__batteryHost, 'getBattery', {{
                 value: makeNative(function() {{
-                    return Promise.resolve({{
-                        charging: batData.charging,
-                        chargingTime: batData.charging_time,
-                        dischargingTime: batData.discharging_time,
-                        level: batData.level,
-                        addEventListener: makeNative(function() {{}}, 'addEventListener'),
-                        removeEventListener: makeNative(function() {{}}, 'removeEventListener')
-                    }});
+                    return Promise.resolve(buildBattery());
                 }}, 'getBattery'),
                 configurable: true,
                 writable: true,
@@ -1058,6 +1142,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 }}
                 const __style = document.createElement('style');
                 const __rules = [];
+                const __aliasFamilies = [];
                 __missing.forEach(function(family, idx) {{
                     let donor = null;
                     if (__isMonoLike.test(family)) donor = __monoReal.length ? __monoReal[idx % __monoReal.length] : null;
@@ -1066,6 +1151,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     if (!donor) return;
                     const __safeFamily = family.replace(/"/g, '');
                     const __safeDonor = donor.replace(/"/g, '');
+                    __aliasFamilies.push(__safeFamily);
                     __rules.push('@font-face {{ font-family: "' + __safeFamily + '";'
                         + ' src: local("' + __safeDonor + '");'
                         + ' font-weight: normal; font-style: normal; }}');
@@ -1073,6 +1159,73 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 if (__rules.length) {{
                     __style.textContent = __rules.join('\\n');
                     (document.head || document.documentElement).appendChild(__style);
+                    // Hunt A-27: the @font-face aliases land in the
+                    // document's FontFaceSet, so a page can read them:
+                    // `document.fonts.size` was 1 instead of 0 and
+                    // `document.fonts.forEach` exposed the family name with
+                    // the status "unloaded" — a family the machine does not
+                    // have, listed by the CSS font API. The aliases must
+                    // stay registered (that is what makes the family
+                    // render), but the FontFaceSet must not show them.
+                    // The size and the enumeration are therefore filtered.
+                    try {{
+                        if (document.fonts) {{
+                            const __isAlias = function(face) {{
+                                if (!face || !face.family) return false;
+                                return __aliasFamilies.indexOf(face.family) !== -1;
+                            }};
+                            const __nativeSize = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(document.fonts), 'size');
+                            const __nativeForEach = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(document.fonts), 'forEach');
+                            const __nativeEntries = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(document.fonts), 'entries');
+                            const __nativeValues = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(document.fonts), 'values');
+                            const __nativeKeys = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(document.fonts), 'keys');
+                            const __countVisible = function() {{
+                                let n = 0;
+                                try {{
+                                    document.fonts.forEach(function(f) {{ if (!__isAlias(f)) n++; }});
+                                }} catch(e) {{}}
+                                return n;
+                            }};
+                            if (__nativeSize && __nativeSize.get) {{
+                                Object.defineProperty(document.fonts, 'size', {{
+                                    get: makeNative(function() {{ return __countVisible(); }}, 'get size'),
+                                    configurable: true, enumerable: true
+                                }});
+                            }}
+                            if (__nativeForEach && __nativeForEach.value) {{
+                                Object.defineProperty(document.fonts, 'forEach', {{
+                                    value: makeNative(function(cb, thisArg) {{
+                                        return __nativeForEach.value.call(document.fonts, function(f) {{
+                                            if (__isAlias(f)) return;
+                                            cb.call(thisArg, f, f, document.fonts);
+                                        }}, thisArg);
+                                    }}, 'forEach'),
+                                    configurable: true, writable: true, enumerable: true
+                                }});
+                            }}
+                            const __filterIterator = function(method) {{
+                                if (!method || !method.value) return;
+                                Object.defineProperty(document.fonts, method === __nativeValues ? 'values' : (method === __nativeKeys ? 'keys' : 'entries'), {{
+                                    value: makeNative(function* () {{
+                                        for (const entry of method.value.call(document.fonts)) {{
+                                            const face = (entry && entry[1]) ? entry[1] : entry;
+                                            if (__isAlias(face)) continue;
+                                            yield entry;
+                                        }}
+                                    }}, 'iterator'),
+                                    configurable: true, writable: true, enumerable: true
+                                }});
+                            }};
+                            __filterIterator(__nativeEntries);
+                            __filterIterator(__nativeValues);
+                            __filterIterator(__nativeKeys);
+                        }}
+                    }} catch(e) {{}}
                 }}
                 __aliasesInstalled = true;
             }};

@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1090 passed, 6 deselected** (1096 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1092 passed, 6 deselected** (1098 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -154,6 +154,22 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   which a real `WEBGL_debug_renderer_info` does not have. The parameters now follow the
   native semantics (null before the extension, the profile's vendor after), both
   prototypes are hooked, and the extension object keeps its native shape.
+- **The spoofed objects were plain objects with own properties (A-26).** The battery,
+  the media devices and the GPU adapter info were returned as plain `{...}` objects:
+  `Object.getPrototypeOf(battery).constructor.name` answered **"Object"** instead of
+  **"BatteryManager"** (and "Object" instead of "InputDeviceInfo"/"GPUAdapterInfo"), and
+  the instances carried own data properties while the native ones have **none at all** —
+  their values live on the prototype as getters (measured: the native BatteryManager's
+  own-property list is "(none)", ours listed seven). Every spoofed object is now built on
+  an intermediate prototype layer over the NATIVE prototype: the right constructor name,
+  prototype getters, and an instance with no own properties — while the native prototypes
+  themselves are never touched.
+- **The @font-face aliases were visible in the CSS FontFaceSet (A-27).** The aliases that
+  make the profile's missing font families render (A-16) land in `document.fonts`: the
+  size was 1 instead of 0 and `document.fonts.forEach` exposed the alias family with the
+  status "unloaded" — a family the machine does not have, listed by the CSS font API.
+  The aliases stay registered (that is what makes the family render) but the FontFaceSet's
+  `size`, `forEach` and iterators now skip them.
 
 After the fixes the same real-Chrome probe reports **0 throwing APIs**, a stable canvas
 hash, a working audio path, and every probed value matching the PROFILE (timezone,

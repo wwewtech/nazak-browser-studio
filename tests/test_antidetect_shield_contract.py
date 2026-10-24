@@ -417,6 +417,32 @@ def test_a24_unmasked_parameters_follow_the_extension_semantics():
     )
 
 
+def test_a26_spoofed_objects_have_native_shapes():
+    """A-26: the objects the shield returned were PLAIN objects: the battery,
+    the media devices and the GPU adapter info. A real Chrome returns
+    BatteryManager / InputDeviceInfo / GPUAdapterInfo instances whose values
+    live on the PROTOTYPE (measured: the native instances have NO own
+    properties at all, ours listed seven)."""
+    src = _generated_js()
+    assert "__makeNativeLike" in src, "the spoofed objects must be built on the native prototype (A-26)"
+    for cls in ("BatteryManager", "InputDeviceInfo", "GPUAdapterInfo"):
+        assert cls in src, f"the spoofed object must use the native {cls} prototype (A-26)"
+    helper = src[src.find("const __makeNativeLike") : src.find("const __makeNativeLike") + 1400]
+    assert "return Object.create(layer);" in helper, (
+        "the instance must be empty — the values live on the prototype layer (A-26)"
+    )
+
+
+def test_a27_font_aliases_are_hidden_from_the_font_set():
+    """A-27: the @font-face aliases land in the document's FontFaceSet, so a
+    page could read them: document.fonts.size was 1 instead of 0 and
+    forEach exposed the family name with the status "unloaded"."""
+    src = _generated_js()
+    assert "__aliasFamilies" in src, "the alias families must be tracked so they can be hidden (A-27)"
+    assert "forEach" in src, "the FontFaceSet enumeration must skip the aliases (A-27)"
+    assert "get size" in src, "the FontFaceSet size must exclude the aliases (A-27)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil
