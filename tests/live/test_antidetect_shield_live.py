@@ -67,14 +67,23 @@ PROBE = """() => {
   });
   t('audio_render', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); return 'len=' + b.length + ' ch=' + b.numberOfChannels; });
   t('audio_channelData', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); const d=b.getChannelData(0); return 'len=' + d.length; });
-  t('voices', () => speechSynthesis.getVoices().length);
-  t('voice0', () => { const v = speechSynthesis.getVoices()[0]; return v ? v.name : 'none'; });
+  // A-34: the native pattern — the FIRST read returns [] and the voices
+  // arrive asynchronously through the voiceschanged event (the MDN recipe a
+  // page follows). The probe therefore attaches the listener first.
+  const __voicesArrived = new Promise((resolve) => {
+    speechSynthesis.addEventListener('voiceschanged', () => resolve(speechSynthesis.getVoices()), {once: true});
+  });
+  t('voices_first', () => speechSynthesis.getVoices().length);
+  t('voices_event_fired', () => 'pending');
+  const __voiceData = (async () => {
+    const timer = new Promise((r) => setTimeout(() => r(null), 3000));
+    const v = await Promise.race([__voicesArrived, timer]);
+    return v;
+  })();
   // A-28: the voice objects must have the native shape (no own properties)
   t('voice_shape', () => {
-    const v = speechSynthesis.getVoices()[0];
-    if (!v) return 'no-voices-yet';
-    return 'proto=' + Object.getPrototypeOf(v).constructor.name +
-           ' own=' + (Object.getOwnPropertyNames(v).join(',') || '(none)');
+    const v = __voiceData.then ? null : null;
+    return 'deferred';
   });
   t('plugins', () => navigator.plugins.length);
   t('mimeTypes', () => navigator.mimeTypes.length);
@@ -175,13 +184,27 @@ PROBE = """() => {
           'proto=' + Object.getPrototypeOf(a.info).constructor.name +
           ' own=' + (Object.getOwnPropertyNames(a.info).join(',') || '(none)')))
       : Promise.resolve('no-gpu'))
-  ]).then((vals) => {
+  ]).then(async (vals) => {
     out.worker_cores = 'OK ' + vals[0];
     out.worker_dm = 'OK ' + vals[1];
     out.worker_tz = 'OK ' + vals[2];
     out.battery_shape = 'OK ' + vals[3];
     out.mediadev_shape = 'OK ' + vals[4];
     out.gpuinfo_shape = 'OK ' + vals[5];
+    // A-34: the voices arrive through the event (the native pattern)
+    const voices = await __voiceData;
+    if (voices && voices.length) {
+      out.voices = 'OK ' + voices.length;
+      out.voice0 = 'OK ' + voices[0].name;
+      out.voices_event_fired = 'OK true';
+      out.voice_shape = 'OK proto=' + Object.getPrototypeOf(voices[0]).constructor.name +
+        ' own=' + (Object.getOwnPropertyNames(voices[0]).join(',') || '(none)');
+    } else {
+      out.voices = 'OK 0';
+      out.voice0 = 'OK none';
+      out.voices_event_fired = 'OK false';
+      out.voice_shape = 'OK no-voices-yet';
+    }
     return out;
   });
 }"""
@@ -254,15 +277,22 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["plugins"].endswith("5"), res["plugins"]
         assert res["mimeTypes"].endswith("2"), res["mimeTypes"]
 
-        # A-03: the voice pool must be the PROFILE's (8..12 on Windows), not
-        # the host's (21 on the audit machine) — and every voice must carry a
-        # name (the getter-only prototype broke the old construction).
+        # A-34: the FIRST read must return [] (the native pattern — the
+        # voices load asynchronously and the page listens for the event).
+        assert res["voices_first"].endswith("0"), (
+            f"the first getVoices() must be empty like a real browser (A-34): {res['voices_first']}"
+        )
+        # A-03: the voice pool must arrive through the event and be the
+        # PROFILE's (8..12 on Windows), not the host's (21 on the audit machine).
         voices = int(res["voices"].split()[-1])
         assert 8 <= voices <= 12, f"the host's voice pool leaked through: {voices} voices"
+        assert res["voices_event_fired"].endswith("true"), (
+            f"the voiceschanged event must fire like a real browser (A-34): {res['voices_event_fired']}"
+        )
         assert "Microsoft" in res["voice0"] or "Google" in res["voice0"], res["voice0"]
         # A-28: the voice objects must carry NO own properties (the native
         # SpeechSynthesisVoice keeps its values on the prototype).
-        if res["voice_shape"] != "OK no-voices-yet":
+        if res["voice_shape"] not in ("OK no-voices-yet", "OK deferred"):
             assert "proto=SpeechSynthesisVoice" in res["voice_shape"], res["voice_shape"]
             assert "own=(none)" in res["voice_shape"], (
                 f"the voice objects carry own properties (A-28): {res['voice_shape']}"

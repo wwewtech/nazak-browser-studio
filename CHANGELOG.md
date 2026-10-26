@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1096 passed, 6 deselected** (1102 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1097 passed, 6 deselected** (1103 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -272,6 +272,46 @@ visibility. Measured against our launch path, that surfaced two findings:
   attached CDP session during page load** is itself a signal (the community workaround
   disconnects the automation client right after `goto`). That is inherent to the
   launch-with-CDP model — the Anti-Detect Guide spells it out.
+
+### Hardware-capability lists verified as engine-driven (round 16)
+
+The capability surfaces a detector can compare against the CLAIMED GPU were measured
+side by side — and the analysis overturned the initial suspicion:
+
+- **The WebGL extension lists are ANGLE-build-driven, NOT GPU-driven** (measured: the
+  Intel host exposes `NV_shader_noperspective_interpolation` — an NVIDIA-prefixed
+  extension — and the lists are byte-identical between the Intel host and the
+  NVIDIA-claiming profile). Every desktop GPU in the same Chrome build shows the same
+  list, so leaving `getSupportedExtensions()` native is CORRECT: a real RTX 3070
+  running this Chrome would show exactly these entries. Spoofing them would CREATE a
+  mismatch no real machine produces. The same holds for the WebGPU adapter limits
+  (`maxBufferSize` and friends are D3D12/Vulkan-level caps, effectively uniform on
+  desktop) and for `AudioContext.destination` (a system-mixer property, not a profile
+  value). All of these stay native by design; the finding is pinned here so a future
+  audit does not "fix" a correct surface.
+- The API-presence shapes (`navigator.hid/usb/serial/bluetooth/scheduling/ink/…`),
+  `connection.type` and the storage quota are byte-identical to a plain Chrome.
+
+### The voices answered before they could possibly load (A-34)
+
+The round-16 sweep of the residual surfaces measured everything a page can still compare
+— console residue, performance marks, injected `<script>` elements, `featurePolicy`,
+`Intl.supportedValuesOf`, `RTCRtpSender.getCapabilities` (the real media-stack codec
+lists), `getSupportedConstraints`, `CSS.registerProperty` shapes — and all of them are
+byte-identical to a plain Chrome. The voices were the exception, and the defect is a
+**timing tell**, not a value one: the native Chrome FIRST `getVoices()` call returns
+`[]` — the voice list loads asynchronously and a page MUST listen for the
+`voiceschanged` event (that is the documented Web Speech recipe). Measured: the host's
+first call returns 0, the event fires, the second call returns the voices; our spoof
+answered the full profile pool **instantly** and **never** fired the event — an API that
+is "too available", detectable in two lines by any page following the MDN pattern.
+
+The native pattern is now emulated: the load starts on the FIRST `getVoices()` read
+(not at injection time — otherwise a probe seconds later already sees the pool), the
+`voiceschanged` Event (a real `Event` via `dispatchEvent` on the real
+`speechSynthesis` object) fires asynchronously after a profile-seeded 100–400 ms delay,
+reads before it answer `[]`, and every later read returns the pool. The live test now
+asserts the whole pattern: first read 0, event fired, pool 8–12, native voice shape.
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

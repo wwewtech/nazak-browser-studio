@@ -519,6 +519,25 @@ def test_a32_fetch_enable_never_pauses_every_request():
     )
 
 
+def test_a34_voices_follow_the_native_loading_pattern():
+    """A-34: the native Chrome FIRST getVoices() call returns [] and the
+    voices arrive asynchronously through the voiceschanged event (measured:
+    host first call = 0, event fires, second call = the voices). Our old
+    spoof answered the full pool instantly and NEVER fired the event — a
+    page following the MDN recipe saw an API that is "too available"."""
+    src = _generated_js()
+    assert "startVoicesLoad" in src, (
+        "the voices must load lazily — the first getVoices() must return [] and start the async load (A-34)"
+    )
+    assert "new Event('voiceschanged')" in src, (
+        "the voiceschanged event must fire asynchronously on the real speechSynthesis object (A-34)"
+    )
+    # the first read must answer [] (the native pattern), not the pool
+    proxy_block = src[src.find("apply: function(target, thisArg, args) {{") :][:400]
+    voices_block = src[src.find("__replaceWithProxy(speechHost, 'getVoices'") :][:600]
+    assert "return [];" in voices_block, "reads before the event must answer [] (A-34)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

@@ -1608,9 +1608,45 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const speechHost = (typeof SpeechSynthesis !== 'undefined' && SpeechSynthesis.prototype && SpeechSynthesis.prototype.getVoices)
                 ? SpeechSynthesis.prototype
                 : window.speechSynthesis;
+            // Hunt A-34: the native Chrome FIRST getVoices() call returns []
+            // — the voice list loads asynchronously and the page MUST listen
+            // for the voiceschanged event (measured: host first call = 0,
+            // event fires, second call = the voices; our old spoof answered
+            // the full pool instantly and NEVER fired the event — a page
+            // following the MDN recipe saw an API that is "too available",
+            // a two-line detector). The native pattern is emulated now: the
+            // load starts on the FIRST getVoices() read (not at injection
+            // time — otherwise the probe seconds later already sees the
+            // pool), the voiceschanged Event fires asynchronously on the
+            // real speechSynthesis object, and reads before it answer [].
+            let voicesReady = false;
+            let voicesLoadStarted = false;
+            const voicesSetTimer = (function() {{
+                try {{ return window.setTimeout; }} catch(e) {{ return null; }}
+            }})();
+            const startVoicesLoad = function() {{
+                if (voicesLoadStarted) return;
+                voicesLoadStarted = true;
+                if (!voicesSetTimer) {{ voicesReady = true; return; }}
+                try {{
+                    voicesSetTimer(function() {{
+                        voicesReady = true;
+                        try {{
+                            const ev = new Event('voiceschanged');
+                            window.speechSynthesis.dispatchEvent(ev);
+                        }} catch(e) {{}}
+                    }}, 100 + ({fp.canvas_noise_seed} % 300));
+                }} catch(e) {{
+                    voicesReady = true;
+                }}
+            }};
             // Class 2 fix: a Proxy over the NATIVE getVoices.
             __replaceWithProxy(speechHost, 'getVoices', {{
                 apply: function(target, thisArg, args) {{
+                    if (!voicesReady) {{
+                        startVoicesLoad();
+                        return [];
+                    }}
                     return voiceObjects;
                 }}
             }});
