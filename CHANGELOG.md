@@ -248,6 +248,31 @@ for both the hooked `toString` and the un-hooked `valueOf`,
 `at toString.eval` for the native) — V8 picks that name, the same limitation
 puppeteer-extra-stealth has.
 
+### The injector left a server-visible timing signature on every navigation (round 15)
+
+Sourced from the 96-comment puppeteer-extra issue #817 (Cloudflare detection, still
+active in 2026), where the field-proven tells are CDP-session timing and injected-code
+visibility. Measured against our launch path, that surfaced two findings:
+
+- **Every network request was paused for a Python round-trip (A-32).** The injector's
+  `Fetch.enable` call passed `patterns: [{"urlPattern": "*"}]`, which makes Chrome hold
+  EVERY request until the injector's Python loop answers `Fetch.continueRequest`. On a
+  localhost page: `responseStart` 58 ms where a plain Chrome does 3 ms, and
+  `domInteractive` 189 ms vs 13 ms — a Navigation-Timing signature a server can read on
+  every navigation. `handleAuthRequests` alone (no patterns) still emits
+  `Fetch.authRequired` for proxy challenges — the patterns list only controls which
+  requests get paused — so the proxy-credential answering keeps working. After the
+  fix the gap is back in the noise band (measured 6–7 ms, stable across runs, within
+  the range a plain Chrome itself shows on a cold start).
+- **Error stacks and performance entries are clean** (measured in the same run): the
+  `Object.create(fn).toString()` anchor is byte-identical to the host (`at
+  Function.toString (<anonymous>)`), no `pptr:`/`sourceURL=` traces from the CDP
+  injection, and no CDP scripts appear in the resource-timing entries.
+- The remaining exposure from #817 is documented, not fixable in JS: an **actively
+  attached CDP session during page load** is itself a signal (the community workaround
+  disconnects the automation client right after `goto`). That is inherent to the
+  launch-with-CDP model — the Anti-Detect Guide spells it out.
+
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
   `SpeechSynthesisVoice` has **no own properties at all**: its values live on the

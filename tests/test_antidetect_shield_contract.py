@@ -502,6 +502,23 @@ def test_stealth_core_replaces_functions_with_native_proxies():
     )
 
 
+def test_a32_fetch_enable_never_pauses_every_request():
+    """A-32: the injector's Fetch.enable call used
+    patterns: [{"urlPattern": "*"}], which PAUSES every network request for a
+    Python round-trip — measured on a localhost page: responseStart 58 ms
+    (vs 3 ms in a plain Chrome), domInteractive 189 ms (vs 13 ms). That is a
+    server-visible timing signature on every navigation. handleAuthRequests
+    alone still emits Fetch.authRequired for proxy challenges."""
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    assert '"patterns": [{"urlPattern": "*"}]' not in src, (
+        "Fetch.enable must not pause every request — the Python round-trip is a "
+        "server-visible timing tell on every navigation (A-32)"
+    )
+    assert '{"handleAuthRequests": True}' in src, (
+        "handleAuthRequests must stay — it is what emits Fetch.authRequired for proxy challenges (A-32)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

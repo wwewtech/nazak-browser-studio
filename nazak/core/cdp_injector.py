@@ -512,9 +512,17 @@ class StealthInjector:
             # Proxy 407 challenges are answered via CDP (extension SW never loads).
             # handleAuthRequests is REQUIRED: without it Chrome never emits
             # Fetch.authRequired and the credential answer below stays dead.
+            # Hunt A-32: the old call passed patterns: [{"urlPattern": "*"}],
+            # which PAUSES every network request for a Python round-trip —
+            # measured on a localhost page: responseStart 58 ms (vs 3 ms in a
+            # plain Chrome), domInteractive 189 ms (vs 13 ms). That is a
+            # server-visible timing signature on every navigation. With
+            # handleAuthRequests alone (no patterns) Chrome still emits
+            # Fetch.authRequired for proxy challenges — the patterns list only
+            # controls which requests get paused.
             await self._command(
                 "Fetch.enable",
-                {"patterns": [{"urlPattern": "*"}], "handleAuthRequests": True},
+                {"handleAuthRequests": True},
                 session_id=session_id,
             )
             if src:
