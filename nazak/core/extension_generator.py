@@ -1392,6 +1392,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 const __missing = fontList
                     .map(function(f) {{ return f.family; }})
                     .filter(function(f) {{ return __isMissing(f); }});
+                try {{ console.log('[NAZAK-DBG] real=' + __realFamilies.length + ' missing=' + __missing.length); }} catch(e) {{}}
                 if (!__missing.length) {{
                     __aliasesInstalled = true;
                     return;

@@ -242,6 +242,8 @@ class StealthInjector:
         self.worker_sessions_applied = 0
         # Hunt A-15: how many CDP bindings were hidden from Object.keys.
         self.binding_hidden = 0
+        # Hunt A-31: how many navigated documents the shield was re-injected into.
+        self.reinjections_applied = 0
         self._ws: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._next_id = 0
@@ -256,6 +258,8 @@ class StealthInjector:
         self._contexts: dict[int, tuple[str | None, bool]] = {}
         # documents already applied: (sessionId, loaderId)
         self._injected_docs: set[tuple[str, str]] = set()
+        # Hunt A-31: loaderIds of main-frame documents awaiting their load event
+        self._pending_nav_docs: dict[str, str] = {}
         self._binding_bucket = _TokenBucket(BINDING_RATE_LIMIT_PER_SEC, BINDING_RATE_BURST)
         self._binding_tasks: set[asyncio.Task] = set()
 
@@ -364,6 +368,13 @@ class StealthInjector:
                         self._contexts.clear()
                     elif method == "Page.frameNavigated":
                         self._on_frame_navigated(params, sid)
+                    elif method == "Page.loadEventFired":
+                        # Hunt A-31: the deferred shield state (the @font-face
+                        # alias install above all) dies with the document it
+                        # was registered in; loadEventFired marks the new
+                        # document as ready (head/body exist, fonts loaded) —
+                        # the right moment to re-run the shield in it.
+                        self._on_load_event(sid)
                     elif method == "Fetch.authRequired":
                         try:
                             await self._on_auth_required(params, sid)
@@ -561,6 +572,53 @@ class StealthInjector:
         # The session's main frame is the one without a parentId.
         if session_id and not frame.get("parentId") and frame.get("id"):
             self._main_frame[session_id] = str(frame["id"])
+            # Hunt A-31: remember the loaderId of the incoming main-frame
+            # document; the actual shield re-injection happens on
+            # Page.loadEventFired (the commit moment is too early — the
+            # document has no head/body yet and the fonts are not loaded,
+            # so the deferred alias install cannot measure anything).
+            self._pending_nav_docs[session_id] = str(frame.get("loaderId") or frame["id"])
+
+    def _on_load_event(self, session_id: str | None) -> None:
+        """Re-inject the shield into the freshly loaded main document (A-31).
+
+        The whole deferred machinery of the shield (the @font-face alias
+        install with its fonts.ready / DOMContentLoaded callbacks, the
+        deferred measurement passes) is registered by the ONE
+        Runtime.evaluate the injector performed at attach time — in the
+        about:blank document that is current then. Those callbacks fire in
+        THAT document and die with it: every later navigation leaves the
+        page without them (measured: navigating the injector's own tab, all
+        six claimed-but-missing mac families still rendered as the fallback
+        while the getter spoofing kept working — the getters are installed
+        once and survive; the deferred passes are not). loadEventFired marks
+        the new document as ready: re-running the shield there restores
+        them; the script's per-context idempotency flag makes the re-run a
+        no-op inside one document while running fresh in the new one.
+        """
+        if not session_id:
+            return
+        src = self.opts.stealth_source
+        if not src:
+            return
+        doc_key = self._pending_nav_docs.pop(session_id, None)
+        key = (session_id, doc_key or "")
+        if key in self._injected_docs:
+            return
+        self._injected_docs.add(key)
+        asyncio.ensure_future(self._reinject_into(session_id, src))
+
+    async def _reinject_into(self, session_id: str, src: str) -> None:
+        """Run the shield in the current document of the session (A-31)."""
+        try:
+            await self._command(
+                "Runtime.evaluate",
+                {"expression": src, "awaitPromise": False, "returnByValue": False},
+                session_id=session_id,
+            )
+            self.reinjections_applied += 1
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("shield re-injection failed for %s: %s", session_id, exc)
 
     def binding_event_allowed(self, params: dict[str, Any], session_id: str | None) -> tuple[bool, str]:
         """Pure check: whether this binding call may be accepted.
@@ -675,6 +733,8 @@ class InjectorHandle:
         return {
             "applied": self.applied,
             "sessions": inj.sessions_applied if inj else 0,
+            "workers": inj.worker_sessions_applied if inj else 0,
+            "reinjections": inj.reinjections_applied if inj else 0,
             "auth_challenges": inj.auth_challenges if inj else 0,
             "auth_errors": inj.auth_errors if inj else 0,
             "requests_paused": inj.requests_paused if inj else 0,
