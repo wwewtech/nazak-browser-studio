@@ -247,6 +247,22 @@ chrome.webRequest.onAuthRequired.addListener(
     platform_version_json = json.dumps(fp.platform_version)
     ua_full_version = _chrome_full_version(fp.user_agent, fp.app_version)
     ua_full_version_json = json.dumps(ua_full_version)
+    # Hunt A-35: fullVersionList carries the FULL version per brand (the
+    # sync brands carry only the major). The GREASE entry keeps its own
+    # version string from the profile brands (a real Chrome pairs each
+    # GREASE brand with a specific version; both orderings exist in the
+    # wild, the profile's own order is preserved).
+    full_version_list_json = json.dumps(
+        [
+            {
+                "brand": str(b.get("brand")),
+                "version": (
+                    ua_full_version if str(b.get("brand")) in ("Google Chrome", "Chromium") else str(b.get("version"))
+                ),
+            }
+            for b in fp.brands
+        ]
+    )
     timezone_json = json.dumps(fp.timezone)
     webgl_vendor_json = json.dumps(fp.webgl_vendor)
     webgl_renderer_json = json.dumps(fp.webgl_renderer)
@@ -721,16 +737,31 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         }});
         Object.defineProperty(uaData, 'getHighEntropyValues', {{
             value: makeNative(function(hints) {{
-                return Promise.resolve({{
-                    brands: brandsData,
-                    mobile: {str(fp.mobile).lower()},
-                    platform: {ch_platform_json},
+                // Hunt A-35: the native API returns EXACTLY the requested
+                // hints — nothing more (measured: the host's answer to
+                // ['architecture','bitness',...] contains no brands/mobile/
+                // platform; our old hook answered a fixed set, so
+                // 'fullVersionList' came back undefined for any page that
+                // requested it — a one-line detector — and the extra fields
+                // leaked a non-native response shape).
+                const all = {{
                     architecture: {architecture_json},
                     bitness: {bitness_json},
                     model: {model_json},
                     platformVersion: {platform_version_json},
-                    uaFullVersion: {ua_full_version_json}
-                }});
+                    uaFullVersion: {ua_full_version_json},
+                    fullVersionList: {full_version_list_json},
+                    fullVersion: {ua_full_version_json},
+                    wow64: false,
+                    formFactors: ['Desktop'],
+                    brands: brandsData,
+                    mobile: {str(fp.mobile).lower()},
+                    platform: {ch_platform_json}
+                }};
+                const req = (hints && hints.length) ? hints : Object.keys(all);
+                const out = {{}};
+                req.forEach(function(h) {{ if (h in all) out[h] = all[h]; }});
+                return Promise.resolve(out);
             }}, 'getHighEntropyValues'),
             configurable: true, enumerable: false, writable: true
         }});

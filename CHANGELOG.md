@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1097 passed, 6 deselected** (1103 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1098 passed, 6 deselected** (1104 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -312,6 +312,38 @@ The native pattern is now emulated: the load starts on the FIRST `getVoices()` r
 `speechSynthesis` object) fires asynchronously after a profile-seeded 100–400 ms delay,
 reads before it answer `[]`, and every later read returns the pool. The live test now
 asserts the whole pattern: first read 0, event fired, pool 8–12, native voice shape.
+
+### The async Client Hints answered a fixed shape (A-35)
+
+`navigator.userAgentData.getHighEntropyValues()` — the ASYNC Client Hints surface most
+stealth layers never touch — was measured against the host and answered with a
+**fixed set of fields regardless of the request** (measured: the host's answer to
+`['architecture','bitness','model',…]` contains exactly the requested keys; our hook
+returned a canned object). Two detector-grade consequences: **`fullVersionList` came
+back `undefined`** for any page that requested it (the host answers the full
+per-brand version list) — a one-line check — and the extra unrequested fields leaked
+a non-native response shape.
+
+The hook now keeps a native-shaped pool (`architecture`, `bitness`, `model`,
+`platformVersion`, `uaFullVersion`, `fullVersionList`, `fullVersion`, `wow64`,
+`formFactors`, plus the low-entropy `brands/mobile/platform`) and answers **exactly
+the requested hints**, like the real API. `fullVersionList` is derived from the
+profile's own brands with FULL versions (the GREASE entry keeps its profile version —
+a real Chrome pairs each GREASE brand with its own string; both orderings exist in
+the wild). Measured after the fix: the response carries
+`fullVersionList: [Google Chrome=156.0.8078.47, Chromium=156.0.8078.47, Not(A:Brand=99]`,
+`wow64: false`, `formFactors: ["Desktop"]` — the host's exact shape.
+
+The same run verified the neighbouring surfaces stay native: `getLayoutMap` (the
+host's physical keyboard layout — a desktop machine legitimately reports it),
+`screen.orientation`, `canPlayType`/codec support, `window.chrome` shape
+(`app/csi/loadTimes`, no `runtime`), and the sync `userAgentData` brands keep the
+profile's GREASE variant (`Not(A:Brand=99` — one of the valid Chromium GREASE pool
+strings). The remaining deltas are the spoof itself working: `platformVersion`
+reports the profile's declared Windows build (Win10 profiles say `10.0.0`; the audit
+host runs Win11/`19.0.0`), the screen metrics are the profile's, and
+`performance.timeOrigin` is the document's own start — all three DIFFs are the
+profile, not a leak.
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

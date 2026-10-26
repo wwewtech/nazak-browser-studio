@@ -538,6 +538,29 @@ def test_a34_voices_follow_the_native_loading_pattern():
     assert "return [];" in voices_block, "reads before the event must answer [] (A-34)"
 
 
+def test_a35_high_entropy_hints_answer_exactly_the_request():
+    """A-35: the native getHighEntropyValues returns EXACTLY the requested
+    hints (measured: the host's answer contains no brands/mobile/platform
+    when they were not requested). The old hook answered a fixed set, so
+    fullVersionList came back undefined for any page that requested it — a
+    one-line detector."""
+    src = _generated_js()
+    anchor = "Object.defineProperty(uaData, 'getHighEntropyValues'"
+    hook = src[src.find(anchor) :][:1400]
+    assert hook, "the getHighEntropyValues hook was not found in the shield"
+    assert "fullVersionList" in hook, "the hook must answer the fullVersionList hint (A-35)"
+    assert "formFactors" in hook, "the hook must answer the formFactors hint (A-35)"
+    assert "wow64" in hook, "the hook must answer the wow64 hint (A-35)"
+    assert "req.forEach" in hook or "forEach" in hook, (
+        "the hook must answer ONLY the requested hints — a fixed set leaks a non-native shape (A-35)"
+    )
+    # the fullVersionList must carry FULL versions (not the sync majors)
+    py = (REPO_ROOT / "nazak" / "core" / "extension_generator.py").read_text(encoding="utf-8")
+    assert "full_version_list_json" in py, (
+        "the generator must derive fullVersionList from the profile brands with full versions (A-35)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil
