@@ -23,7 +23,7 @@
   <b>Free Dolphin{anty}-style Alternative</b> • <b>Local CDP Automation REST API</b> • <b>Batch Cookie Import/Export</b> • <b>Real-Time Action Synchronizer</b> • <b>Autonomous Scenario Warmup</b> • <b>Live 2FA TOTP RFC 6238 Generator</b> • <b>User-Selectable Secrets Encryption</b> • <b>FFmpeg Video Uniqueizer</b> • <b>Stealth Bezier Motorics</b>
 </p>
 
-[📥 **Download Portable EXE (v1.15.1 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
+[📥 **Download Portable EXE (v1.15.1 Release)**](https://github.com/wwewtech/nazak-browser-studio/releases) • [📖 Architecture & Features](#-architecture-and-features) • [🌐 **Complete REST API & Swagger Docs**](docs/API_REFERENCE.md) • [💻 **CLI Reference (GUI parity, AI-agent friendly)**](docs/CLI_REFERENCE.md) • [🛡️ **Anti-Detect Guide (limits & applicability)**](docs/ANTIDETECT_GUIDE.md) • [🤖 Local Automation API](#-1-local-automation-api--dolphinanty-parity) • [🚀 Quick Start](#-quick-start) • [🧪 Tests](#-test-coverage)
 
 ---
 
@@ -150,30 +150,49 @@ with sync_playwright() as p:
 ---
 
 ### 🛡️ 7. Total Hardware Shield v2.6 & Enterprise Stealth Architecture
-- **Native Function Cloaking (`makeNative` / `toString` Proxy)**: All hooked functions, getters, and prototype descriptors (including `navigator.webdriver` getter) are shielded through a proxy of `Function.prototype.toString`. Anti-fraud verification scripts (CreepJS, DataDome, Cloudflare Turnstile) receive pristine `function () { [native code] }` reflection strings without tampering signals.
+
+> 📖 **Start here: [`docs/ANTIDETECT_GUIDE.md`](docs/ANTIDETECT_GUIDE.md)** — what the
+> shield covers, what it cannot (and where the operator's job begins), an applicability
+> matrix, and the verification method (the same replays the audit used).
+
+- **Proxy-Over-Native Hook Architecture (stealth core)**: every hook is a **Proxy over the
+  NATIVE function**, never a plain-JS replacement — the function's shape (own keys,
+  extendability, `toString()`, illegal-invocation TypeError) stays that of the real
+  native, and only the behaviour changes. Verified by a faithful port of the CreepJS lie
+  detector (36 APIs scanned): **0 corrupted APIs** (a plain-Chrome control: 0; the
+  pre-rework shield: 33). Error stacks match the host byte-for-byte on 6 of 7 adversarial
+  `toString`/`setPrototypeOf` traces (frame count, anchor and type included), and
+  `Error.stackTraceLimit` is raised inside traps so the native stack tail survives.
 - **Hardware Emulation (WebGL & WebGPU)**:
-  - *WebGL*: UNMASKED_VENDOR/RENDERER plus ~25 limit constants (texture units, vertex/fragment uniform vectors, attribs, cube-map sizes, aliased ranges) matching a coherent desktop-GPU profile; the `WEBGL_debug_info` extension getter is wrapped so the host GPU cannot leak through `ext.getParameter`.
-  - *WebGPU*: Intercepts `navigator.gpu.requestAdapter()` to synchronize `requestAdapterInfo()` and `adapter.info` with the spoofed GPU vendor and architecture.
+  - *WebGL*: UNMASKED_VENDOR/RENDERER plus ~25 limit constants (texture units, vertex/fragment uniform vectors, attribs, cube-map sizes, aliased ranges as real `Float32Array` pairs) matching a coherent desktop-GPU profile. The extension semantics are native: the UNMASKED_* parameters answer `null` until `WEBGL_debug_renderer_info` is requested — and both the WebGL **and** WebGL2 prototypes are hooked (a WebGL2 context has a different prototype; the host GPU leaked there).
+  - *WebGPU*: Intercepts `navigator.gpu.requestAdapter()` to synchronize `requestAdapterInfo()` and `adapter.info` with the spoofed GPU vendor and architecture, on a real `GPUAdapterInfo`-shaped object.
 - **Platform-Aligned Font, Speech & Plugin Spoofing**:
-  - `queryLocalFonts`: Emulates the Font Access API with authentic OS font family lists (Windows: Segoe UI, Calibri; macOS: San Francisco, Helvetica; Linux: DejaVu Sans, Liberation).
-  - `speechSynthesis.getVoices`: Voice pools match real distributions (Windows 12 SAPI voices, macOS 12, Linux 8) with a per-profile seeded subset.
+  - `queryLocalFonts`: answers from a **per-profile font pool** (24–42 realistic families per OS — a real Windows box reports 25–60, measured) instead of a hardcoded list. Families the host lacks are backed by a real sibling font through `@font-face src: local(...)`, so the rendered widths agree with the claim, and the aliases stay out of `document.fonts`.
+  - `speechSynthesis.getVoices`: Voice pools match real distributions (Windows 8–12 SAPI voices) on real `SpeechSynthesisVoice` prototypes — the instances carry no own properties, like the natives.
   - `navigator.plugins` / `mimeTypes`: The exact desktop-Chrome shape (5 PDF plugin entries, 2 mime types each, real `PluginArray`/`MimeTypeArray` prototypes) — an empty array is a headless tell.
 - **Sub-Perceptual Deterministic Noise Injection**:
-  - `Canvas 2D & OffscreenCanvas Noise`: LCG pseudo-random perturbation across the FULL canvas surface (`toDataURL`/`toBlob` included), re-seeded per read so two reads never cancel out.
-  - `WebAudio & OfflineAudioContext Noise`: Deterministic jitter across live `AudioBuffer` and `OfflineAudioContext.startRendering`; `sampleRate`/`baseLatency`/`numberOfChannels` pinned to the profile (host sound-card values leak otherwise).
-  - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter added to `CanvasRenderingContext2D.prototype.measureText` metrics and `Element.prototype.getBoundingClientRect`, re-derived per call.
+  - `Canvas 2D & OffscreenCanvas Noise`: LCG perturbation derived from the **profile seed and the CONTENT** — the same content yields the same hash on every read (a real browser's property), different profiles hash differently. The main canvas and the OffscreenCanvas produce the **same** image (measured: 0 differing pixels; a plain Chrome: 0).
+  - `WebAudio & OfflineAudioContext Noise`: Per-call phase jitter shared between direct `getChannelData` reads and `startRendering` renders; `sampleRate`/`baseLatency`/`numberOfChannels` pinned to the profile (host sound-card values leak otherwise).
+  - `Sub-pixel Font Measurement & DOM Jitter`: Micro-jitter on `measureText` and `getBoundingClientRect` that is **stable per string / per element** (a real renderer only changes it when the layout changes), with the canvas metric and the DOM metric agreeing.
   - `performance.now()`: Per-profile sub-100µs jitter decorrelates the host scheduler's timing signature while keeping the timer monotonic.
+- **Instance & Window Hygiene**: `Object.getOwnPropertyNames(navigator)` is empty and the window carries none of our properties (measured: own-property count identical to a plain Chrome) — the spoofed objects are built on prototype layers over the native prototypes.
+- **Scope Coverage**: the shield applies to the main world, **Workers and ServiceWorkers** (a Worker's navigator is a different class — both prototypes are hooked) and cross-origin iframes.
 - **Network & Runtime Leak Protection**:
   - `WebRTC Candidate Sanitizer`: Automatically strips RFC 1918 private IPv4 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads — including trickle-ICE candidates and `createAnswer`.
   - `Timezone Synchronization`: The CDP stealth injector applies `Emulation.setTimezoneOverride` to every page session (live-verified — JavaScript `Intl` stays locked to the profile timezone, with full `NumberFormat`/`DateTimeFormat` locale consistency), backed by the `--time-zone-for-testing={timezone}` flag and the `TZ` process environment for C++-side alignment. Offsets are always resolved DST-aware.
   - `matchMedia`: `prefers-color-scheme` / `prefers-reduced-motion` / DPR queries answer from the profile, not the host.
   - `Anti-Port Scanning Shield`: Blocks every loopback fetch target from the page except the local API port — the profile's own DevTools endpoint is unreachable.
 - **Cluster-Signature Hygiene (farm-level anti-detect)**:
-  - Window position randomized per launch (never a farm-wide constant), history host-sets unique per profile (110-URL pool: popular core + long tail), media-device labels drawn from realistic pools, battery states that actually vary, GREASE brands keyed to the browser major, and the CDP binding name randomized per profile.
+  - Window geometry derived from the spoofed screen (never the host's), history host-sets unique per profile (110-URL pool: popular core + long tail), media-device labels drawn from realistic pools, battery states that actually vary, GREASE brands keyed to the browser major, and the CDP binding name randomized per profile (and hidden from `Object.keys(window)`).
 - **Organic Profile History Seeder (SQLite)**:
   - Eliminates "empty bot profile" heuristics by injecting authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic visit frequencies and a per-profile host-set (popular core shared, long tail unique).
   - 1-click execution via REST API (`POST /api/profiles/{id}/seed-history?entries_count=25`).
 - **DevToolsActivePort Handshake**: Zero-race CDP connection resolving ephemeral ports and GUID paths directly from Chromium runtime state, with automatic stale port lock cleanup.
+
+> ⚠️ **Honest limits, in one line:** the shield owns the *fingerprint* signal — it cannot
+> own your IP reputation, TLS stack or behaviour. The
+> [Anti-Detect Guide](docs/ANTIDETECT_GUIDE.md) spells out the boundaries and the
+> operator checklist that keeps the two layers coherent.
 
 ---
 

@@ -22,7 +22,7 @@
 8. [YouTube Shorts & Instagram Reels Autoposter & FFmpeg](#-7-youtube-shorts--instagram-reels-autoposter--ffmpeg)
 9. [System Diagnostics & WebSocket Events](#-8-system-diagnostics--websocket-events)
 10. [Secrets Storage — User-Selectable Encryption Mode](#-9-secrets-storage--user-selectable-encryption-mode)
-11. [Hardware Isolation & Manifest V3 Stealth Architecture](#-10-hardware-isolation--manifest-v3-stealth-architecture)
+11. [Hardware Isolation & Manifest V3 Stealth Architecture](#-10-hardware-isolation--manifest-v3-stealth-architecture) — plus the operator-facing [Anti-Detect Guide](ANTIDETECT_GUIDE.md) (limits & applicability)
 12. [Code Map — Where Each API Area Lives (P0 layout)](#-code-map--where-each-api-area-lives-p0-layout)
 13. [Profile Storage Backends — JSON (default) & SQLite (opt-in)](#-profile-storage-backends--json-default--sqlite-opt-in)
 14. [Operations & Hardening (P1)](#-operations--hardening-p1)
@@ -656,24 +656,36 @@ In all API endpoints (`GET /api/profiles`, `GET /api/profiles/{id}`), sensitive 
 
 ## 🛡️ 10. Hardware Isolation & Manifest V3 Stealth Architecture
 
+> 📖 **Operator-facing documentation:** [`docs/ANTIDETECT_GUIDE.md`](ANTIDETECT_GUIDE.md)
+> — the surface map, the verification method (CreepJS/BotD replays), the honest limits
+> (what is spoofed vs. what is left to the operator: IP, TLS, behaviour) and the
+> applicability matrix.
+
 ### Chrome Manifest V3 Migration:
 - **`manifest_version: 3`**: Compatible with modern Chromium deprecation rules.
 - **Service Worker Architecture**: Uses `background.service_worker` (`background.js`) instead of persistent background scripts.
 - **Declarative Proxy Authentication**: Uses `webRequestAuthProvider` permission with `chrome.webRequest.onAuthRequired.addListener(..., ["asyncBlocking"])`.
 - **`MAIN` World Execution**: Stealth scripts inject at `document_start` inside the DOM's main execution context.
 
-### Fingerprint Spoofing Fidelity (Total Hardware Shield v2.5):
-- **Native Function Cloaking (`makeNative` / `toString` Proxy)**: All hooked functions, getters, and APIs (`Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver').get`, `queryLocalFonts`, `requestAdapter`, `getImageData`, `startRendering`) are wrapped via an isolated `Proxy` of `Function.prototype.toString`. Anti-fraud engines (CreepJS, DataDome, Cloudflare Turnstile) inspect `toString()` and receive authentic `function () { [native code] }` without prototype tampering flags.
-- **WebGPU Hardware Emulation (`navigator.gpu`)**: Intercepts `navigator.gpu.requestAdapter()` and synchronizes `adapter.requestAdapterInfo()` and `adapter.info` with the profile's WebGL vendor and architecture (NVIDIA Ada Lovelace RTX 4090/4080, Ampere RTX 3080/3070, Apple M-Series, AMD RDNA 3, Intel Alchemist).
-- **Local Font Spoofing (`queryLocalFonts`)**: Emulates the W3C Font Access API, returning authentic platform-specific font family records matching the spoofed OS (Windows: Segoe UI, Calibri, Consolas; macOS: San Francisco, Helvetica Neue; Linux: DejaVu Sans, Liberation Sans).
-- **SpeechSynthesis Platform Voices**: Overrides `speechSynthesis.getVoices()` to align system speech voices with the spoofed operating system and primary language locale.
-- **Sub-pixel Font Measurement Jitter (`measureText`)**: Fresh deterministic micro-offset on *every* call (LCG re-seeded from the profile seed plus a call counter), defeating font fingerprinting based on glyph geometry analysis. A fixed per-session constant would be trivially detectable by reading the same text twice.
-- **OffscreenCanvas & `toBlob` Multi-Channel Noise**: Linear Congruential Generator (LCG) with a per-call reseed (call counter mixed into the start state) and a seed-dependent stride, so every `getImageData` read carries a different noise field while staying deterministic for the profile. The old code restarted the LCG from the same seed on every read — a checker reading two regions saw identical deltas and subtracted the noise out.
-- **AudioContext & OfflineAudioContext Noise**: Per-call phase shift shared between direct `getChannelData` reads and `startRendering` renders, so two reads of the same buffer never repeat the pattern.
+### Fingerprint Spoofing Fidelity (Total Hardware Shield v2.6):
+
+- **Proxy-Over-Native Hook Architecture (the stealth core)**: every hook is a **Proxy over the NATIVE function**, never a plain-JS replacement. The native getter runs first (receiver-less access still throws the native `Illegal invocation` TypeError with its native stack), the function's shape (own keys, extendability, `toString()`) stays native, and a proxied API answers `toString()` with the **exact original signature**. Our own frames are spliced out of error stacks, and `Error.stackTraceLimit` is raised inside traps so the native stack tail survives. Verified by a faithful port of the CreepJS lie detector: **0 corrupted APIs of 36 scanned** (a plain-Chrome control: 0; the pre-rework shield: 33), and **6 of 7** adversarial error-trace shapes match the host byte-for-byte (the 7th is a V8 engine limitation shared by every JS-level stealth tool). Nothing is left on the instances: `getOwnPropertyNames(navigator)` is empty, the window carries none of our properties.
+- **Scope coverage**: the shield applies to the main world, **Workers and ServiceWorkers** (a Worker's navigator is a `WorkerNavigator` — a different class; both prototypes are hooked) and cross-origin iframes.
+- **WebGPU Hardware Emulation (`navigator.gpu`)**: Intercepts `navigator.gpu.requestAdapter()` and synchronizes `adapter.requestAdapterInfo()` and `adapter.info` with the profile's WebGL vendor and architecture, on a real `GPUAdapterInfo`-shaped object (NVIDIA Ada Lovelace RTX 4090/4080, Ampere RTX 3080/3070, Apple M-Series, AMD RDNA 3, Intel Alchemist).
+- **WebGL fidelity**: UNMASKED_VENDOR/RENDERER answer `null` until `WEBGL_debug_renderer_info` is requested (the native semantics), both the WebGL **and** WebGL2 prototypes are hooked, and the aliased ranges are real `Float32Array` pairs.
+- **Local Font Spoofing (`queryLocalFonts`)**: answers from a **per-profile font pool** (24–42 realistic families per OS; a real Windows box reports 25–60 — measured). Families the host lacks are backed by a real sibling font through `@font-face src: local(...)`, so the rendered widths agree with the claim; the aliases stay out of `document.fonts` (size and enumeration are filtered).
+- **SpeechSynthesis Platform Voices**: Overrides `speechSynthesis.getVoices()` to align system speech voices with the spoofed operating system and primary language locale; the voice objects carry no own properties, like the native ones.
+- **Content-Derived Canvas Noise**: LCG perturbation derived from the **profile seed and the CONTENT** — the same content yields the same hash on every read (a real browser's property), different profiles hash differently. The main canvas and the OffscreenCanvas produce the **same** image (measured: 0 differing pixels). The noise is applied exactly once per read, on the raw pixels.
+- **AudioContext & OfflineAudioContext Noise**: Per-call phase shift shared between direct `getChannelData` reads and `startRendering` renders, so two reads of the same buffer never repeat the pattern; `sampleRate`/`baseLatency`/`numberOfChannels` pinned to the profile.
+- **Stable Sub-pixel Jitter**: `measureText` and `getBoundingClientRect` offsets are **stable per string / per element** (a real renderer only changes them when the layout changes) — two reads of the same rect or the same text never differ, and the canvas metric agrees with the DOM metric.
 - **WebRTC Candidate Sanitizer & Leak Protection**: Intercepts `createOffer`, `createAnswer` and `setLocalDescription` on `RTCPeerConnection` plus the `RTCIceCandidate` constructor, so trickle-ICE candidates (which bypass the SDP hooks entirely) are scrubbed too. Strips private IPv4 candidates (RFC 1918: `10.x`, `192.168.x`, `172.16-31.x`) and IPv6 mDNS candidates from SDP payloads.
 - **Chromium V8 & C++ Timezone Synchronization**: The CDP stealth injector issues `Emulation.setTimezoneOverride` per page session (verified live: JavaScript `Intl` reports the profile timezone), backed by the `--time-zone-for-testing={timezone}` launch flag and the `TZ` process environment for native routines. The fingerprint generator always resolves the *current* DST-aware offset via zoneinfo — a static table offset goes stale for half the year (Berlin −60 in winter vs −120 in summer) and the zone/offset mismatch is an instant tell.
 - **Organic Profile History Seeder (SQLite)**: Populates authentic WebKit microsecond timestamps into Chromium's native `Default/History` database across the past 14 days with realistic multi-visit frequencies across high-trust domains (Google, Wikipedia, GitHub, StackOverflow, Reddit, YouTube, BBC, Amazon).
-- **`navigator.webdriver`**: Defined via prototype getter `get: () => false` with standard descriptor semantics and native cloaking, eliminating prototype deletion flags.
-- **DOM Sub-pixel Jitter**: `Element.prototype.getBoundingClientRect` re-derives a fresh sub-pixel offset on every call (seeded LCG plus a call counter) instead of one fixed session constant — two reads of the same rect never repeat the delta.
+- **`navigator.webdriver`**: A Proxy over the **native** getter — the property keeps its native descriptor semantics and `toString()`, and `Object.getOwnPropertyNames(navigator)` stays empty.
 - **Human cursor (Bezier motorics)**: aimed moves overshoot the target and settle back with 1–2 micro-corrections, and the speed profile is asymmetric (fast attack, long tail) rather than a time-symmetric cosine ease.
 - **CDP DevToolsActivePort Handshake**: Dynamically resolves bound port and ephemeral GUID directly from Chromium runtime state, eliminating race conditions and stale socket fallbacks.
+
+> ⚠️ **Honest limits:** the shield owns the *fingerprint* signal — it cannot own your IP
+> reputation, your TLS stack, or your behaviour pattern. See the
+> [Anti-Detect Guide](ANTIDETECT_GUIDE.md) for the full boundary map and the operator
+> checklist.
