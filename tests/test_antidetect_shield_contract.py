@@ -546,8 +546,12 @@ def test_a35_high_entropy_hints_answer_exactly_the_request():
     one-line detector."""
     src = _generated_js()
     anchor = "Object.defineProperty(uaData, 'getHighEntropyValues'"
-    hook = src[src.find(anchor) :][:1400]
-    assert hook, "the getHighEntropyValues hook was not found in the shield"
+    start = src.find(anchor)
+    assert start >= 0, "the getHighEntropyValues hook was not found in the shield"
+    end = src.find("Object.defineProperty(uaData, 'toJSON'", start)
+    if end < 0:
+        end = start + 2600
+    hook = src[start:end]
     assert "fullVersionList" in hook, "the hook must answer the fullVersionList hint (A-35)"
     assert "formFactors" in hook, "the hook must answer the formFactors hint (A-35)"
     assert "wow64" in hook, "the hook must answer the wow64 hint (A-35)"
