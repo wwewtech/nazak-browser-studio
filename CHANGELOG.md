@@ -202,6 +202,52 @@ stack; the worker-scope getters whose property lives higher up the prototype cha
 it for the native getter. After the migration the same replay reports **0 corrupted APIs
 of 36 scanned**, and every spoofed value (cores, memory, screen, timezone, WebGL vendor)
 stays intact — verified in the same run.
+
+### The error-stack shapes still differed from the host (round 13 — the proxy.js replay)
+
+CreepJS's `docs/tests/proxy.js` goes further than `lies/index.ts`: it captures ~20 error
+traces around `Function.prototype.toString` and HASHES the `(name, stack length, first
+frame)` tuples against known-good browser hashes — any mismatch is a bold-fail on its
+page. A side-by-side measurement (every trace captured in a sandboxed iframe, with a
+plain Chrome in the same run) found the round-12 sanitization was **cutting too much**:
+the native anchor frame `at Function.toString (<anonymous>)` vanished, the frame count
+shrank (7 -> 6, 8 -> 7), and the `setPrototypeOf` recursion check produced a
+`RangeError: Maximum call stack size exceeded` where the host throws
+`TypeError: Cyclic __proto__ value` — a wrong error TYPE, louder than the leak itself.
+The un-hooked `Function.prototype.valueOf` was infected too (its trace passes through
+our toString proxy).
+
+Three fixes, each measured before/after:
+
+- **The trap-frame splices are exact.** The sanitizer now matches the two measured trap
+  shapes (`at newHandler.<computed> [as …]` and the numbered `at Object.apply
+  (<anonymous>:N:N)` of the inner dispatch) and nothing else — built-in frames like
+  `at Error (<anonymous>)` are never touched (the first attempt ate a native frame and
+  shrank case1 from 8 to 7).
+- **`Error.stackTraceLimit` is raised inside every trap** (+8 for the call's duration):
+  our extra frames otherwise push the stack past Chrome's default limit of 10 and evict
+  the LAST native frames (measured: `at UtilityScript.<anonymous>` disappeared). After
+  the raise-and-splice the count matches the host exactly.
+- **The cyclic-proto check sees the proxy instance.** The `setPrototypeOf` trap receives
+  only the TARGET as its argument, but the page chains the PROXY
+  (`Object.create(toStringProxy)`), so `p === target` can never fire (proven in node with
+  an exact replica of the proxy structure). A target->proxy registry lets the trap
+  compare against the instance; the walk now throws the native
+  `TypeError: Cyclic __proto__ value` BEFORE the chain is installed, with the stack
+  shaped like the native one (`at Object.setPrototypeOf (<anonymous>)` first, our frames
+  spliced out) — instead of letting every later method lookup descend through the apply
+  trap and die with a `RangeError`.
+
+After the fixes, **6 of the 7 adversarial traces match the host exactly** (type, frame
+count, every frame): `Object.create(fn).toString(-1)`, `throw Error(Object.create(fn))`
+for both the hooked `toString` and the un-hooked `valueOf`,
+`Object.setPrototypeOf(fn, Object.create(fn))`, `Object.defineProperty(Object.create(fn),
+'', …).toString()` and the getter illegal-invocation. The CreepJS lie replay stays at
+**0 of 36**. The one remainder is fundamental, not fixable on this layer: `new Proxy(fn,
+…)` names its eval frame after the object type (`at Proxy.eval` for our proxy,
+`at toString.eval` for the native) — V8 picks that name, the same limitation
+puppeteer-extra-stealth has.
+
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
   `SpeechSynthesisVoice` has **no own properties at all**: its values live on the

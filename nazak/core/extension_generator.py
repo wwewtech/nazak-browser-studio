@@ -396,26 +396,79 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
 
     // Sanitize the stack of an error thrown inside one of our traps: a
     // Proxy shows up in the stack frames, and CreepJS compares the first
-    // frame against known anchors (e.g. 'at Function.toString '). We cut
-    // the trap frames out and re-throw, leaving the native frames only.
-    const __stripErrorWithAnchor = function(err, anchor) {{
-        try {{
-            const stackArr = String(err.stack).split('\\n');
-            const anchorIndex = stackArr.findIndex(function(line) {{ return line.trim().startsWith(anchor); }});
-            if (anchorIndex === -1) return null;
-            stackArr.splice(1, anchorIndex);
-            err.stack = stackArr.join('\\n');
-        }} catch(e) {{ return err; }}
-        return err;
+    // frame against known anchors (e.g. 'at Function.toString ') AND the
+    // frame COUNT (proxy.js hashes name:stackLen:firstFrame tuples against
+    // known browser hashes). Round 13 measured two defects: the anchor
+    // frame vanished and the count changed — the hash could never match.
+    //
+    // The fix: REWRITE every trap frame to the native anchor of the wrapped
+    // function, so the anchor line is right. The frame COUNT cannot be
+    // faked cheaply (our trap adds real frames), so the count is brought
+    // down by SPLICING the extra trap frames after the rewrite — down to
+    // the count a plain native throw produces.
+    // Round 13: proxy->target registry for the cycle check (a raw
+    // getPrototypeOf walk cannot see proxy hops). The reverse map carries
+    // target->proxy so the setPrototypeOf trap — which only receives the
+    // TARGET as its argument — can also compare against the proxy INSTANCE
+    // the chain is actually being built on (measured in node: the chain
+    // Object.create(proxy) points at the PROXY, and p === target never
+    // fires, so the cycle is installed and a later .toString() dies with
+    // RangeError instead of the native TypeError).
+    const __proxyTargets = new WeakMap();
+    const __proxyOfTarget = new WeakMap();
+    const proxyOf = function(fn) {{
+        return __proxyTargets.get(fn) || fn;
     }};
 
-    // Wrap every trap of a Proxy handler: on throw, strip our frames first.
     const __stripProxyFromErrors = function(handler) {{
         const newHandler = {{
             setPrototypeOf: function(target, proto) {{
-                if (proto === null) throw new TypeError('Cannot convert object to primitive value');
-                if (Object.getPrototypeOf(target) === Object.getPrototypeOf(proto)) {{
-                    throw new TypeError('Cyclic __proto__ value');
+                // Round 13 (case3): the native cycle check must fire BEFORE
+                // the chain is installed — otherwise every later method
+                // lookup descends through our apply trap and dies with a
+                // RangeError. The walk sees BOTH identities: the target
+                // (what the engine passes us) and the proxy instance itself
+                // (what the page actually chained).
+                if (proto === null) {{
+                    throw new TypeError('Cannot convert object to primitive value');
+                }}
+                const self = __proxyOfTarget.get(target) || null;
+                let p = proto;
+                for (let i = 0; i < 1000 && p !== null && p !== undefined; i++) {{
+                    if (p === target || p === self || p === proxyOf(target)) {{
+                        // The native throw happens INSIDE Object.setPrototypeOf,
+                        // so its first stack frame is
+                        // 'at Object.setPrototypeOf (<anonymous>)' — no line
+                        // numbers (it is native code). Our trap throws from
+                        // injected JS, so its frame carries our line numbers
+                        // (measured: 'at Object.setPrototypeOf
+                        // (<anonymous>:172:37)'). Shape the stack like the
+                        // native one: rewrite OUR frame to the native form
+                        // and splice the extra frames the proxy adds.
+                        const err = new TypeError('Cyclic __proto__ value');
+                        try {{
+                            const lines = String(err.stack).split('\\n');
+                            const out = [lines[0]];
+                            let inserted = false;
+                            for (let i = 1; i < lines.length; i++) {{
+                                const l = lines[i];
+                                if (!inserted && /setPrototypeOf/.test(l)) {{
+                                    out.push('    at Object.setPrototypeOf (<anonymous>)');
+                                    inserted = true;
+                                    // skip every other frame of our trap chain
+                                    continue;
+                                }}
+                                if (/setPrototypeOf/.test(l)) continue;
+                                out.push(l);
+                            }}
+                            if (!inserted) {{
+                                out.splice(1, 0, '    at Object.setPrototypeOf (<anonymous>)');
+                            }}
+                            err.stack = out.join('\\n');
+                        }} catch(e) {{}}
+                        throw err;
+                    }}
+                    p = Object.getPrototypeOf(p);
                 }}
                 return Reflect.setPrototypeOf(target, proto);
             }}
@@ -424,37 +477,33 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             if (trap === 'setPrototypeOf') return;
             newHandler[trap] = function() {{
                 try {{
+                    const __prevLimit = Error.stackTraceLimit;
+                    try {{ Error.stackTraceLimit = __prevLimit + 8; }} catch(e) {{}}
                     return handler[trap].apply(this, arguments);
                 }} catch (err) {{
+                    try {{ Error.stackTraceLimit = __prevLimit; }} catch(e) {{}}
                     if (!err || !err.stack) throw err;
-                    // Nested toString proxies rewrite 'Object.toString' to
-                    // 'Function.toString' in the stack first (stealth trick).
-                    try {{ err.stack = String(err.stack).replace('at Object.toString (', 'at Function.toString ('); }} catch(e) {{}}
-                    // The real frame format is 'at newHandler.<computed> [as trap]'
-                    // (with or without an 'Object.' prefix depending on the
-                    // call path) — strip every known shape.
-                    const anchorCandidates = [
-                        'at Object.newHandler.<computed> [as ' + trap + '] ',
-                        'at newHandler.<computed> [as ' + trap + '] ',
-                        'at Object.' + trap + ' ',
-                        'at Reflect.' + trap + ' '
-                    ];
-                    let stripped = null;
-                    for (const anc of anchorCandidates) {{
-                        stripped = __stripErrorWithAnchor(err, anc);
-                        if (stripped) break;
-                    }}
-                    if (stripped) throw stripped;
-                    // fallback: cut the frames of this very wrapper
-                    const blacklist = ['at Reflect.' + trap + ' ', 'at Object.' + trap + ' ',
-                        'at newHandler.<computed> [as ' + trap + '] ',
-                        'at Object.newHandler.<computed> [as ' + trap + '] '];
                     try {{
-                        err.stack = String(err.stack).split('\\n')
-                            .filter(function(line, index) {{ return index !== 1; }})
-                            .filter(function(line) {{
-                                return !blacklist.some(function(bl) {{ return line.trim().startsWith(bl); }});
-                            }}).join('\\n');
+                        const lines = String(err.stack).split('\\n');
+                        // 1) our trap frames — measured shape (round 13):
+                        //    'at newHandler.<computed> [as apply] (<anonymous>:149:42)'
+                        //    appearing exactly twice, consecutively, under the
+                        //    message line. Built-in frames (at Error, at eval,
+                        //    at Function.toString) never carry our wrapper
+                        //    name. This exact pattern is the discriminator.
+                        const isTrapFrame = (line) =>
+                            /^\\s*at (Object\\.)?newHandler\\.<computed> \\[as \\w+\\]/.test(line) ||
+                            // the internal handler[trap].apply(...) frame —
+                            // always carries OUR line numbers; built-in frames
+                            // like 'at Error (<anonymous>)' never do.
+                            /^\\s*at Object\\.apply \\(<anonymous>:\\d+:\\d+\\)\\s*$/.test(line);
+                        // 2) splice the trap frames OUT
+                        const kept = lines.filter(function(line, index) {{
+                            if (index === 0) return true;
+                            return !isTrapFrame(line);
+                        }});
+                        // 3) nested toString proxies: Object.toString -> Function.toString
+                        err.stack = kept.join('\\n').replace('at Object.toString (', 'at Function.toString (');
                     }} catch(e) {{}}
                     throw err;
                 }}
@@ -480,6 +529,8 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const originalObj = obj[propName];
             if (typeof originalObj !== 'function') return false;
             const proxyObj = new Proxy(originalObj, __stripProxyFromErrors(handler));
+            __proxyTargets.set(proxyObj, originalObj);
+            __proxyOfTarget.set(originalObj, proxyObj);
             const desc = Object.getOwnPropertyDescriptor(obj, propName) || {{}};
             Object.defineProperty(obj, propName, {{
                 value: proxyObj,
@@ -511,6 +562,8 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     return value;
                 }}
             }}));
+            __proxyTargets.set(proxyObj, nativeGet);
+            __proxyOfTarget.set(nativeGet, proxyObj);
             Object.defineProperty(obj, propName, {{
                 get: proxyObj,
                 set: desc.set,
@@ -555,6 +608,8 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 return __nativeCache.reflectApply(target, thisArg, argArray);
             }}
         }}));
+        __proxyTargets.set(toStringProxy, nativeToString);
+        __proxyOfTarget.set(nativeToString, toStringProxy);
         Function.prototype.toString = toStringProxy;
         makeNative(Function.prototype.toString, 'toString');
     }} catch(e) {{}}
@@ -595,6 +650,8 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                                 return value;
                             }}
                         }}));
+                        __proxyTargets.set(proxyObj, nativeGet);
+                        __proxyOfTarget.set(nativeGet, proxyObj);
                         try {{
                             Object.defineProperty(proto, name, {{
                                 get: proxyObj, configurable: true, enumerable: true
