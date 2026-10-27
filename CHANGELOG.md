@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1099 passed, 6 deselected** (1105 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1100 passed, 6 deselected** (1106 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -379,6 +379,34 @@ pairwise component overlap follows the expected birthday-curve for pools of this
 size — 7.5% of pairs share ≥7 of 11 components, which is what 9 GPUs × 8 screens ×
 7 cores really produce, not a defect. Growing the pools would flatten the curve
 cosmetically but adds no new defect coverage.
+
+### The battery broke the W3C singleton contract (A-37 — the temporal/identity class)
+
+The stateful-spoof sweep measured the APIs whose semantics are temporal or
+identity-based (a detector re-reads them instead of reading them once). Two tells
+in one API, both fixed the same way:
+
+- **Every `getBattery()` call resolved to a DIFFERENT object.** The W3C Battery
+  Status contract resolves every call to the SAME `BatteryManager` singleton —
+  measured: the native Chrome answers `(await getBattery()) === (await getBattery())`
+  with `true`, ours with `false`. A two-line detector. The manager is now built
+  ONCE and cached (`__batterySingleton`); repeated calls resolve to the identical
+  object with stable values.
+- **The event API was a no-op stub.** The old code stubbed
+  `addEventListener/removeEventListener/dispatchEvent` as plain functions — but
+  `BatteryManager.prototype` already inherits the REAL `EventTarget` methods, so
+  `b.addEventListener === EventTarget.prototype.addEventListener` was `false`
+  (measured; the native Chrome says `true`) and the object could never actually
+  receive a `levelchange` event. The stubs are gone: the prototype layer keeps the
+  native event chain, and the values live on it like before (A-26's shape fix is
+  untouched — the singleton carries no own properties either).
+
+The same sweep verified the neighbouring temporal surfaces stay native:
+`speak()` with a claimed voice behaves identically on both sides, the sensor
+constructors and `deviceorientation` firing match the host, and
+`connection.rtt` is not pinned at all — it reports the host's live network estimate
+(a real machine must; the value moved 100→750 ms between runs exactly as the
+host's own estimate did).
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

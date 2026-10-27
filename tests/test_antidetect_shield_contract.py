@@ -594,6 +594,26 @@ def test_a36_languages_follow_the_timezone_not_a_farm_constant():
     assert tuple(explicit.languages) == ("pt-BR", "pt"), explicit.languages
 
 
+def test_a37_battery_manager_is_a_w3c_singleton_with_native_events():
+    """A-37: the W3C Battery Status contract resolves EVERY getBattery()
+    call to the SAME BatteryManager singleton (measured: the native Chrome
+    answers b1 === b2 with true; our old hook built a NEW object per call).
+    The event API must stay the NATIVE EventTarget chain too — the old code
+    stubbed addEventListener/removeEventListener as no-ops, so
+    `b.addEventListener === EventTarget.prototype.addEventListener` was
+    false. The prototype layer already inherits EventTarget — no stubs."""
+    src = _generated_js()
+    assert "__batterySingleton" in src, "getBattery() must resolve to a cached singleton — b1 === b2 (A-37)"
+    assert "const buildBattery" not in src and "function buildBattery" not in src, (
+        "a per-call battery constructor breaks the W3C singleton identity (A-37)"
+    )
+    bat_block = src[src.find("__batterySingleton") :][:600]
+    assert "addEventListener: function() {}" not in bat_block, (
+        "the EventTarget methods must stay native — a stub breaks the identity "
+        "check against EventTarget.prototype (A-37)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

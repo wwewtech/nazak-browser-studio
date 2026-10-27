@@ -1219,26 +1219,30 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             const batteryProto = (typeof BatteryManager !== 'undefined' && BatteryManager.prototype)
                 ? BatteryManager.prototype
                 : Object.prototype;
-            const buildBattery = function() {{
-                // Hunt A-26: the values live on a prototype layer, so the
-                // instance itself carries no own properties (like the native
-                // BatteryManager).
-                return __makeNativeLike(batteryProto, {{
-                    charging: batData.charging,
-                    chargingTime: batData.charging_time,
-                    dischargingTime: batData.discharging_time,
-                    level: batData.level
-                }}, {{
-                    // the event API must exist and be callable
-                    addEventListener: function() {{}},
-                    removeEventListener: function() {{}},
-                    dispatchEvent: function() {{ return true; }}
-                }});
-            }};
+            // Hunt A-37 (identity): the W3C Battery Status contract resolves
+            // EVERY getBattery() call to the SAME BatteryManager singleton
+            // (measured: the native Chrome answers b1 === b2 with true). Our
+            // buildBattery() constructed a NEW object per call —
+            // `await getBattery() === await getBattery()` was false, a
+            // two-line detector. The manager is built ONCE and cached.
+            // Hunt A-37 (events): the old code stubbed addEventListener/
+            // removeEventListener/dispatchEvent as no-op functions — but
+            // BatteryManager.prototype ALREADY inherits the real
+            // EventTarget methods; the stubs replaced them, so
+            // `b.addEventListener === EventTarget.prototype.addEventListener`
+            // was false (measured), another identity check. The real
+            // prototype chain carries the native event API — no stubs: the
+            // values live on a prototype layer, the events stay native.
+            const __batterySingleton = __makeNativeLike(batteryProto, {{
+                charging: batData.charging,
+                chargingTime: batData.charging_time,
+                dischargingTime: batData.discharging_time,
+                level: batData.level
+            }});
             // Class 2 fix: a Proxy over the NATIVE getBattery.
             __replaceWithProxy(__batteryHost, 'getBattery', {{
                 apply: function(target, thisArg, args) {{
-                    return Promise.resolve(buildBattery());
+                    return Promise.resolve(__batterySingleton);
                 }}
             }});
         }}
