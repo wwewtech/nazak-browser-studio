@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1101 passed, 6 deselected** (1107 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1102 passed, 6 deselected** (1108 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -435,6 +435,42 @@ read `None` where the header was actually present (a Python `str(None)` HTML
 substitution bug in the probe itself) — the server-side capture of the main
 document request is the reliable way to measure request headers (the page's own
 `fetch()` to a local echo is blocked by the shield's loopback guard, correctly).
+
+### The Runtime domain stayed live for the whole session (A-39 — the #1 rebrowser finding)
+
+Sourced from [rebrowser/rebrowser-patches](https://github.com/rebrowser/rebrowser-patches)
+(their headline patch, 1.4k stars): a **live `Runtime.enable`** is the CDP signal
+"used by all major anti-bot software" — Cloudflare, DataDome — because a page can
+observe the Runtime domain's presence through the console-API and
+stack-sampling channels (their investigation blog; DataDome's own "How New
+Headless Chrome & the CDP Signal Are Impacting Bot Detection" describes the
+detection side). Our injector called `Runtime.enable` on every page and worker
+session and **kept the domain on for the whole session**.
+
+The fix follows their mode 3 (enable→immediate-disable), adapted to what our
+injector actually needs the domain for:
+
+- the one-shot `executionContextCreated` burst (the context map the binding
+  validation uses) is collected inside an **enable→immediate-disable window** —
+  validated live: the context map fills (`contexts_collected: 2`), the shield
+  keeps working, the console stays clean;
+- a **synchronizer event_sink** genuinely needs the domain to stay on
+  (`Runtime.bindingCalled` delivery is gated on `Runtime.enable`), so the domain
+  remains live only for sessions that carry a binding — the window opens when
+  the user starts synchronization, which is the exact trade-off rebrowser
+  describes ("enable only while a feature needs it");
+- worker sessions never carry a binding (the synchronizer binds top-level
+  pages only), so their domain is always one-shot.
+
+Their other patches were audited against our stack in the same pass: the
+`--disable-popup-blocking` and `--disable-ipc-flooding-protection` switches (a
+page can observe both) are **not** in our launch arguments (grep-verified); the
+`UtilityScript`/`pptr:` stack traces (measured clean in the round-15 run); the
+utility-world name and the `navigator.webdriver` infobar (both long handled —
+the `AutomationControlled` blink feature is disabled, `webdriver` reads
+`false`). Their warning about JS-level tampering being detectable in principle
+is the known trade-off the Anti-Detect Guide documents: our answer is the
+Proxy-over-native architecture that survives the public lie detectors (round 12).
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

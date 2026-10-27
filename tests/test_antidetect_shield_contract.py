@@ -638,6 +638,26 @@ def test_a38_accept_language_header_carries_the_full_list():
     )
 
 
+def test_a39_runtime_domain_enabled_only_while_needed():
+    """A-39: the Runtime.enable leak — a LIVE Runtime domain is the CDP signal
+    Cloudflare/DataDome read (the rebrowser-patches project's #1 finding,
+    "used by all major anti-bot software"; their blog: How to fix
+    Runtime.Enable CDP detection). The injector kept the domain ON for the
+    whole session. Now: the one-shot context burst is collected inside an
+    enable->immediate-disable window (their mode 3), and the domain stays
+    ON only for sessions that carry a synchronizer binding (its
+    bindingCalled delivery is gated on Runtime.enable)."""
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    # the enable->disable window exists for the context burst
+    assert src.count("Runtime.enable") >= 2, "the injector must collect the contexts (A-39)"
+    assert src.count('Runtime.disable", {}') >= 2, (
+        "the Runtime domain must be disabled right after the context burst — "
+        "a live domain is the CDP signal the anti-bots read (A-39)"
+    )
+    # and the domain stays ON ONLY for sink sessions
+    assert "if not self.opts.event_sink:" in src, "the domain must stay enabled ONLY when a binding needs it (A-39)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

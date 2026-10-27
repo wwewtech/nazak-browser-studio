@@ -470,7 +470,13 @@ class StealthInjector:
         if not src:
             return
         try:
+            # Hunt A-39 (the Runtime.enable leak): the worker session never
+            # carries a binding (the synchronizer binds top-level pages
+            # only), so its Runtime domain is always enabled strictly for
+            # the one-shot context burst, then disabled — the CDP signal
+            # Cloudflare/DataDome read stays closed.
             await self._command("Runtime.enable", {}, session_id=session_id)
+            await self._command("Runtime.disable", {}, session_id=session_id)
             res = await self._command(
                 "Runtime.evaluate",
                 {"expression": src, "returnByValue": True, "awaitPromise": False},
@@ -517,7 +523,22 @@ class StealthInjector:
                 },
                 session_id=session_id,
             )
+            # Hunt A-39 (the Runtime.enable leak): a LIVE Runtime domain is the
+            # CDP signal Cloudflare/DataDome read (the rebrowser-patches
+            # project's #1 finding — "used by all major anti-bot software";
+            # the page observes it through the console-API/stack channels).
+            # The domain is enabled ONLY while a feature needs it:
+            #   - the one-shot executionContextCreated burst (the context map
+            #     for binding validation) is collected inside an
+            #     enable->immediate-disable window (their mode 3, validated
+            #     live: the context map fills and the shield keeps working
+            #     with the domain off);
+            #   - a synchronizer event_sink needs the domain to stay ON
+            #     (Runtime.bindingCalled is gated on Runtime.enable) — the
+            #     window stays open only for sessions that carry a binding.
             await self._command("Runtime.enable", {}, session_id=session_id)
+            if not self.opts.event_sink:
+                await self._command("Runtime.disable", {}, session_id=session_id)
             # Anti-detect (F-05): per-profile random binding name.
             # Hunt A-15: the binding is an ENUMERABLE own property of the
             # window, so `Object.keys(window)` revealed it (measured: the real
