@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1098 passed, 6 deselected** (1104 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1099 passed, 6 deselected** (1105 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -344,6 +344,41 @@ reports the profile's declared Windows build (Win10 profiles say `10.0.0`; the a
 host runs Win11/`19.0.0`), the screen metrics are the profile's, and
 `performance.timeOrigin` is the document's own start — all three DIFFs are the
 profile, not a leak.
+
+### The whole farm spoke en-US (A-36 — the cluster-distribution tell)
+
+The soak test of the generator (200 synthetic profiles, no browser needed — a
+detector reads the DISTRIBUTION, not the hooks) measured the collision structure of
+the profile pool. Full-fingerprint collisions: **0 of 200**; the canvas noise seeds,
+font subsets and voice subsets (delivered through the per-profile seeded shuffle)
+are all unique; the pairwise shared-component curve peaks at 4-of-11 with a smooth
+decay. But one component was a **farm-wide constant**: every profile in every
+timezone said `languages = ["en-US", "en"]` (1 distinct value across 200 profiles
+spread over 9 zones — every `Asia/Tokyo` machine, every `Europe/Paris` machine).
+That is a cluster-distribution anomaly no real population produces: the browser
+locale correlates with geography, and a fleet of "different machines" that all speak
+US English while living in Tokyo is a one-query SQL GROUP BY away.
+
+The fix makes the locale FOLLOW the timezone (coherence, not random noise): each
+zone carries a weighted locale pool the way a real machine population in that zone
+reports (the local locale wins most of the time, `en-US` remains a realistic
+minority everywhere — Windows boxes worldwide commonly carry it as a secondary):
+`Asia/Tokyo → ja-JP,ja,en (75%) / en-US,en (25%)`, `Europe/Paris → fr-FR,fr,en (70%) /
+en-US,en (30%)`, `Europe/Berlin → de-DE,de,en`, `Europe/London → en-GB,en`, plus
+`es-US` in the US zones and `zh-CN` in Los Angeles. Measured after the fix: **8
+distinct locale values across 120 profiles**, every zone's local locale present,
+and an explicitly passed `language=` argument (a non-default one) still wins for
+callers who want to pin it. The generated `Accept-Language` keeps its valid
+`<locale>;q=0.9` form.
+
+Two soak-test findings were measured and disproved along the way (and are recorded
+so nobody re-chases them): the voice subsets ARE unique per profile (the earlier
+"1 distinct" reading came from probing a non-existent `FingerprintConfig.voices`
+field — the shuffle runs inside the shield from the profile seed); and the
+pairwise component overlap follows the expected birthday-curve for pools of this
+size — 7.5% of pairs share ≥7 of 11 components, which is what 9 GPUs × 8 screens ×
+7 cores really produce, not a defect. Growing the pools would flatten the curve
+cosmetically but adds no new defect coverage.
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

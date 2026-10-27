@@ -193,6 +193,40 @@ TIMEZONES = [
     ("Australia/Sydney", -600),
 ]
 
+# Hunt A-36 (farm cluster): every profile used to say en-US,en regardless of
+# its timezone — a farm-wide CONSTANT (measured: 200 profiles, 1 distinct
+# language value while the timezones spread over 9 zones; a detector reads
+# the distribution, not the value: 100% en-US machines in Asia/Tokyo is an
+# anomaly no real user population produces). The language must now FOLLOW
+# the timezone: each zone carries the locales a real machine population in
+# that zone reports — the local locale plus en-US (a real Windows box almost
+# everywhere reports en-US as a secondary), with realistic weights.
+TIMEZONE_LOCALES = {
+    "America/New_York": [("en-US,en", 0.9), ("es-US,es,en", 0.10)],
+    "America/Chicago": [("en-US,en", 0.9), ("es-US,es,en", 0.10)],
+    "America/Denver": [("en-US,en", 0.9), ("es-US,es,en", 0.10)],
+    "America/Los_Angeles": [("en-US,en", 0.85), ("es-US,es,en", 0.10), ("zh-CN,zh,en", 0.05)],
+    "Europe/London": [("en-GB,en", 0.8), ("en-US,en", 0.2)],
+    "Europe/Berlin": [("de-DE,de,en", 0.7), ("en-US,en", 0.3)],
+    "Europe/Paris": [("fr-FR,fr,en", 0.7), ("en-US,en", 0.3)],
+    "Asia/Tokyo": [("ja-JP,ja,en", 0.75), ("en-US,en", 0.25)],
+    "Australia/Sydney": [("en-AU,en", 0.85), ("en-US,en", 0.15)],
+}
+
+
+def _pick_locale_for_zone(tz_name: str) -> str:
+    """Weighted pick of a locale list coherent with the zone (A-36)."""
+    candidates = TIMEZONE_LOCALES.get(tz_name)
+    if not candidates:
+        return "en-US,en;q=0.9"
+    r = random.random()
+    acc = 0.0
+    for lang, w in candidates:
+        acc += w
+        if r <= acc:
+            return f"{lang};q=0.9" if "q=" not in lang else lang
+    return f"{candidates[0][0]};q=0.9"
+
 
 def calculate_tz_offset(tz_name: str) -> int:
     """Calculates timezone offset in minutes according to JS Date.getTimezoneOffset().
@@ -575,6 +609,12 @@ def generate_random_fingerprint(
 ) -> FingerprintConfig:
     """
     Generates a completely randomized, statistically coherent hardware and digital fingerprint.
+
+    The ``language`` argument: when omitted (or equal to the historical default
+    ``"en-US,en;q=0.9"``) the locale is derived from the picked TIMEZONE (A-36:
+    a farm-wide en-US constant across every zone is a cluster-distribution
+    anomaly no real population produces). Pass any other explicit value to
+    pin the locale yourself.
     """
     if os_type in ("mac", "macos"):
         ua = random.choice(USER_AGENTS_MAC)
@@ -604,6 +644,12 @@ def generate_random_fingerprint(
         # Date math and the injected getTimezoneOffset disagree with the zone.
         tz_name = random.choice(TIMEZONES)[0]
         tz_offset = calculate_tz_offset(tz_name)
+
+    # Hunt A-36 (farm cluster): the language FOLLOWS the timezone — a real
+    # machine population in the zone reports the local locale (weighted),
+    # not the farm-wide en-US,en constant every profile used to carry.
+    if not language or language == "en-US,en;q=0.9":
+        language = _pick_locale_for_zone(tz_name)
 
     langs_list = [lang.strip().split(";")[0] for lang in language.split(",") if lang.strip()]
 

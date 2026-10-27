@@ -565,6 +565,35 @@ def test_a35_high_entropy_hints_answer_exactly_the_request():
     )
 
 
+def test_a36_languages_follow_the_timezone_not_a_farm_constant():
+    """A-36: every generated profile used to say en-US,en regardless of its
+    timezone — a farm-wide CONSTANT (measured: 200 profiles, 1 distinct
+    language value across 9 timezones). A detector reads the DISTRIBUTION:
+    100% en-US machines in Asia/Tokyo is an anomaly no real population
+    produces. The locale must follow the zone (weighted local + en-US), and
+    an explicitly passed non-default language must still win."""
+    import random as _random
+
+    from nazak.core.fingerprint_generator import generate_random_fingerprint
+
+    _random.seed(7)
+    profiles = [generate_random_fingerprint("windows") for _ in range(120)]
+    langs = {tuple(p.languages) for p in profiles}
+    assert len(langs) >= 4, f"the generated locales must vary with the timezone (A-36): {sorted(langs)}"
+    # coherence: a Tokyo profile may be en-US, but the Paris pool must
+    # contain fr-FR and the Berlin pool de-DE (the local locale wins most of
+    # the time)
+    paris = [p for p in profiles if p.timezone == "Europe/Paris"]
+    berlin = [p for p in profiles if p.timezone == "Europe/Berlin"]
+    tokyo = [p for p in profiles if p.timezone == "Asia/Tokyo"]
+    assert any(p.languages[0] == "fr-FR" for p in paris) if paris else True
+    assert any(p.languages[0] == "de-DE" for p in berlin) if berlin else True
+    assert any(p.languages[0] == "ja-JP" for p in tokyo) if tokyo else True
+    # an explicit non-default language still wins
+    explicit = generate_random_fingerprint("windows", language="pt-BR,pt;q=0.9")
+    assert tuple(explicit.languages) == ("pt-BR", "pt"), explicit.languages
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil
