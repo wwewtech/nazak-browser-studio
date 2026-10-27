@@ -59,6 +59,10 @@ CHROME_VERSION_RE = re.compile(r"Chrome/\d+(?:\.\d+)*")
 # tell for every profile of the product. The name is now randomized per
 # injector instance (marker + per-run token), indistinguishable from the
 # runtime-generated names Chromium itself installs.
+# Hunt A-40: the constant is kept only for backward-compatible imports in
+# tests/legacy code — it is no longer a PREFIX of any generated name and
+# must never be matched with startsWith() by new code (a greppable,
+# farm-wide constant was the rebrowser cdpBindingGlobals tell).
 SYNC_BINDING_NAME = "__nse_ev"
 MAX_BINDING_PAYLOAD_BYTES = 4096
 BINDING_RATE_LIMIT_PER_SEC = 60.0
@@ -68,14 +72,24 @@ _SYNC_BINDING_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 
 def random_sync_binding_name() -> str:
-    """A per-run binding name: same shape as Chromium's internal bindings.
+    """A per-run binding name with NO structure to fingerprint.
 
-    Starts with the marker every fingerprinting dictionary greps for is
-    absent; the suffix is random per profile, so two Nazak profiles never
-    share the enumerable window property name.
+    Hunt A-40 (the rebrowser cdpBindingGlobals class): Runtime.addBinding
+    inevitably creates an unnamed native-looking function on window — their
+    detector catches that per se (a hint, rating 0.5) — but the OLD name
+    carried a unique, greppable pattern (`__nse_ev_<rand>`: a fingerprint
+    dictionary matches it with `startsWith('__nse')`, and every profile in
+    the farm shared the same prefix). The name is now PURE random
+    alphanumeric — impossible to attribute to a tool by pattern, unique
+    per profile (16 chars of the base36 alphabet, ~8e24 combos).
     """
-    suffix = "".join(random.choice(_SYNC_BINDING_ALPHABET) for _ in range(12))
-    return f"{SYNC_BINDING_NAME}_{suffix}"
+    suffix = "".join(random.choice(_SYNC_BINDING_ALPHABET) for _ in range(16))
+    return suffix
+
+
+def legacy_sync_binding_name() -> str:
+    """Fallback name for handles with no injector (A-40: also unstructured)."""
+    return "".join(random.choice(_SYNC_BINDING_ALPHABET) for _ in range(16))
 
 
 class _TokenBucket:

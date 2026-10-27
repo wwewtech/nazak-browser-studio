@@ -124,24 +124,32 @@ def test_sync_client_js_has_install_guard():
     # но guard от двойной установки и нейтральное имя binding'а остались.
     # Anti-detect F-05: имя binding'а теперь рандомизировано на профиль,
     # шаблон подставляет его при установке.
-    from nazak.core.cdp_injector import SYNC_BINDING_NAME, random_sync_binding_name
+    from nazak.core.cdp_injector import random_sync_binding_name
 
-    client = sync_client_js(SYNC_BINDING_NAME)
+    name = random_sync_binding_name()
+    client = sync_client_js(name)
     assert "__nazakSyncInstalled" not in client
     assert "__nazak" not in client
-    assert "__nse_c" in client
-    assert SYNC_BINDING_NAME in client
+    assert name in client
     for etype in ("click", "keydown", "scroll", "input"):
         assert f"'{etype}'" in client or f'"{etype}"' in client
 
     # F-05: two profiles must never share the same binding name.
     names = {random_sync_binding_name() for _ in range(50)}
     assert len(names) == 50
-    assert all(n.startswith("__nse_ev_") for n in names)
+    # Hunt A-40: the names must carry NO tool-attributable structure — a
+    # greppable prefix (`__nse_ev_`) was a farm-wide constant every
+    # fingerprint dictionary matches with startsWith().
+    assert all(n.isalnum() and len(n) == 16 for n in names), (
+        f"the binding names must be pure unstructured random (A-40): {sorted(names)[:3]}"
+    )
+    assert not any("__nse" in n or "nazak" in n.lower() for n in names), (
+        "the binding names must not contain any brand marker (A-40)"
+    )
     # ...and the rendered client contains the per-profile name, not a constant.
-    specific = sync_client_js("__nse_ev_abc123def456")
-    assert "__nse_ev_abc123def456" in specific
-    assert SYNC_BINDING_NAME in specific or "__nse_ev" in specific
+    specific_name = random_sync_binding_name()
+    specific = sync_client_js(specific_name)
+    assert specific_name in specific
 
 
 def test_submit_event_routing():

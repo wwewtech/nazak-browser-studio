@@ -658,6 +658,29 @@ def test_a39_runtime_domain_enabled_only_while_needed():
     assert "if not self.opts.event_sink:" in src, "the domain must stay enabled ONLY when a binding needs it (A-39)"
 
 
+def test_a40_binding_names_carry_no_brand_structure():
+    """A-40: the rebrowser cdpBindingGlobals class — Runtime.addBinding
+    inevitably creates an unnamed native-looking function on window (their
+    detector's hint, unavoidable), but our binding names carried a unique
+    greppable pattern (`__nse_ev_<rand>`): every profile in the farm shared
+    the `__nse_ev_` prefix, a one-line startsWith() for any fingerprint
+    dictionary. Measured live: the page found `__nse_ev_hg4tlwrhnlm6` via
+    getOwnPropertyNames + empty name + native toString. The names are now
+    PURE unstructured random."""
+    from nazak.core.cdp_injector import random_sync_binding_name
+
+    names = {random_sync_binding_name() for _ in range(200)}
+    assert len(names) == 200, "the names must be unique per profile (A-40)"
+    for n in names:
+        assert n.isalnum() and len(n) == 16, f"the binding name must be pure unstructured random (A-40): {n}"
+        assert "nse" not in n.lower() and "nazak" not in n.lower(), (
+            "the binding name must not contain any brand marker (A-40)"
+        )
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    gen_block = src[src.find("def random_sync_binding_name") :][:700]
+    assert "SYNC_BINDING_NAME_" not in gen_block, "the generator must not compose the name from a brand prefix (A-40)"
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

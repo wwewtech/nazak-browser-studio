@@ -250,6 +250,10 @@ def test_s02_handle_carries_eager_binding_name_matching_injector():
         # 1) the name is on the handle the moment the call returns;
         assert isinstance(handle.binding_name, str) and handle.binding_name
         assert handle.binding_name != ci.SYNC_BINDING_NAME  # per-profile random
+        # Hunt A-40: the eager name must be unstructured (no brand prefix).
+        assert handle.binding_name.isalnum(), (
+            f"the binding name must carry no tool-attributable structure (A-40): {handle.binding_name}"
+        )
         # 2) the injector received EXACTLY the same name;
         assert captured["opts"].binding_name == handle.binding_name
         # 3) the injector object's own name agrees (single source of truth).
@@ -265,10 +269,12 @@ def test_s02_handle_carries_eager_binding_name_matching_injector():
 def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
     """_install_sync_client must read the EAGER handle name when the injector
     object is not yet assigned, instead of the static legacy fallback."""
+    import nazak.core.cdp_injector as ci
     from nazak.core.synchronizer import SynchronizerManager, sync_client_js
 
     mgr = SynchronizerManager(SimpleNamespace())
-    handle = SimpleNamespace(injector=None, binding_name="__nse_ev_deadbeef01")
+    eager_name = ci.random_sync_binding_name()
+    handle = SimpleNamespace(injector=None, binding_name=eager_name)
     import contextlib as _ctxlib
 
     launcher = SimpleNamespace(
@@ -297,9 +303,8 @@ def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
 
     assert installed == ["started"]
     # The runner closure carries the inner _install coroutine function, whose
-    # own closure holds the rendered client. The legacy static render would
-    # contain the exact token "typeof window.__nse_ev ===" (the per-profile
-    # name has a suffix, so the substring match cannot collide with it).
+    # own closure holds the rendered client. The rendered client must carry
+    # the EAGER per-profile name (not any constant).
     target = captured_targets[0]
     inner_fns = [c.cell_contents for c in target.__closure__ or [] if callable(c.cell_contents)]
     assert inner_fns, "the runner closure must carry the _install coroutine function"
@@ -307,5 +312,5 @@ def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
     for fn in inner_fns:
         js_strings.extend(c.cell_contents for c in fn.__closure__ or [] if isinstance(c.cell_contents, str))
     assert js_strings, "the _install closure must carry the rendered client JS"
-    assert any("typeof window.__nse_ev_deadbeef01 ===" in s for s in js_strings), js_strings
+    assert any(f"typeof window.{eager_name} ===" in s for s in js_strings), js_strings
     assert not any("typeof window.__nse_ev ===" in s for s in js_strings), js_strings

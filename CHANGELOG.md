@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1102 passed, 6 deselected** (1108 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1103 passed, 6 deselected** (1109 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -471,6 +471,44 @@ the `AutomationControlled` blink feature is disabled, `webdriver` reads
 `false`). Their warning about JS-level tampering being detectable in principle
 is the known trade-off the Anti-Detect Guide documents: our answer is the
 Proxy-over-native architecture that survives the public lie detectors (round 12).
+
+### The rebrowser-bot-detector replay (round 25) — a clean bill with one residual fixed
+
+The full [rebrowser-bot-detector](https://github.com/rebrowser/rebrowser-bot-detector)
+(the canonical community test their 1.4k-star patches validate against) was
+replayed against the product's launch path — detector served verbatim, one run
+for the shielded profile, one control run for a plain Chrome driven by the same
+Playwright harness (the control discriminates the test client's own noise):
+
+- **16 of 18 checks green on the profile** — including the hard ones:
+  `nativeTampering` (their `inspectNativeFunction` cyclic-`__proto__` probe
+  passes because the round-13 setPrototypeOf trap throws the native TypeError),
+  `workerConsistency`, `headless`, `platformMismatch`, `documentInterception`,
+  `useragent` (the high-entropy version list is coherent).
+- **The profile is CLEANER than the control**: plain-Chrome-through-Playwright
+  is RED on `navigatorWebdriver`, YELLOW on the 1280×720 viewport, YELLOW on
+  popups and RED on IPC flooding (the library's default switches); our profile
+  is green on all four — we never ship those switches.
+- The two REDs on the profile are **test-harness artifacts, measured as
+  such**: `runtimeEnableLeak` fires identically on the control (the Playwright
+  client itself attaches with a live Runtime domain; our A-39 injector does
+  not), and `bypassCsp` fires because the localhost test page ships no CSP
+  header at all (nothing is bypassed; the injector never calls
+  `Page.setBypassCSP` — grep-verified).
+- **The binding names carried a farm-wide brand prefix (A-40).** With a live
+  synchronizer session the detector's `cdpBindingGlobals` probe found our
+  binding on `window` — inevitably (that is what `Runtime.addBinding` creates)
+  — but the name `__nse_ev_<rand>` made it trivially attributable: one
+  `startsWith('__nse')` matches every profile in the farm, the exact
+  "tool signature in a fingerprint dictionary" the A-15 round was fighting.
+  The names are now **pure unstructured random** (16 alphanumeric chars, no
+  prefix, no brand marker, still unique per profile); the synchronizer's
+  no-injector fallback got the same treatment. Measured after the fix: the
+  prefix scan comes back empty and the binding is indistinguishable from
+  Chromium's own runtime-generated bindings by name. The unnamed-native-
+  function hint itself is inherent to `Runtime.addBinding` (their docs rate
+  it 0.5, "page scripts can create them too") — the synchronizer already
+  installs the binding only while a session is live.
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

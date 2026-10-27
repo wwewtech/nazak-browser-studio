@@ -339,11 +339,14 @@ class SynchronizerManager:
             binding_name = getattr(handle, "binding_name", "") or ""
         if not binding_name:
             # No handle at all (injector unavailable — e.g. websockets missing):
-            # the legacy static name keeps direct-injection setups working.
+            # a random unstructured name keeps direct-injection setups working
+            # (Hunt A-40: no tool-attributable prefix).
+            from .cdp_injector import legacy_sync_binding_name
+
             logger.warning(
                 "synchronizer: master %s has no injector handle; using legacy binding name", master_profile_id
             )
-            binding_name = "__nse_ev"
+            binding_name = legacy_sync_binding_name()
         client_js = sync_client_js(binding_name)
         import asyncio
 

@@ -266,6 +266,10 @@ def test_r3b_no_branded_page_visible_markers_anywhere():
     injected = sync_client_js(ci.SYNC_BINDING_NAME)
     assert "__nazak" not in injected
     assert "__nazak" not in ci.SYNC_BINDING_NAME
+    # Hunt A-40: the binding names must carry no brand prefix at all.
+    fresh = ci.random_sync_binding_name()
+    assert fresh.isalnum(), f"the binding name must be pure unstructured random (A-40): {fresh}"
+    assert "nse" not in fresh.lower()
     # флаг идемпотентности виден лишь при явном перечислении свойств
     assert "__nse_c" in injected
     assert "configurable: false, enumerable: false" in injected
