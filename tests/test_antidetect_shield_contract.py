@@ -614,6 +614,30 @@ def test_a37_battery_manager_is_a_w3c_singleton_with_native_events():
     )
 
 
+def test_a38_accept_language_header_carries_the_full_list():
+    """A-38: the injector fed only the FIRST locale into
+    Emulation.setUserAgentOverride.acceptLanguage — the page's HTTP header
+    said `fr-FR` while navigator.languages said `fr-FR,fr,en` (measured; the
+    native Chrome sends the full list with q-weights). The header/JS
+    coherence break the apify fingerprint-suite community pinned as a
+    headless signal (PR #542 / issue #178). The tags must be CLEAN: Chrome
+    adds the q-weights itself, and a pre-weighted tag gets a doubled
+    `;q=0.9;q=0.9` suffix (measured)."""
+    from nazak.core.cdp_injector import build_accept_language_header
+
+    assert build_accept_language_header(["fr-FR", "fr", "en"]) == "fr-FR,fr,en"
+    assert build_accept_language_header(["en-US", "en"]) == "en-US,en"
+    assert build_accept_language_header(None) == "en-US,en"
+    assert build_accept_language_header([]) == "en-US,en"
+    # already-weighted input (legacy profiles) must be cleaned, not doubled
+    assert build_accept_language_header(["fr-FR;q=0.9", "en"]) == "fr-FR,en"
+    # and the injector must use it (not the single first locale)
+    src = (REPO_ROOT / "nazak" / "core" / "cdp_injector.py").read_text(encoding="utf-8")
+    assert "build_accept_language_header(" in src, (
+        "the injector must feed the FULL locale list to the header override (A-38)"
+    )
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

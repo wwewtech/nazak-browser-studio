@@ -140,6 +140,27 @@ def build_user_agent_metadata(fp: Any, chrome_version: str) -> dict[str, Any]:
     }
 
 
+def build_accept_language_header(languages: list[str] | None) -> str:
+    """Build the Accept-Language header the way Chrome itself does.
+
+    Hunt A-38: the injector fed only the FIRST locale (e.g. ``fr-FR``) into
+    ``Emulation.setUserAgentOverride.acceptLanguage`` — a header a real
+    Chrome never produces (measured: the native browser sends the FULL
+    list with q-weights, ``fr-FR,fr;q=0.9,en;q=0.8``). A page comparing the
+    HTTP header with ``navigator.languages`` saw one tag against three —
+    the header/JS coherence break the apify fingerprint-suite community
+    pinned as a headless signal (PR #542 / issue #178).
+
+    The tags are passed CLEAN (no ``q=``): Chrome adds the weights itself,
+    and a pre-weighted tag gets a doubled ``;q=0.9;q=0.9`` suffix
+    (measured).
+    """
+    if not languages:
+        return "en-US,en"
+    clean = [lang.split(";")[0].strip() for lang in languages if lang.strip()]
+    return ",".join(clean) if clean else "en-US,en"
+
+
 def pick_auth_challenge_response(source: str | None, username: str | None, password: str | None) -> dict[str, str]:
     """Decide the ``Fetch.authRequired`` answer (pure, unit-testable).
 
@@ -831,7 +852,7 @@ def start_stealth_injector(
                 user_agent=ua,
                 user_agent_metadata=build_user_agent_metadata(fingerprint, chrome_version),
                 timezone=str(getattr(fingerprint, "timezone", "") or ""),
-                accept_language=str(getattr(fingerprint, "language", "en-US") or "en-US"),
+                accept_language=build_accept_language_header(list(getattr(fingerprint, "languages", []) or [])),
                 proxy_username=getattr(proxy, "username", None),
                 proxy_password=getattr(proxy, "password", None),
                 stealth_source=stealth_src,

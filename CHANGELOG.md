@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1100 passed, 6 deselected** (1106 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1101 passed, 6 deselected** (1107 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -407,6 +407,34 @@ constructors and `deviceorientation` firing match the host, and
 `connection.rtt` is not pinned at all — it reports the host's live network estimate
 (a real machine must; the value moved 100→750 ms between runs exactly as the
 host's own estimate did).
+
+### The Accept-Language header broke coherence with navigator.languages (A-38)
+
+Sourced from the [apify/fingerprint-suite](https://github.com/apify/fingerprint-suite)
+community: [PR #542](https://github.com/apify/fingerprint-suite/pull/542) pins the
+injected `accept-language` header as a **headless signal** (their issue #178 —
+`areyouheadless` detects the injection; the fix stops overriding the header and
+aligns it with the generated locale). Our version of the same defect was a
+**coherence break**: the injector fed only the FIRST locale
+(`Emulation.setUserAgentOverride.acceptLanguage = "fr-FR"`) while the shield's JS
+hook reported `navigator.languages = ["fr-FR", "fr", "en"]` — measured on the wire:
+the HTTP header said `fr-FR` (a form a real Chrome never produces) against the
+three-tag JS list.
+
+The fix feeds the FULL profile locale list through a dedicated
+`build_accept_language_header()` — with **clean** tags: Chrome adds the q-weights
+itself, and a pre-weighted tag gets a doubled `;q=0.9;q=0.9` suffix (measured on
+the wire, the intermediate state of this very fix). After the fix the wire header
+is byte-identical to the native form: `fr-FR,fr;q=0.9,en;q=0.8` — the exact
+string a real French-locale Chrome sends. The `--lang` launch flag and the JS
+hooks were already coherent; the header was the only diverging channel of the
+four (header, `navigator.language`, `navigator.languages`, `--lang`).
+
+A methodological note recorded for future audits: the first probe of this defect
+read `None` where the header was actually present (a Python `str(None)` HTML
+substitution bug in the probe itself) — the server-side capture of the main
+document request is the reliable way to measure request headers (the page's own
+`fetch()` to a local echo is blocked by the shield's loopback guard, correctly).
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
