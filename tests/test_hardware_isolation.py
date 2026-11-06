@@ -111,4 +111,13 @@ def test_browser_launcher_strict_isolation_flags(tmp_path):
     assert "--no-first-run" in args_str
     assert "--no-default-browser-check" in args_str
     assert "--disable-sync" in args_str
-    assert "--metrics-recording-only" in args_str
+    # A-41: --metrics-recording-only and --disable-default-apps were removed —
+    # Chromium documents the first as test-only reporting suppression and
+    # Puppeteer Extra flags the second as adversarial to mimicking a real
+    # browser. Neither guards a Nazak feature, and both mark argv as tooling.
+    assert "--metrics-recording-only" not in args_str
+    assert "--disable-default-apps" not in args_str
+    # A-41: kept. Apostate measured that removing it suppresses ALL component
+    # registration, diverging from a provisioned real Chrome — a different
+    # fingerprint, not a stealth win.
+    assert "--disable-component-update" in args_str

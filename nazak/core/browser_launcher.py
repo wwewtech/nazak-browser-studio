@@ -328,8 +328,13 @@ class BrowserLauncher:
             "--disable-component-update",
             "--disable-client-side-phishing-detection",
             "--disable-sync",
-            "--metrics-recording-only",
-            "--disable-default-apps",
+            # A-41: --metrics-recording-only / --disable-default-apps removed.
+            # Chromium documents the first as a test-only reporting suppression,
+            # and Puppeteer Extra explicitly flags the second as adversarial —
+            # neither guards a Nazak feature, and both only mark the argv as
+            # tooling. Apostate measured that removing --disable-component-update
+            # suppresses ALL component registration, diverging from a provisioned
+            # real Chrome, so that one is kept on purpose.
             "--disable-hang-monitor",
             "--disable-prompt-on-repost",
             "--disable-breakpad",
