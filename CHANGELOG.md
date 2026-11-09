@@ -10,7 +10,7 @@ launch path (CDP injector), and every API the shield touches was read back.
 Three sections were installed but **broken at runtime** — a broken hook is
 worse than no hook: the site sees a sabotaged API and a detector sees the same.
 
-Suite: **1103 passed, 6 deselected** (1109 collected; 0 `xfail`). `ruff check`, `ruff format
+Suite: **1109 passed, 6 deselected** (1115 collected; 0 `xfail`). `ruff check`, `ruff format
 --check` and `mypy nazak` clean; the generated stealth.js passes `node --check` for
 windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
 
@@ -509,6 +509,62 @@ Playwright harness (the control discriminates the test client's own noise):
   function hint itself is inherent to `Runtime.addBinding` (their docs rate
   it 0.5, "page scripts can create them too") — the synchronizer already
   installs the binding only while a session is live.
+
+### The launch arguments still carried a headless tell (A-41)
+
+The launch arguments were audited against rebrowser's patches (which strip
+`--disable-ipc-flooding-protection` and `--disable-popup-blocking`, remove
+`ThirdPartyStoragePartitioning` from user `--disable-features=`, and push
+`--disable-blink-features=AutomationControlled`). Our launch path never ships
+those switches — `grep`-verified — and `--disable-component-update` is kept
+deliberately: disabling it reintroduces a regression risk the audit measured,
+because `--disable-component-update` suppresses ALL component registration.
+The only risky switch remaining is `--user-agent=` (line 323 of
+`browser_launcher.py`), which was retained as a controlled, coherent override
+(the UA, the Client-Hints brands, the `Sec-CH-UA-*` headers and the injected
+`fullVersionList` all agree on the same version — measured end to end).
+
+Two of our own switches were tool tells and are now **removed**:
+`--metrics-recording-only` (Chromium documents it as a test-only reporting
+suppression) and `--disable-default-apps` (Puppeteer Extra flags it explicitly
+as adversarial). Neither guards a Nazak feature — both only mark the argv as
+tooling — and their removal is pinned by the two flipped assertions in
+`tests/test_hardware_isolation.py`.
+
+### The CDP binding global itself matched a detector predicate (A-42)
+
+The rebrowser-patches `cdpBindingGlobals` detector
+(reb_bot_detector_index.js:2110-2210, rating 0.5) walks
+`Object.getOwnPropertyNames(window)` and flags every own property whose
+descriptor `value` is a function with `fn.name === ''` AND a `[native code]`
+toString — exactly what `Runtime.addBinding` creates: an unnamed native-looking
+data property on `window`/`globalThis`/`self`. Measured live in Chrome 156:
+`{writable:true, enumerable:true, configurable:true}`, `fnName:""`,
+`isNative:true`. `enumerable: false` alone does NOT help — the predicate never
+reads enumerability (the A-15 non-enumerable rewrite was therefore invisible to
+this detector). An accessor rewrite does not work either — the CDP runtime
+invokes the binding through the function object, and a getter returns a fresh
+function on every read, measured non-callable / handshake-broken.
+
+The fix replaces the native function with an anonymous forwarding closure,
+written through the comma operator so V8's NamedEvaluation does NOT infer a
+name for it (`{ value: function(){}` measures as `fn.name === 'value'`; a
+parenthesised function measures the same — only `(0, function(){})` keeps
+`''`):
+
+    Object.defineProperty(window, name, {
+        value: (0, function () { return orig.apply(this, arguments); }),
+        writable: true, configurable: true, enumerable: false,
+    })
+
+Measured end-to-end in Chrome 156: `scan_before: ["__nzakD"]` →
+`scan_after: []`, `fnName:""`, `isNative:false`, `enumerable:false`, the
+wrapper still answers (`call_delta: 1`, `Runtime.bindingCalled` delivered to
+the main world), and re-wrapping is idempotent — a second application finds a
+non-native closure and is a no-op. The hide runs right after every
+`Runtime.addBinding` install and is re-applied after each navigation
+(`_reinject_into`), because Chrome re-installs the binding global in the new
+document.
 
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native

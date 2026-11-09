@@ -233,6 +233,52 @@ def read_chrome_version_from_ws_info(ws_url: str | None, timeout_sec: float = 3.
         return None
 
 
+def _hide_binding_js(name: str) -> str:
+    """Return the JS expression that re-wraps the CDP binding global.
+
+    Kept as a pure string builder (and NOT inlined into ``StealthInjector
+    ._hide_binding``) so that the emitted source can be asserted in unit
+    tests and executed verbatim by the live CDP probes — the hunt is full
+    of escaping traps (see the docstring of ``StealthInjector._hide_binding``):
+
+    * an f-string head ``{{`` emits ONE ``{`` while a plain-string tail keeps
+      ``}}`` LITERAL (i.e. two closing braces) — mixing the two silently
+      produces a ``SyntaxError`` in the page, which ``Runtime.evaluate``
+      only reports as an ``exceptionDetails``;
+    * ``const repl = function(){}`` and ``{value: function(){}}`` both make
+      V8 INFER ``fn.name`` — the replacement must be an anonymous function
+      expression passed DIRECTLY as the ``value`` argument.
+
+    Returns one of ``'hidden'``, ``'already'``, ``'not-data'``,
+    ``'not-function'``, ``'not-configurable'``, ``'err'``.
+    """
+    # NOTE (name-inference trap, measured in Chrome 156): V8 runs NamedEvaluation
+    # on an object-literal property whose value is an anonymous
+    # FunctionExpression, so ``{ value: function () {} }`` already yields
+    # ``fn.name === 'value'`` (measured). Wrapping the function in parentheses
+    # does NOT help either — the parenthesized form still yields 'value'.
+    # The comma operator ``(0, function () {})`` is NOT an
+    # AssignmentExpression target of NamedEvaluation, so ``fn.name`` stays ''.
+    # The wrapper is therefore written through the comma operator below.
+    ident = json.dumps(name)
+    return (
+        f"(() => {{ try {{ const d = Object.getOwnPropertyDescriptor(window, {ident});"
+        " if (!d || !('value' in d)) return 'not-data';"
+        " if (typeof d.value !== 'function') return 'not-function';"
+        " if (!d.configurable) return 'not-configurable';"
+        # Idempotency: an already-wrapped binding is a user closure whose body
+        # is not [native code] — wrapping it again is pointless AND would
+        # deepen the call chain on every injection round.
+        " const s = Function.prototype.toString.call(d.value);"
+        r" if (!/\{\s*\[native code\]\s*\}\s*$/.test(s)) return 'already';"
+        f" const orig = d.value;"
+        f" Object.defineProperty(window, {ident}, {{ value: (0, function () {{"
+        " return orig.apply(this, arguments); }), writable: true,"
+        " configurable: true, enumerable: false }); return 'hidden';"
+        " } catch (e) { return 'err'; } })()"
+    )
+
+
 @dataclass
 class InjectorOptions:
     ws_endpoint: str
@@ -443,30 +489,71 @@ class StealthInjector:
         await self._apply_session(session_id)
 
     async def _hide_binding(self, session_id: str) -> None:
-        """Make the CDP binding invisible in Object.keys(window) (A-15).
+        """Make the CDP binding undetectable to window-scanning detectors.
 
-        ``Runtime.addBinding`` installs the binding as an ENUMERABLE own
-        property of the window — one line of JavaScript
-        (``Object.keys(window)``) then reveals it. Redefining the same
-        property as non-enumerable keeps the function working (the runtime
-        calls the function object, not the descriptor) while removing it from
-        the ordinary enumeration.
+        Hunt A-42 (the rebrowser-patches ``cdpBindingGlobals`` detector,
+        reb_bot_detector_index.js:2110-2210, rating 0.5): the detector walks
+        ``Object.getOwnPropertyNames(window)`` and flags every own property
+        whose descriptor ``value`` is a function with
+
+            fn.name === '' && /\\{\\s*\\[native code\\]\\s*\\}\\s*$/.test(fn.toString())
+
+        i.e. an UNNAMED NATIVE-looking function. ``enumerable`` is never
+        consulted — so the A-15 ``enumerable: false`` rewrite that closed
+        ``Object.keys(window)`` left the binding fully visible to this
+        predicate. Measured live on Chrome 156.0.8078.81 (diag probe):
+        ``Runtime.addBinding`` installs a plain DATA property
+        ``{writable:true, enumerable:true, configurable:true}`` whose value is
+        ``function () { [native code] }`` with ``name === ''`` and
+        ``length === 0`` — an exact predicate match
+        (``scan_before: ["__nzakD"]``).
+
+        The descriptor cannot be repaired into an accessor either: the CDP
+        runtime invokes the binding through the function OBJECT, and a getter
+        returns a fresh function on every ``window[name]`` — measured
+        non-callable / handshake-broken.
+
+        What works, measured end-to-end in the same live context: replacing the
+        native function with an ANONYMOUS function expression that forwards to
+        the original, written through the comma operator so V8's NamedEvaluation
+        does NOT infer a name ('value') for it:
+
+            Object.defineProperty(window, name, {
+                value: (0, function () { return orig.apply(this, arguments); }),
+                writable: true, configurable: true, enumerable: false,
+            })
+
+        * ``Function.prototype.toString`` of a user closure is its source, so
+          the ``[native code]`` branch is gone (``scan_after: []``);
+        * the comma operator keeps ``fn.name === ''`` — a parenthesized
+          expression does NOT (measured: still 'value'); a named binding
+          (``const repl = function(){}``) makes V8 infer ``fn.name === 'repl'``
+          (measured). The expression is therefore passed through the comma
+          operator, never through a variable;
+        * the forwarding call keeps the transport alive — measured:
+          ``Runtime.bindingCalled`` still delivered (``call_delta: 1``,
+          ``executionContextId`` = the main world);
+        * the descriptor keeps ``writable/configurable`` so a later
+          re-application (navigation re-injection, or the immediate per-loader
+          injection) can re-wrap safely. Re-wrapping a wrapper is idempotent
+          in effect: the second ``orig`` is already a non-native closure and
+          the predicate still does not match.
+
+        Accessor-based and prototype-based rewrites were considered and
+        rejected on live measurement (getter: not callable; prototype
+        pollution: no effect — the binding is an OWN property).
         """
-        name = json.dumps(self._binding_name)
-        expr = (
-            f"(() => {{ try {{ const d = Object.getOwnPropertyDescriptor(window, {name});"
-            " if (d && d.configurable) {"
-            f" Object.defineProperty(window, {name}, {{value: d.value, get: d.get, set: d.set,"
-            " enumerable: false, configurable: true, writable: true}); return 'hidden'; }"
-            " return 'not-configurable'; } catch (e) { return 'err'; } })()"
-        )
+        expr = _hide_binding_js(self._binding_name)
         try:
             res = await self._command(
                 "Runtime.evaluate",
                 {"expression": expr, "returnByValue": True, "awaitPromise": False},
                 session_id=session_id,
             )
-            value = (res.get("result") or {}).get("value")
+            # _command already unwraps to reply.get("result", {}) — so res IS the
+            # result object; a second res.get("result") would always be None and
+            # binding_hidden would never increment (hunt A-42).
+            value = res.get("value")
             if value == "hidden":
                 self.binding_hidden += 1
         except Exception:  # pragma: no cover - defensive
@@ -673,7 +760,15 @@ class StealthInjector:
         asyncio.ensure_future(self._reinject_into(session_id, src))
 
     async def _reinject_into(self, session_id: str, src: str) -> None:
-        """Run the shield in the current document of the session (A-31)."""
+        """Run the shield in the current document of the session (A-31).
+
+        A-42 remainder: after a navigation Chrome re-installs the CDP binding
+        global (the native, predicate-matching one), so the hide must be
+        re-applied here — otherwise the page is exposed to the
+        cdpBindingGlobals detector again in the new document. Guarded by the
+        event_sink because without it no binding was ever installed
+        (``_apply_session`` 645-647).
+        """
         try:
             await self._command(
                 "Runtime.evaluate",
@@ -681,6 +776,8 @@ class StealthInjector:
                 session_id=session_id,
             )
             self.reinjections_applied += 1
+            if self.opts.event_sink:
+                await self._hide_binding(session_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("shield re-injection failed for %s: %s", session_id, exc)
 

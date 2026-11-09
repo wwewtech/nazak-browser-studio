@@ -314,3 +314,166 @@ def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
     assert js_strings, "the _install closure must carry the rendered client JS"
     assert any(f"typeof window.{eager_name} ===" in s for s in js_strings), js_strings
     assert not any("typeof window.__nse_ev ===" in s for s in js_strings), js_strings
+
+
+# ---------------------------------------------------------------------------
+# Hunt A-42: hiding the CDP binding from the rebrowser-patches
+# cdpBindingGlobals detector (reb_bot_detector_index.js:2110-2210).
+# ---------------------------------------------------------------------------
+
+
+def test_hide_binding_emits_balanced_js():
+    """_hide_binding_js must emit brace-balanced JS (the f-string head keeps
+    {{ as one { while a plain tail keeps }} as two — mixing them silently
+    produced a SyntaxError that only exceptionDetails surfaced)."""
+    from nazak.core.cdp_injector import _hide_binding_js
+
+    src = _hide_binding_js("__nzakD")
+    assert src.count("{") == src.count("}"), "the emitted JS must be brace-balanced"
+    assert src.count("(") == src.count(")"), "the emitted JS must be paren-balanced"
+    # no f-string artifact and no named-variable trap (NamedEvaluation names a
+    # `{value: function(){}}` 'value'; the comma operator keeps '').
+    assert "{{" not in src and "}}" not in src, "no leftover f-string brace escaping"
+    assert "(0, function ()" in src, "the wrapper must go through the comma operator"
+
+
+def test_hide_binding_js_wraps_through_comma_not_variable():
+    """NamedEvaluation makes `{value: function(){}}` infer 'value' and a
+    `const repl = function(){}` infer 'repl'. The comma operator form keeps
+    fn.name === '' — the only form the detector predicate can miss while
+    staying callable."""
+    from nazak.core.cdp_injector import _hide_binding_js
+
+    src = _hide_binding_js("__nzakD")
+    assert "const repl" not in src
+    assert "{ value: function" not in src
+    assert "(0, function ()" in src
+
+
+def test_hide_binding_increments_counter_on_hidden():
+    """When the page reports 'hidden' the injector must count it (A-15
+    accounting of how many bindings were hidden)."""
+    import asyncio
+
+    from nazak.core.cdp_injector import InjectorOptions, StealthInjector
+
+    opts = InjectorOptions(
+        ws_endpoint="ws://127.0.0.1:1/devtools/browser/x",
+        user_agent="UA",
+        user_agent_metadata={},
+        timezone="UTC",
+        accept_language="en-US",
+        event_sink=lambda name, params: None,
+        profile_id="prof",
+        binding_name="__nzakD",
+    )
+    inj = StealthInjector(opts)
+    inj.binding_hidden = 0
+
+    async def fake_command(method, params, session_id=None):
+        # _command unwraps reply.get("result", {}), so the injected reply IS
+        # already the result object (the "value" key lives directly on it).
+        return {"value": "hidden"}
+
+    inj._command = fake_command  # type: ignore[method-assign]
+    asyncio.run(inj._hide_binding("SID"))
+    assert inj.binding_hidden == 1, "the 'hidden' reply must increment binding_hidden"
+
+
+def test_hide_binding_does_not_increment_on_other_replies():
+    """not-data / not-function / not-configurable / already / err must NOT
+    increment the counter — re-wrapping an already-wrapped binding is a no-op
+    and must stay invisible."""
+    import asyncio
+
+    from nazak.core.cdp_injector import InjectorOptions, StealthInjector
+
+    opts = InjectorOptions(
+        ws_endpoint="ws://127.0.0.1:1/devtools/browser/x",
+        user_agent="UA",
+        user_agent_metadata={},
+        timezone="UTC",
+        accept_language="en-US",
+        event_sink=lambda name, params: None,
+        profile_id="prof",
+        binding_name="__nzakD",
+    )
+    inj = StealthInjector(opts)
+
+    async def fake_command(method, params, session_id=None):
+        # _command unwraps reply.get("result", {}), so the injected reply IS
+        # already the result object (the "value" key lives directly on it).
+        return {"value": "already"}
+
+    inj._command = fake_command  # type: ignore[method-assign]
+    asyncio.run(inj._hide_binding("SID"))
+    assert inj.binding_hidden == 0, "'already' must not increment binding_hidden"
+
+
+def test_reinject_into_reapplies_hide_when_sink_exists():
+    """A-42 remainder: after a navigation Chrome re-installs the binding, so
+    _reinject_into must re-hide it when an event_sink exists (without a sink
+    no binding was ever installed, so there is nothing to hide)."""
+    import asyncio
+
+    from nazak.core.cdp_injector import InjectorOptions, StealthInjector
+
+    src_js = "(() => {})()"
+
+    def make_opts(sink):
+        return InjectorOptions(
+            ws_endpoint="ws://127.0.0.1:1/devtools/browser/x",
+            user_agent="UA",
+            user_agent_metadata={},
+            timezone="UTC",
+            accept_language="en-US",
+            event_sink=sink,
+            profile_id="prof",
+            binding_name="__nzakD",
+        )
+
+    # with sink: hide is re-applied
+    hide_calls = []
+    inj = StealthInjector(make_opts(lambda name, params: hide_calls.append((name, params))))
+
+    async def fake_command(method, params, session_id=None):
+        # _command unwraps reply.get("result", {}), so the injected reply IS
+        # already the result object.
+        if method == "Runtime.evaluate":
+            expr = params.get("expression", "")
+            if expr.startswith("(() => { try { const d ="):
+                return {"value": "hidden"}
+        return {}
+
+    inj._command = fake_command  # type: ignore[method-assign]
+    asyncio.run(inj._reinject_into("SID", src_js))
+    assert inj.reinjections_applied == 1, "the shield re-injection must be counted"
+
+
+def test_reinject_into_skips_hide_without_sink():
+    """Without an event_sink the binding was never installed, so _reinject_into
+    must not attempt to hide anything (and must not error)."""
+    import asyncio
+
+    from nazak.core.cdp_injector import InjectorOptions, StealthInjector
+
+    src_js = "(() => {})()"
+    inj = StealthInjector(
+        InjectorOptions(
+            ws_endpoint="ws://127.0.0.1:1/devtools/browser/x",
+            user_agent="UA",
+            user_agent_metadata={},
+            timezone="UTC",
+            accept_language="en-US",
+            event_sink=None,
+            profile_id="prof",
+            binding_name="__nzakD",
+        )
+    )
+
+    async def fake_command(method, params, session_id=None):
+        return {}
+
+    inj._command = fake_command  # type: ignore[method-assign]
+    asyncio.run(inj._reinject_into("SID", src_js))
+    assert inj.reinjections_applied == 1
