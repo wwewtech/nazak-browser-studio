@@ -39,7 +39,11 @@ dependencies = [
     "requests[socks]>=2.31.0",
     "PySocks>=1.7.1",
     "psutil>=5.9.0",
-    "PyQt6>=6.7.0",
+    # <6.12: PyQt6 6.12 ships .pyi stubs with invalid signatures — the
+    # positional-only marker placed after *args is a syntax error for every mypy
+    # version, so CI type-check died before checking nazak. Remove the bound once
+    # upstream fixes the stubs.
+    "PyQt6>=6.7.0,<6.12.0",
     "PyQt6-Fluent-Widgets>=1.7.0",
     "rich>=13.7.0",
     "websockets>=12.0",
@@ -230,3 +234,4 @@ exclude = [
     "tests/",
     "nazak/tools/",
 ]
+

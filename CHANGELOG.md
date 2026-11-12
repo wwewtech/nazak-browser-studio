@@ -570,6 +570,10 @@ document.
 
 The shield stored its idempotency flag under `Symbol('nazakShieldIdempotent')` on `globalThis` — a branded description any page can read via `Object.getOwnPropertySymbols(window)`. Measured live in Chrome 156: four copies of `Symbol(nazakShieldIdempotent)` appeared on the window (extension MAIN-world script + CDP injector, repeated per document). The flag now lives under a description-less neutral symbol (`String(sym) === "Symbol()"`, so no product identity leaks), discovered on first run and reused across script instances so exactly one own symbol exists. No branded description remains anywhere in the injected source.
 
+### CI type-check died on PyQt6 6.12's broken stubs (not our code)
+
+The `type-check` job failed with `Found 16 errors in 1 file (errors prevented further checking)` — all 16 inside `PyQt6/QtGui.pyi`, e.g. `def drawConvexPolygon(self, point, *args: QPointF, /)`: the positional-only marker sits **after** `*args`, which is invalid Python and a syntax error for every mypy version, so the run aborted before checking `nazak` at all. The registers were never resolved locally because the dev box has PyQt6 6.11 (no `.pyi` files ship in that wheel) while CI resolves from the unpinned `PyQt6>=6.7.0` in `requirements.txt` and pulled 6.12.0. `PyQt6` is now bounded `>=6.7.0,<6.12.0` in both `pyproject.toml` and `requirements.txt` (the drift test that compares the two lists still passes, and the bound is a comment-only rationale with no quotes so the test's parser ignores it). Local verification: `mypy nazak` clean, `ruff check` / `ruff format --check` clean, `pytest` 1109 passed. Upstream stub fix is tracked to remove the bound.
+
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
   `SpeechSynthesisVoice` has **no own properties at all**: its values live on the
