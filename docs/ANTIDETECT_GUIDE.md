@@ -3,7 +3,7 @@
 > **Read this before you run a farm.** This page documents the anti-detect layer as it
 > actually is — what it defends against, what it cannot defend against, and what is left
 > to you as the operator. It reflects the state after the v1.15.x anti-detect audit
-> (findings A-01…A-29 plus the round-12/13 proxy-shape and error-stack hunts), and every
+> (findings A-01…A-43 plus the round-12/13 proxy-shape and error-stack hunts), and every
 > claim marked *measured* below was verified against a real Chrome launched through the
 > product's own start path, with a plain Chrome as the control in the same run.
 
@@ -272,4 +272,4 @@ don't, we measure it, fix it and pin it with a regression test — the 30+ findi
 
 *This guide tracks the state of the shield as of the v1.15.x audit. When the shield
 changes materially, this page changes with it — see the
-[CHANGELOG](../CHANGELOG.md) for the finding-by-finding history (A-01…A-29, rounds 12–13).*
+[CHANGELOG](../CHANGELOG.md) for the finding-by-finding history (A-01…A-43, rounds 12–13).*
