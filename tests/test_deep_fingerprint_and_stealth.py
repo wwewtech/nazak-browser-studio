@@ -263,10 +263,14 @@ def test_stealth_js_contains_valid_iife_syntax(tmp_path):
     # страница не могла определить продукт одним if.
     # Hunt A-15: even a non-enumerable own property is visible in
     # Object.getOwnPropertyNames(window) — the flag now lives under a SYMBOL.
+    # Hunt A-43: the symbol carries no branded description — a description-less
+    # neutral symbol ("Symbol()") leaks no product identity via
+    # Object.getOwnPropertySymbols(window).
     assert "window.__nazakShieldApplied" not in stealth
-    assert "Symbol('nazakShieldIdempotent')" in stealth
+    assert "Symbol()" in stealth
     assert "Object.defineProperty(window, '__nsi'" not in stealth
     assert "enumerable: false" in stealth
+    assert "Symbol('nazakShieldIdempotent')" not in stealth
     assert "(function() {" in stealth
     assert stealth.strip().endswith("})();\n}\n})();")
 

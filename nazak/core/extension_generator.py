@@ -311,12 +311,24 @@ const __scopeIsWorker = (typeof window === 'undefined');
 // getOwnPropertyNames / Object.keys / for-in, so the flag is stored under a
 // per-run symbol. The symbol itself is held in a closure, so the page cannot
 // read or forge it.
-const __nsiKey = (typeof Symbol === 'function')
-    ? Symbol('nazakShieldIdempotent')
-    : '__nsi';
+// Hunt A-43: the idempotency flag lives under a description-less neutral
+// symbol (String(sym) === "Symbol()") so no product identity is readable via
+// Object.getOwnPropertySymbols(globalThis). A branded symbol description
+// leaks the product through its description and was measured as 4 copies on
+// the window. The symbol is reused across script instances (extension
+// content script + CDP injector both run this source) so exactly one own
+// symbol exists and double-application is avoided.
 const __global = (typeof globalThis !== 'undefined')
     ? globalThis
     : (typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : {{}}));
+const __nsiKey = (function() {{
+    if (typeof Symbol !== 'function') return '__nsi';
+    const existing = Object.getOwnPropertySymbols(__global);
+    for (let i = 0; i < existing.length; i++) {{
+        if (String(existing[i]) === 'Symbol()') return existing[i];
+    }}
+    return Symbol();
+}})();
 if (!__scopeIsWorker && __global[__nsiKey]) {{
     // Already applied on this document (extension content script + CDP injector may both run).
 }} else {{

@@ -282,5 +282,7 @@ def test_r3b_generated_stealth_js_has_no_branded_marker(tmp_path):
     # Hunt A-15: the idempotency flag is stored under a SYMBOL, so it is not
     # an own property of the window any more (a string key would show up in
     # Object.getOwnPropertyNames(window) — a one-line detector).
-    assert "Symbol('nazakShieldIdempotent')" in js
+    # Hunt A-43: the symbol carries no branded description.
+    assert "Symbol()" in js
+    assert "Symbol('nazakShieldIdempotent')" not in js
     assert "Object.defineProperty(window, '__nsi'" not in js

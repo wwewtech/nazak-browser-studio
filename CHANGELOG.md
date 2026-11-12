@@ -566,6 +566,10 @@ non-native closure and is a no-op. The hide runs right after every
 (`_reinject_into`), because Chrome re-installs the binding global in the new
 document.
 
+### The page could read the idempotency flag's branded symbol description (A-43)
+
+The shield stored its idempotency flag under `Symbol('nazakShieldIdempotent')` on `globalThis` — a branded description any page can read via `Object.getOwnPropertySymbols(window)`. Measured live in Chrome 156: four copies of `Symbol(nazakShieldIdempotent)` appeared on the window (extension MAIN-world script + CDP injector, repeated per document). The flag now lives under a description-less neutral symbol (`String(sym) === "Symbol()"`, so no product identity leaks), discovered on first run and reused across script instances so exactly one own symbol exists. No branded description remains anywhere in the injected source.
+
 - **The voice objects carried own properties (A-28).** The profile's voices were built
   with `Object.create` + `defineProperty` per key (the A-03 fix) — but a native
   `SpeechSynthesisVoice` has **no own properties at all**: its values live on the

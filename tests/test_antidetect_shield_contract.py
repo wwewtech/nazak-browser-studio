@@ -299,12 +299,15 @@ def test_a15_shield_leaves_no_trace_in_the_window():
     1234 own window properties, the shielded one 1237."""
     src = _generated_js()
     assert "\nvar __scopeIsWorker" not in src, "the scope flag must not become an own property of the window (A-15)"
-    assert "Symbol('nazakShieldIdempotent')" in src, (
-        "the idempotency flag must live under a symbol key — a string key shows up in "
-        "Object.getOwnPropertyNames(window) (A-15)"
+    assert "Symbol()" in src, (
+        "the idempotency flag must live under a description-less neutral symbol — "
+        "a branded symbol description shows up in Object.getOwnPropertySymbols(window) (A-43)"
     )
     assert "Object.defineProperty(window, '__nsi'" not in src, (
         "the idempotency flag must not be an own property of the window (A-15)"
+    )
+    assert "Symbol('nazakShieldIdempotent')" not in src, (
+        "a branded symbol description leaks product identity via Object.getOwnPropertySymbols(window) (A-43)"
     )
 
 
