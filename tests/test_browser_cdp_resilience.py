@@ -70,6 +70,23 @@ def test_profile():
     )
 
 
+def test_event_sink_reaches_already_running_injectors():
+    """A-47: registering the synchronizer after Chrome launched must update
+    live injectors; storing the callback only for future launches left the
+    current master without any CDP binding."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    launcher = BrowserLauncher()
+    scheduled = []
+    loop = SimpleNamespace(is_running=lambda: True, call_soon_threadsafe=lambda fn, arg: scheduled.append((fn, arg)))
+    injector = SimpleNamespace(_loop=loop, set_event_sink=Mock())
+    launcher._injectors["master"] = SimpleNamespace(injector=injector)
+    sink = object()
+    launcher.set_event_sink(sink)
+    assert scheduled == [(injector.set_event_sink, sink)]
+
+
 # -------------------------------------------------------------
 # 1. Chrome Command-Line Arguments Construction (8 Tests)
 # -------------------------------------------------------------

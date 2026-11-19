@@ -386,8 +386,20 @@ class BrowserLauncher:
                 logger.debug("forwarder stop failed for %s", profile_id, exc_info=True)
 
     def set_event_sink(self, sink) -> None:
-        """Register the synchronizer gesture sink (audit fix P0-2)."""
-        self._event_sink = sink
+        """Register the gesture sink for future AND already-running profiles."""
+        with self._registry_lock:
+            self._event_sink = sink
+            injectors = list(self._injectors.values())
+        for handle in injectors:
+            handle.event_sink_provider = lambda: self._event_sink
+            injector = handle.injector
+            loop = injector._loop if injector is not None else None
+            if injector is None or loop is None or not loop.is_running():
+                continue
+            try:
+                loop.call_soon_threadsafe(injector.set_event_sink, sink)
+            except RuntimeError:
+                pass
 
     def get_stealth_status(self, profile_id: str) -> dict[str, Any] | None:
         """CDP stealth injector status (None when injector never started)."""
@@ -478,6 +490,7 @@ class BrowserLauncher:
                     event_sink=self._event_sink,
                 )
                 if handle is not None:
+                    handle.event_sink_provider = lambda: self._event_sink
                     with self._registry_lock:
                         self._injectors[profile.id] = handle
             return True, proc.pid, None

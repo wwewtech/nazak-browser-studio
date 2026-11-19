@@ -684,6 +684,31 @@ def test_a40_binding_names_carry_no_brand_structure():
     assert "SYNC_BINDING_NAME_" not in gen_block, "the generator must not compose the name from a brand prefix (A-40)"
 
 
+def test_a44_error_stack_state_is_restored_and_callsite_type_is_preserved():
+    """A real-Chrome measurement: the old trap left stackTraceLimit at 906
+    instead of 10 (+8 per getter), and prepareStackTrace's CallSite[] became a
+    string.  Capture depth must be scoped with finally, and array stacks must
+    be filtered without string coercion (A-44)."""
+    src = _generated_js()
+    trap = src[src.find("newHandler[trap] = function()") :][:2400]
+    assert "finally {" in trap, "the stack limit must always be restored (A-44)"
+    assert "if (!customFormatter) Error.stackTraceLimit = previousLimit;" in trap
+    assert "Array.isArray(err.stack)" in trap
+    assert "err.stack.filter" in trap
+    assert "String(err.stack)" not in trap
+
+
+def test_a44_worker_reapplication_does_not_nest_tostring_proxies():
+    """The worker exemption skipped the idempotency guard entirely: applying
+    the source twice nested two toString proxies and doubled Object.apply
+    frames.  Every realm now uses the guard, and the proxy redirects its own
+    stringification to the pristine native (A-44)."""
+    src = _generated_js()
+    assert "if (__global[__nsiKey]) {" in src
+    assert "if (!__scopeIsWorker && __global[__nsiKey])" not in src
+    assert "__redirectToString(toStringProxy, nativeToString);" in src
+
+
 def test_generated_shield_is_valid_javascript():
     """The generated shield must parse as JS (node --check when available)."""
     import shutil

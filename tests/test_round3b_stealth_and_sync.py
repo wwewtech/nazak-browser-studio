@@ -200,6 +200,19 @@ def test_r3b_binding_requires_main_frame_default_context():
     )
 
 
+def test_a47_duplicate_page_session_cannot_deliver_twice():
+    inj = _injector()
+    for session_id in ("first", "duplicate"):
+        inj._session_is_page[session_id] = True
+        inj._page_target_by_session[session_id] = "same-target"
+        inj._main_frame[session_id] = "F1"
+    inj._sync_session_by_target["same-target"] = "first"
+    inj._contexts[10] = ("F1", True)
+    params = {"name": inj._binding_name, "payload": "{}", "executionContextId": 10}
+    assert inj.binding_event_allowed(params, "first") == (True, "")
+    assert inj.binding_event_allowed(params, "duplicate") == (False, "duplicate-page-session")
+
+
 def test_r3b_binding_rejects_oversized_payload_and_sinkless_injector():
     inj = _injector()
     inj._session_is_page["s"] = True
@@ -270,9 +283,12 @@ def test_r3b_no_branded_page_visible_markers_anywhere():
     fresh = ci.random_sync_binding_name()
     assert fresh.isalnum(), f"the binding name must be pure unstructured random (A-40): {fresh}"
     assert "nse" not in fresh.lower()
-    # флаг идемпотентности виден лишь при явном перечислении свойств
-    assert "__nse_c" in injected
-    assert "configurable: false, enumerable: false" in injected
+    # A-45: no fixed guard property is added to window.  Idempotency state is
+    # attached to the binding that Runtime.addBinding already installed.
+    assert "__nse_c" not in injected
+    assert "Object.defineProperty(window," not in injected
+    assert "Object.defineProperty(binding, key" in injected
+    assert "Symbol.for(" in injected
 
 
 def test_r3b_generated_stealth_js_has_no_branded_marker(tmp_path):

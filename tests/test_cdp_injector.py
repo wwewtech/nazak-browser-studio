@@ -270,9 +270,12 @@ def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
     """_install_sync_client must read the EAGER handle name when the injector
     object is not yet assigned, instead of the static legacy fallback."""
     import nazak.core.cdp_injector as ci
-    from nazak.core.synchronizer import SynchronizerManager, sync_client_js
+    from nazak.core.synchronizer import SynchronizerManager, SynchronizerSession, sync_client_js
 
     mgr = SynchronizerManager(SimpleNamespace())
+    session = SynchronizerSession("m", [])
+    session.active = True
+    mgr.current_session = session
     eager_name = ci.random_sync_binding_name()
     handle = SimpleNamespace(injector=None, binding_name=eager_name)
     import contextlib as _ctxlib
@@ -312,7 +315,7 @@ def test_s02_install_sync_client_uses_eager_name_while_injector_thread_starts():
     for fn in inner_fns:
         js_strings.extend(c.cell_contents for c in fn.__closure__ or [] if isinstance(c.cell_contents, str))
     assert js_strings, "the _install closure must carry the rendered client JS"
-    assert any(f"typeof window.{eager_name} ===" in s for s in js_strings), js_strings
+    assert any(f'const binding = window["{eager_name}"];' in s for s in js_strings), js_strings
     assert not any("typeof window.__nse_ev ===" in s for s in js_strings), js_strings
 
 
@@ -345,9 +348,23 @@ def test_hide_binding_js_wraps_through_comma_not_variable():
     from nazak.core.cdp_injector import _hide_binding_js
 
     src = _hide_binding_js("__nzakD")
-    assert "const repl" not in src
+    assert "const repl = function" not in src
     assert "{ value: function" not in src
     assert "(0, function ()" in src
+
+
+def test_hide_binding_preserves_sync_state_without_naming_wrapper():
+    """A-45/A-47: hiding replaces the binding function.  Its per-session
+    Symbol state must move to the wrapper, while the wrapper remains anonymous
+    to the cdpBindingGlobals detector."""
+    from nazak.core.cdp_injector import _hide_binding_js
+
+    src = _hide_binding_js("7digitLeadingName")
+    assert "Object.getOwnPropertySymbols(orig)" in src
+    assert "state.binding = repl" in src
+    assert "Object.defineProperty(repl, key" in src
+    assert "const repl = window[" in src
+    assert "const repl = function" not in src
 
 
 def test_hide_binding_increments_counter_on_hidden():

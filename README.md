@@ -16,7 +16,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Windows 11 Fluent](https://img.shields.io/badge/UI-Windows%2011%20Fluent-0078d4.svg?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![PyQt6 / QFluentWidgets](https://img.shields.io/badge/framework-PyQt6%20%2B%20QFluentWidgets-41cd52.svg?style=for-the-badge&logo=qt&logoColor=white)](https://qfluentwidgets.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-1109%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
+[![Tests Passing](https://img.shields.io/badge/tests-1115%20passing-brightgreen.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/wwewtech/nazak-browser-studio)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
@@ -162,7 +162,8 @@ with sync_playwright() as p:
   detector (36 APIs scanned): **0 corrupted APIs** (a plain-Chrome control: 0; the
   pre-rework shield: 33). Error stacks match the host byte-for-byte on 6 of 7 adversarial
   `toString`/`setPrototypeOf` traces (frame count, anchor and type included), and
-  `Error.stackTraceLimit` is raised inside traps so the native stack tail survives.
+  the deeper stack capture is scoped by `try/finally`, so the page-visible
+  `Error.stackTraceLimit` is always restored and custom `CallSite[]` stacks keep their type.
 - **Hardware Emulation (WebGL & WebGPU)**:
   - *WebGL*: UNMASKED_VENDOR/RENDERER plus ~25 limit constants (texture units, vertex/fragment uniform vectors, attribs, cube-map sizes, aliased ranges as real `Float32Array` pairs) matching a coherent desktop-GPU profile. The extension semantics are native: the UNMASKED_* parameters answer `null` until `WEBGL_debug_renderer_info` is requested — and both the WebGL **and** WebGL2 prototypes are hooked (a WebGL2 context has a different prototype; the host GPU leaked there).
   - *WebGPU*: Intercepts `navigator.gpu.requestAdapter()` to synchronize `requestAdapterInfo()` and `adapter.info` with the spoofed GPU vendor and architecture, on a real `GPUAdapterInfo`-shaped object.
@@ -301,14 +302,14 @@ Profile storage is selectable in the container too: `NAZAK_PROFILE_STORE=json` (
 
 ## 🧪 Test Coverage
 
-The project is backed by a comprehensive regression and unit test suite comprising **1115 collected tests** (1109 selected; 6 `live` tests are deselected by default, and the opt-in live Chromium job in CI runs them against a real browser). Every previously `xfail`-documented bug has been fixed — the suite is fully green with no known open defects.
+The project is backed by a comprehensive regression and unit test suite comprising **1121 collected tests** (1115 selected; 6 `live` tests are deselected by default, and the opt-in live Chromium job in CI runs them against a real browser). Every previously `xfail`-documented bug has been fixed. Measured follow-up audit items are recorded explicitly in [CHANGELOG](CHANGELOG.md), rather than being hidden behind a claim of perfect stealth.
 
 ```powershell
 python -m pytest tests -q
 ```
 
 ```
-========================== 1109 passed, 6 deselected ===========================
+========================== 1115 passed, 6 deselected ===========================
 ```
 
 The suite is green with all dependencies installed (`PyQt6`/`qfluentwidgets`,

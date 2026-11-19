@@ -274,7 +274,12 @@ def _hide_binding_js(name: str) -> str:
         f" const orig = d.value;"
         f" Object.defineProperty(window, {ident}, {{ value: (0, function () {{"
         " return orig.apply(this, arguments); }), writable: true,"
-        " configurable: true, enumerable: false }); return 'hidden';"
+        " configurable: true, enumerable: false });"
+        f" const repl = window[{ident}];"
+        " Object.getOwnPropertySymbols(orig).forEach((key) => {"
+        " const state = orig[key]; if (state && state.binding === orig) {"
+        " state.binding = repl; Object.defineProperty(repl, key, {value: state, configurable: true});"
+        " delete orig[key]; } }); return 'hidden';"
         " } catch (e) { return 'err'; } })()"
     )
 
@@ -308,6 +313,8 @@ class StealthInjector:
         # S-02 the caller ALWAYS supplies one (generated eagerly on the handle
         # in start_stealth_injector), so the name never changes after launch.
         self._binding_name = opts.binding_name or random_sync_binding_name()
+        self._event_sink_provider: Callable[[], Callable[[str, dict[str, Any]], None] | None] | None = None
+        self.sync_client_source = ""
         self.applied = False
         self.sessions_applied = 0
         self.last_error: str | None = None
@@ -331,8 +338,13 @@ class StealthInjector:
         self._pending: dict[int, asyncio.Future] = {}
         self._stop_event: asyncio.Event | None = None
         # --- receiving sync gestures (audit R3-round2) -------------------
-        # sessionId -> whether the target is a top-level page
+        # sessionId -> whether the target is a top-level page.  Target ids let
+        # us reject duplicate delivery when Chrome exposes the same page via
+        # both auto-attach and an explicit attach (A-47).
         self._session_is_page: dict[str, bool] = {}
+        self._page_target_by_session: dict[str, str] = {}
+        self._sync_session_by_target: dict[str, str] = {}
+        self.sync_client_provider: Callable[[], str] | None = None
         # sessionId -> id of this session's main frame
         self._main_frame: dict[str, str | None] = {}
         # executionContextId -> (frameId, isDefault)
@@ -343,6 +355,23 @@ class StealthInjector:
         self._pending_nav_docs: dict[str, str] = {}
         self._binding_bucket = _TokenBucket(BINDING_RATE_LIMIT_PER_SEC, BINDING_RATE_BURST)
         self._binding_tasks: set[asyncio.Task] = set()
+
+    def set_event_sink(self, sink: Callable[[str, dict[str, Any]], None] | None) -> None:
+        """Update a live injector on its own event loop (A-47).
+
+        The synchronizer normally starts after Chrome.  Previously only future
+        launches received the sink, so no binding was ever installed in the
+        already-running master.  Existing page sessions are upgraded now.
+        """
+        self.opts.event_sink = sink
+        if sink:
+            for session_id, is_page in list(self._session_is_page.items()):
+                if is_page:
+                    asyncio.ensure_future(self._enable_sync_binding(session_id))
+        else:
+            for session_id, is_page in list(self._session_is_page.items()):
+                if is_page:
+                    asyncio.ensure_future(self._command("Runtime.disable", {}, session_id=session_id))
 
     def request_stop(self) -> None:
         """Thread-safe-ish stop request (must run on the injector loop)."""
@@ -482,11 +511,31 @@ class StealthInjector:
             return
         if target_type not in ("page", "iframe", "other", "webview"):
             return
-        # Only top-level pages are allowed to send sync gestures: an OOPIF
-        # (type=iframe) is a foreign frame inside the page.
+        if target_type == "page" and self._event_sink_provider is not None:
+            self.opts.event_sink = self._event_sink_provider()
+        if target_type == "page" and self.sync_client_provider is not None:
+            self.sync_client_source = self.sync_client_provider()
+        # A page can arrive twice: Target.getTargets + explicit attach and the
+        # simultaneous auto-attach event.  Install its binding only once.
         if session_id:
-            self._session_is_page[session_id] = target_type == "page"
+            is_page = target_type == "page"
+            self._session_is_page[session_id] = is_page
+            if is_page:
+                target_id = str(info.get("targetId") or session_id)
+                self._page_target_by_session[session_id] = target_id
+                owner = self._sync_session_by_target.get(target_id)
+                if owner and owner != session_id:
+                    return
+                self._sync_session_by_target[target_id] = session_id
         await self._apply_session(session_id)
+
+    async def _enable_sync_binding(self, session_id: str) -> None:
+        """Install/reinstall the transport required by a live synchronizer."""
+        if not self.opts.event_sink:
+            return
+        await self._command("Runtime.enable", {}, session_id=session_id)
+        await self._command("Runtime.addBinding", {"name": self._binding_name}, session_id=session_id)
+        await self._hide_binding(session_id)
 
     async def _hide_binding(self, session_id: str) -> None:
         """Make the CDP binding undetectable to window-scanning detectors.
@@ -650,8 +699,7 @@ class StealthInjector:
             # be accepted anyway (binding_event_allowed -> "no-sink"), so it
             # was pure fingerprinting.
             if self.opts.event_sink:
-                await self._command("Runtime.addBinding", {"name": self._binding_name}, session_id=session_id)
-                await self._hide_binding(session_id)
+                await self._enable_sync_binding(session_id)
             # Proxy 407 challenges are answered via CDP (extension SW never loads).
             # handleAuthRequests is REQUIRED: without it Chrome never emits
             # Fetch.authRequired and the credential answer below stays dead.
@@ -777,7 +825,13 @@ class StealthInjector:
             )
             self.reinjections_applied += 1
             if self.opts.event_sink:
-                await self._hide_binding(session_id)
+                await self._enable_sync_binding(session_id)
+            if self.sync_client_source:
+                await self._command(
+                    "Runtime.evaluate",
+                    {"expression": self.sync_client_source, "awaitPromise": False, "returnByValue": False},
+                    session_id=session_id,
+                )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("shield re-injection failed for %s: %s", session_id, exc)
 
@@ -794,6 +848,9 @@ class StealthInjector:
             return False, "no-sink"
         if not session_id or not self._session_is_page.get(session_id, False):
             return False, "not-a-top-level-page"
+        target_id = self._page_target_by_session.get(session_id)
+        if target_id and self._sync_session_by_target.get(target_id) != session_id:
+            return False, "duplicate-page-session"
         ctx_id = params.get("executionContextId")
         ctx = self._contexts.get(ctx_id) if isinstance(ctx_id, int) else None
         if ctx is None:
@@ -880,6 +937,8 @@ class InjectorHandle:
     # fall back to a static name: it would not match the binding the injector
     # actually installs. Synchronizer._install_sync_client waits for this.
     binding_name: str = ""
+    event_sink_provider: Callable[[], Callable[[str, dict[str, Any]], None] | None] | None = None
+    sync_client_source: str = ""
 
     @property
     def applied(self) -> bool:
@@ -996,6 +1055,9 @@ def start_stealth_injector(
                 binding_name=handle.binding_name,
             )
             inj = StealthInjector(opts)
+            inj._event_sink_provider = handle.event_sink_provider
+            inj.sync_client_provider = lambda: handle.sync_client_source
+            inj.sync_client_source = handle.sync_client_source
             handle.injector = inj
             asyncio.run(inj.run())
         except Exception as exc:

@@ -2,6 +2,17 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
+## Unreleased — A-44/A-45/A-47 audit closure
+
+Suite: **1115 passed, 6 deselected** (1121 collected; 0 `xfail`). Real-Chrome probes now cover error-stack state, worker double application, synchronizer listener disposal and restoration after navigation.
+
+- **A-44 — traps mutated the page's global error state.** Every successful Proxy trap raised `Error.stackTraceLimit` by eight and never restored it; a real-Chrome run started at 906 instead of 10 and each getter added eight more. The deeper capture is now scoped with `try/finally`, including the throwing path. Custom `Error.prepareStackTrace` keeps its native `CallSite[]` result (trap frames are filtered) instead of being coerced to a string. The native and shielded probes now agree byte-for-byte on the ordinary error stack, both return a four-frame CallSite array without trap frames, and the limit remains 10 throughout.
+- **A-44 — worker injection nested `Function.prototype.toString` proxies.** The worker exemption skipped the idempotency guard, so a second source evaluation added another `Object.apply` frame. Every realm now participates in the guard, and the toString proxy redirects its own stringification to the pristine native; repeated worker application no longer nests proxies.
+- **A-45 — the synchronizer's fixed `window.__nse_c` guard was enumerable by reflection.** It is gone. Idempotency state lives under a per-session Symbol on the already-installed binding; it adds no new window global, supports listener disposal/reinstall, and survives the binding-hiding wrapper because its state is transferred to the replacement function.
+- **A-47 — the real synchronizer transport was broken in three independent ways.** `set_event_sink()` only affected future launches, so enabling sync after launch installed no binding. Random binding names could begin with a digit and then fail as `window.<name>` JavaScript identifiers; they are now accessed with a JSON-quoted property key. Finally, auto-attach plus explicit attach exposed the same page on two CDP sessions and delivered one gesture twice; one session per target now owns the binding. The injector keeps the active client source and restores it after navigation. The live test now proves one delivery per real DOM click, no delivery after dispose, one after reinstall, and one in the newly navigated document.
+
+Remaining measured audit work: A-46 — `makeNative()` still leaves an ordinary JS `prototype` and constructibility on some hand-built Web API functions; they must be Proxy-wrapped native methods rather than have their `prototype` deleted. V8 also names a Proxy-created eval frame `Proxy.eval` instead of `toString.eval`; this known limitation is not hidden with a misleading string replacement.
+
 ## v1.15.3 — Anti-Detect Shield Audit (Empirical, Real Chrome) (2026-10-21)
 
 The first audit of the anti-detect layer that was measured instead of read: the

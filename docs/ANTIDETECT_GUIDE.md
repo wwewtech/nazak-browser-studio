@@ -99,8 +99,10 @@ Since v1.15.x every hook is a **Proxy over the native function**, never a replac
   `Illegal invocation` TypeError with its native stack;
 - the function's shape (own keys, extendability, `toString()`) stays that of the real
   native — a proxied API answers `toString()` with the **exact original signature**;
-- our own frames are spliced out of error stacks, and `Error.stackTraceLimit` is raised
-  inside traps so the native tail of the stack survives;
+- our own frames are spliced out of error stacks; the deeper capture needed for
+  that cleanup is scoped by `try/finally`, so the page-visible
+  `Error.stackTraceLimit` is restored on success and failure. A custom
+  `Error.prepareStackTrace` keeps its native `CallSite[]` result (A-44);
 - nothing is left on the instances: `getOwnPropertyNames(navigator)` is empty, the
   window carries no `__`-prefixed properties of ours (measured: property count identical
   to a plain Chrome).

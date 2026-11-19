@@ -37,7 +37,7 @@ from nazak.models.profile import BrowserProfile, GoogleSettings
 
 pytest.importorskip("playwright")
 
-PROBE = """() => {
+PROBE = r"""() => {
   const out = {};
   const t = (n, fn) => { try { out[n] = 'OK ' + String(fn()); } catch (e) { out[n] = 'THROWS ' + e.name + ': ' + e.message; } };
   t('intl_dtf_tz', () => Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -153,6 +153,32 @@ PROBE = """() => {
     return ext ? ('getParameter=' + typeof ext.getParameter) : 'no-ext';
   });
   // A-14/A-15: the shield must leave NO trace of its own on the globals.
+  // A-44: stack hooks must not leak global state or change V8's custom
+  // prepareStackTrace result type.  The frame list is compared with a plain
+  // Chrome control in the audit; here it must be a CallSite[] without traps.
+  t('stack_limit_initial', () => Error.stackTraceLimit);
+  t('stack_limit_getter_delta', () => {
+    const before = Error.stackTraceLimit;
+    void navigator.hardwareConcurrency;
+    return Error.stackTraceLimit - before;
+  });
+  t('stack_limit_error_delta', () => {
+    const before = Error.stackTraceLimit;
+    try { Function.prototype.toString.call(null); } catch (e) {}
+    return Error.stackTraceLimit - before;
+  });
+  t('custom_stack_shape', () => {
+    const previous = Error.prepareStackTrace;
+    Error.prepareStackTrace = (error, frames) => frames;
+    try {
+      Function.prototype.toString.call(null);
+    } catch (e) {
+      return 'array=' + Array.isArray(e.stack) + ' traps=' +
+        e.stack.filter((f) => /newHandler|Object\.apply/.test(String(f))).length;
+    } finally {
+      Error.prepareStackTrace = previous;
+    }
+  });
   t('nav_own_props', () => Object.getOwnPropertyNames(navigator).join(',') || '(none)');
   t('win_dunder_own', () => Object.getOwnPropertyNames(window).filter(n => /^__/.test(n)).join(',') || '(none)');
   t('win_dunder_keys', () => Object.keys(window).filter(n => /^__/.test(n)).join(',') || '(none)');
@@ -338,6 +364,13 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["worker_tz"].endswith(str(fp.timezone_offset)), (
             f"the worker scope leaks the host's timezone offset (A-13): {res['worker_tz']}"
         )
+
+        # A-44: the trap's deeper capture must be invisible to the page, and
+        # custom stack formatting must keep its native CallSite[] type.
+        assert res["stack_limit_initial"].endswith("10"), res["stack_limit_initial"]
+        assert res["stack_limit_getter_delta"].endswith("0"), res["stack_limit_getter_delta"]
+        assert res["stack_limit_error_delta"].endswith("0"), res["stack_limit_error_delta"]
+        assert res["custom_stack_shape"].endswith("array=true traps=0"), res["custom_stack_shape"]
 
         # A-14/A-15: the shield must not leave own properties on the globals —
         # a real Chrome's navigator / mediaDevices / speechSynthesis instances

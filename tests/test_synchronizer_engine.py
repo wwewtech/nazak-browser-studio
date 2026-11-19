@@ -150,6 +150,30 @@ def test_sync_client_js_has_install_guard():
     specific_name = random_sync_binding_name()
     specific = sync_client_js(specific_name)
     assert specific_name in specific
+    # A-45: the fixed window.__nse_c property was a farm-wide detector.
+    assert "__nse_c" not in client
+    assert "Object.defineProperty(window," not in client
+    assert "Object.defineProperty(binding, key" in client
+
+
+def test_sync_client_supports_digit_leading_binding_names():
+    """Runtime.addBinding accepts any string; a digit-leading random name is
+    not a valid JS identifier after ``window.`` (A-47 live SyntaxError)."""
+    import json
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    client = sync_client_js("7vjpvfk15xvtuppz", "guard")
+    assert 'window["7vjpvfk15xvtuppz"]' in client
+    node = shutil.which("node")
+    if node:
+        with tempfile.TemporaryDirectory() as td:
+            script = Path(td) / "client.js"
+            script.write_text(client, encoding="utf-8")
+            result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+            assert result.returncode == 0, result.stderr
 
 
 def test_submit_event_routing():

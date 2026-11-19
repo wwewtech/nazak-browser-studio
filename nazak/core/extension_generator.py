@@ -329,12 +329,10 @@ const __nsiKey = (function() {{
     }}
     return Symbol();
 }})();
-if (!__scopeIsWorker && __global[__nsiKey]) {{
-    // Already applied on this document (extension content script + CDP injector may both run).
+if (__global[__nsiKey]) {{
+    // Already applied in this realm (page or worker): never nest proxies.
 }} else {{
-if (!__scopeIsWorker) {{
 Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, enumerable: false, writable: false}});
-}}
 (function() {{
     'use strict';
 
@@ -504,36 +502,35 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         Object.getOwnPropertyNames(handler).forEach(function(trap) {{
             if (trap === 'setPrototypeOf') return;
             newHandler[trap] = function() {{
+                const isTrapFrame = (line) =>
+                    /^(?:\\s*at\\s+)?(?:Object\\.)?newHandler\\.<computed> \\[as \\w+\\]/.test(line) ||
+                    /^(?:\\s*at\\s+)?Object\\.apply \\(<anonymous>:\\d+:\\d+\\)\\s*$/.test(line);
+                const customFormatter = typeof Error.prepareStackTrace !== 'undefined';
+                const previousLimit = Error.stackTraceLimit;
                 try {{
-                    const __prevLimit = Error.stackTraceLimit;
-                    try {{ Error.stackTraceLimit = __prevLimit + 8; }} catch(e) {{}}
+                    // Materialize the default string BEFORE finally restores the
+                    // limit: V8 captures lazily.  The global value is unchanged
+                    // both after a getter read and after a thrown error (A-44).
+                    if (!customFormatter) Error.stackTraceLimit = previousLimit + 8;
                     return handler[trap].apply(this, arguments);
                 }} catch (err) {{
-                    try {{ Error.stackTraceLimit = __prevLimit; }} catch(e) {{}}
                     if (!err || !err.stack) throw err;
                     try {{
-                        const lines = String(err.stack).split('\\n');
-                        // 1) our trap frames — measured shape (round 13):
-                        //    'at newHandler.<computed> [as apply] (<anonymous>:149:42)'
-                        //    appearing exactly twice, consecutively, under the
-                        //    message line. Built-in frames (at Error, at eval,
-                        //    at Function.toString) never carry our wrapper
-                        //    name. This exact pattern is the discriminator.
-                        const isTrapFrame = (line) =>
-                            /^\\s*at (Object\\.)?newHandler\\.<computed> \\[as \\w+\\]/.test(line) ||
-                            // the internal handler[trap].apply(...) frame —
-                            // always carries OUR line numbers; built-in frames
-                            // like 'at Error (<anonymous>)' never do.
-                            /^\\s*at Object\\.apply \\(<anonymous>:\\d+:\\d+\\)\\s*$/.test(line);
-                        // 2) splice the trap frames OUT
-                        const kept = lines.filter(function(line, index) {{
-                            if (index === 0) return true;
-                            return !isTrapFrame(line);
-                        }});
-                        // 3) nested toString proxies: Object.toString -> Function.toString
-                        err.stack = kept.join('\\n').replace('at Object.toString (', 'at Function.toString (');
+                        if (Array.isArray(err.stack)) {{
+                            // V8's prepareStackTrace contract returns CallSite[].
+                            // Never coerce that value to String (A-44).
+                            const keptFrames = err.stack.filter((frame) => !isTrapFrame(String(frame)));
+                            if (keptFrames.length !== err.stack.length) err.stack = keptFrames;
+                        }} else if (typeof err.stack === 'string') {{
+                            const kept = err.stack.split('\\n').filter(function(line, index) {{
+                                return index === 0 || !isTrapFrame(line);
+                            }});
+                            err.stack = kept.join('\\n').replace('at Object.toString (', 'at Function.toString (');
+                        }}
                     }} catch(e) {{}}
                     throw err;
+                }} finally {{
+                    if (!customFormatter) Error.stackTraceLimit = previousLimit;
                 }}
             }};
         }});
@@ -638,6 +635,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         }}));
         __proxyTargets.set(toStringProxy, nativeToString);
         __proxyOfTarget.set(nativeToString, toStringProxy);
+        __redirectToString(toStringProxy, nativeToString);
         Function.prototype.toString = toStringProxy;
         makeNative(Function.prototype.toString, 'toString');
     }} catch(e) {{}}

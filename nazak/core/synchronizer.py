@@ -1,6 +1,7 @@
 # Synchronizer
 import asyncio
 import ctypes
+import json
 import logging
 import queue
 import random
@@ -42,46 +43,76 @@ def _clamp_delay_range(delay_range_ms: Any) -> tuple[int, int]:
 
 # Sync client for master pages: captures user gestures and forwards them through
 # the Runtime binding registered by the CDP injector.
-# Audit R3-round2: this used to hold `window.__nazakSyncInstalled = true` and
-# `window.__nazak_sync_event` — any page could identify Nazak with a single
-# line. The idempotency flag is now invisible under ordinary enumeration
-# (non-enumerable property).
-# Anti-detect (audit F-05): the CDP binding name is randomized PER PROFILE
-# (cdp_injector.random_sync_binding_name) and substituted into this script at
-# install time, so no two profiles expose the same window property.
+# Idempotency lives on the CDP binding under a per-session Symbol, never under
+# a fixed window property (the old __nse_c was a farm-wide detector).  The
+# binding-hiding wrapper preserves that state when CDP replaces the function.
 SYNC_CLIENT_JS_TEMPLATE = """
 (() => {{
-  if (window.__nse_c) return;
-  Object.defineProperty(window, '__nse_c', {{value: true, configurable: false, enumerable: false}});
+  const binding = window[{binding}];
+  if (typeof binding !== 'function') return;
+  const key = Symbol.for({guard_key});
+  const current = binding[key];
+  if (current && current.binding === binding && !current.disposed) return;
+  if (current && typeof current.dispose === 'function') current.dispose();
+
+  const state = {{binding, disposed: false, dispose: null}};
   const send = (type, data) => {{
     try {{
-      if (typeof window.{binding} === 'function') {{
-        window.{binding}(JSON.stringify(Object.assign({{type}}, data)));
+      if (!state.disposed) {{
+        binding(JSON.stringify(Object.assign({{type}}, data)));
       }}
     }} catch (e) {{}}
   }};
-  document.addEventListener('click', (e) => {{
+  const onClick = (e) => {{
     send('click', {{x: e.clientX, y: e.clientY, button: e.button === 2 ? 'right' : 'left'}});
-  }}, true);
-  document.addEventListener('keydown', (e) => send('keydown', {{key: e.key}}), true);
+  }};
+  const onKeydown = (e) => send('keydown', {{key: e.key}});
   let lastScroll = 0;
-  document.addEventListener('scroll', () => {{
+  const onScroll = () => {{
     const now = Date.now();
     if (now - lastScroll < 250) return;
     lastScroll = now;
     send('scroll', {{x: window.scrollX, y: window.scrollY}});
-  }}, {{capture: true, passive: true}});
-  document.addEventListener('input', (e) => {{
+  }};
+  const onInput = (e) => {{
     const el = e.target;
     send('input', {{value: (el && 'value' in el) ? String(el.value).slice(-64) : ''}});
-  }}, true);
+  }};
+  state.dispose = () => {{
+    if (state.disposed) return;
+    state.disposed = true;
+    document.removeEventListener('click', onClick, true);
+    document.removeEventListener('keydown', onKeydown, true);
+    document.removeEventListener('scroll', onScroll, true);
+    document.removeEventListener('input', onInput, true);
+    if (state.binding[key] === state) delete state.binding[key];
+  }};
+  document.addEventListener('click', onClick, true);
+  document.addEventListener('keydown', onKeydown, true);
+  document.addEventListener('scroll', onScroll, {{capture: true, passive: true}});
+  document.addEventListener('input', onInput, true);
+  Object.defineProperty(binding, key, {{value: state, configurable: true}});
 }})();
 """
 
 
-def sync_client_js(binding_name: str) -> str:
-    """Render the sync client for a specific per-profile binding name."""
-    return SYNC_CLIENT_JS_TEMPLATE.format(binding=binding_name)
+def sync_client_js(binding_name: str, guard_key: str | None = None) -> str:
+    """Render the client without adding a guard property to ``window``."""
+    token = guard_key or "".join(random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(32))
+    return SYNC_CLIENT_JS_TEMPLATE.format(binding=json.dumps(binding_name), guard_key=json.dumps(token))
+
+
+def dispose_sync_client_js(binding_name: str, guard_key: str) -> str:
+    """Dispose only the listeners belonging to this synchronizer session."""
+    return f"""
+(() => {{
+  const binding = window[{json.dumps(binding_name)}];
+  if (typeof binding !== 'function') return;
+  const key = Symbol.for({json.dumps(guard_key)});
+  const state = binding[key];
+  if (state && typeof state.dispose === 'function') state.dispose();
+}})();
+"""
 
 
 def _jittered_point(x: float, y: float, jitter_px: int) -> tuple[int, int]:
@@ -153,6 +184,9 @@ class SynchronizerSession:
         # its Playwright driver. A dying session can now only clean up itself.
         self.worker_pages: dict[str, dict[str, Any]] = {}
         self.worker_pw_driver: Any = None
+        self.sync_binding_name = ""
+        self.sync_guard_key = "".join(random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(32))
+        self.sync_install_thread: threading.Thread | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -257,7 +291,7 @@ class SynchronizerManager:
             target=self._mirror_pump, args=(session,), daemon=True, name="NazakSyncPump"
         )
         self._pump_thread.start()
-        self._install_sync_client(master_profile_id)
+        self._install_sync_client(session)
         return session
 
     def stop_session(self) -> SynchronizerSession | None:
@@ -265,6 +299,11 @@ class SynchronizerManager:
         if session:
             session.active = False
         self.current_session = None
+        if session:
+            install_thread = session.sync_install_thread
+            if install_thread and install_thread.is_alive():
+                install_thread.join(timeout=2.0)
+            self._install_sync_client(session, dispose=True)
         thread = self._pump_thread
         self._pump_thread = None
         if thread and thread.is_alive():
@@ -307,8 +346,26 @@ class SynchronizerManager:
             return False
         return True
 
-    def _install_sync_client(self, master_profile_id: str) -> None:
-        """Evaluate the sync client into master pages (best effort)."""
+    def _install_sync_client(self, session: SynchronizerSession | str, dispose: bool = False) -> None:
+        """Install or dispose this session's page listeners (best effort)."""
+        if isinstance(session, str):
+            session_id = session
+            session = self.current_session
+            if session is None or session.master_profile_id != session_id:
+                return
+        master_profile_id = session.master_profile_id
+        if session.active is False and not dispose:
+            return
+        with getattr(self.browser_launcher, "_registry_lock", __import__("contextlib").nullcontext()):
+            handle = getattr(self.browser_launcher, "_injectors", {}).get(master_profile_id)
+        injector = getattr(handle, "injector", None) if handle else None
+        if dispose:
+            # Stop future CDP-side restoration even when the browser endpoint
+            # is already gone and the page-level dispose cannot be delivered.
+            if handle is not None:
+                handle.sync_client_source = ""
+            if injector is not None:
+                injector.sync_client_source = ""
         cdp_info = None
         try:
             cdp_info = self.browser_launcher.get_cdp_info(master_profile_id)
@@ -321,23 +378,15 @@ class SynchronizerManager:
             return
         # Anti-detect (F-05): render the client with the SAME per-profile
         # binding name the injector installed (read from its options).
-        # Hunt S-02: the name is drawn EAGERLY on the injector handle at launch
-        # time, so it is available even while the injector thread is still
-        # resolving the CDP endpoint. The old code fell back to the STATIC
-        # name when handle.injector was not yet assigned — the client was then
-        # rendered for a binding that never exists, and because the install
-        # guard (window.__nse_c) is non-configurable, a retry with the correct
-        # name could not repair it: the session stayed deaf FOREVER.
-        binding_name = ""
-        with getattr(self.browser_launcher, "_registry_lock", __import__("contextlib").nullcontext()):
-            handle = getattr(self.browser_launcher, "_injectors", {}).get(master_profile_id)
-        injector = getattr(handle, "injector", None) if handle else None
-        if injector is not None:
+        # The binding name is drawn eagerly at launch and is stable even while
+        # the injector thread starts.  Cleanup reuses the session's resolved
+        # name rather than drawing a new, unrelated fallback.
+        binding_name = session.sync_binding_name
+        if not binding_name and injector is not None:
             binding_name = getattr(injector, "_binding_name", "") or ""
-        elif handle is not None:
-            # Injector thread still starting: the eager name is already final.
+        elif not binding_name and handle is not None:
             binding_name = getattr(handle, "binding_name", "") or ""
-        if not binding_name:
+        if not isinstance(binding_name, str) or not binding_name:
             # No handle at all (injector unavailable — e.g. websockets missing):
             # a random unstructured name keeps direct-injection setups working
             # (Hunt A-40: no tool-attributable prefix).
@@ -347,8 +396,16 @@ class SynchronizerManager:
                 "synchronizer: master %s has no injector handle; using legacy binding name", master_profile_id
             )
             binding_name = legacy_sync_binding_name()
-        client_js = sync_client_js(binding_name)
-        import asyncio
+        session.sync_binding_name = binding_name
+        client_js = (
+            dispose_sync_client_js(binding_name, session.sync_guard_key)
+            if dispose
+            else sync_client_js(binding_name, session.sync_guard_key)
+        )
+        if handle is not None:
+            handle.sync_client_source = "" if dispose else client_js
+        if injector is not None:
+            injector.sync_client_source = "" if dispose else client_js
 
         async def _install() -> None:
             # Import inside try: without playwright the thread must not die from an
@@ -363,6 +420,8 @@ class SynchronizerManager:
                 browser = await pw.chromium.connect_over_cdp(endpoint)
                 for context in browser.contexts:
                     for page in context.pages:
+                        if not dispose and not session.active:
+                            break
                         try:
                             await page.evaluate(client_js)
                         except Exception:
@@ -378,6 +437,7 @@ class SynchronizerManager:
                 logger.warning("synchronizer: gesture capture unavailable (%s)", exc)
 
         thread = threading.Thread(target=_runner, daemon=True, name="NazakSyncInstall")
+        session.sync_install_thread = thread
         thread.start()
 
     def get_status(self) -> dict[str, Any]:
