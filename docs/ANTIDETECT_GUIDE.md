@@ -3,7 +3,7 @@
 > **Read this before you run a farm.** This page documents the anti-detect layer as it
 > actually is — what it defends against, what it cannot defend against, and what is left
 > to you as the operator. It reflects the state after the v1.15.x anti-detect audit
-> (findings A-01…A-43 plus the round-12/13 proxy-shape and error-stack hunts), and every
+> (findings A-01…A-50 plus the proxy-shape and error-stack hunts), and every
 > claim marked *measured* below was verified against a real Chrome launched through the
 > product's own start path, with a plain Chrome as the control in the same run.
 
@@ -72,7 +72,7 @@ identity. Below is what is spoofed and the class of detector it answers.
 | `getBattery()` | Profile state on a real `BatteryManager` prototype | |
 | `queryLocalFonts()` | Per-profile font pool (24–42 realistic families) | Missing families are backed by a real sibling font through `@font-face src: local(...)`, so the rendering agrees with the claim |
 | `speechSynthesis.getVoices()` | Platform voice pool (8–12 on Windows) | Real `SpeechSynthesisVoice` shape, no own properties |
-| `navigator.plugins` / `mimeTypes` | Exact desktop-Chrome shape (5 PDF entries, 2 mimes) | Real `PluginArray`/`MimeTypeArray` prototypes |
+| `navigator.plugins` / `mimeTypes` | Desktop-Chrome shape (5 PDF entries, 2 unique top-level mimes) | Native-backed intermediate prototypes; live identity assertions prove the shield installed rather than silently falling back to the host |
 
 ### Geometry, time, network
 
@@ -93,10 +93,12 @@ Detectors like CreepJS do not read your values first; they interrogate the **fun
 themselves** (~20 structural checks per API: `'prototype' in fn`, own keys, illegal
 invocation, error-stack shapes…).
 
-Since v1.15.x every hook is a **Proxy over the native function**, never a replacement:
+Measured Web API hooks use a **Proxy over the native function** rather than a plain replacement. The A-46…A-50 follow-up removed hand-built Client Hints, Plugin/MimeType, Intl, audio, timer and native-like getter functions after real Chrome exposed their extra `prototype`/constructibility. A few fallback and FontFaceSet helpers remain documented follow-up work in the changelog:
 
-- the native getter runs *first*, so receiver-less access still throws the native
-  `Illegal invocation` TypeError with its native stack;
+- native receiver/argument validation runs before substitution where a real branded receiver
+  is required (Client Hints and Plugin collection length/refresh). Ordinary prototype hooks
+  invoke the native getter on the actual receiver; synthetic value getters use WeakMap-backed
+  values and retain native accessor shape. Wrong-receiver behavior is covered by live probes;
 - the function's shape (own keys, extendability, `toString()`) stays that of the real
   native — a proxied API answers `toString()` with the **exact original signature**;
 - our own frames are spliced out of error stacks; the deeper capture needed for

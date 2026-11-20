@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -40,11 +42,24 @@ pytest.importorskip("playwright")
 PROBE = r"""() => {
   const out = {};
   const t = (n, fn) => { try { out[n] = 'OK ' + String(fn()); } catch (e) { out[n] = 'THROWS ' + e.name + ': ' + e.message; } };
+  const nativeFunctionShape = (fn) => {
+    let constructible = true;
+    try { new fn(); } catch (e) { constructible = false; }
+    return 'keys=' + Object.getOwnPropertyNames(fn).join(',') +
+      ' name=' + fn.name + ' length=' + fn.length +
+      ' constructible=' + constructible + ' native=' + /\{\s*\[native code\]\s*\}/.test(String(fn));
+  };
   t('intl_dtf_tz', () => Intl.DateTimeFormat().resolvedOptions().timeZone);
   t('intl_dtf_locale', () => Intl.DateTimeFormat().resolvedOptions().locale);
   t('intl_nf_static', () => Intl.NumberFormat.supportedLocalesOf(['en-US']).join(','));
   t('intl_dtf_static', () => Intl.DateTimeFormat.supportedLocalesOf(['en-US']).join(','));
   t('intl_nf_format', () => new Intl.NumberFormat('en-US').format(1234.5));
+  t('intl_nf_constructor_shape', () => nativeFunctionShape(Intl.NumberFormat));
+  t('intl_dtf_constructor_shape', () => nativeFunctionShape(Intl.DateTimeFormat));
+  t('intl_nf_static_shape', () => nativeFunctionShape(Intl.NumberFormat.supportedLocalesOf));
+  t('intl_dtf_static_shape', () => nativeFunctionShape(Intl.DateTimeFormat.supportedLocalesOf));
+  t('intl_nf_own', () => Object.getOwnPropertyNames(Intl.NumberFormat).join(','));
+  t('intl_nf_without_new', () => Intl.NumberFormat('en-US').format(1234.5));
   t('intl_relative', () => new Intl.RelativeTimeFormat('en-US', {numeric:'auto'}).format(-1, 'day'));
   t('toLocaleString', () => (1234.5).toLocaleString());
   t('tz_offset', () => new Date().getTimezoneOffset());
@@ -67,6 +82,8 @@ PROBE = r"""() => {
   });
   t('audio_render', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); return 'len=' + b.length + ' ch=' + b.numberOfChannels; });
   t('audio_channelData', async () => { const ctx=new OfflineAudioContext(1,44100,44100); const o=ctx.createOscillator(); o.connect(ctx.destination); o.start(); const b=await ctx.startRendering(); const d=b.getChannelData(0); return 'len=' + d.length; });
+  t('audio_sample_getter_shape', () => nativeFunctionShape(Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'sampleRate').get));
+  t('audio_channels_getter_shape', () => nativeFunctionShape(Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels').get));
   // A-34: the native pattern — the FIRST read returns [] and the voices
   // arrive asynchronously through the voiceschanged event (the MDN recipe a
   // page follows). The probe therefore attaches the listener first.
@@ -87,6 +104,29 @@ PROBE = r"""() => {
   });
   t('plugins', () => navigator.plugins.length);
   t('mimeTypes', () => navigator.mimeTypes.length);
+  t('plugins_shape', () => 'proto=' + Object.getPrototypeOf(navigator.plugins).constructor.name +
+    ' own=' + (Object.getOwnPropertyNames(navigator.plugins).join(',') || '(none)') +
+    ' item=' + nativeFunctionShape(navigator.plugins.item) +
+    ' namedItem=' + nativeFunctionShape(navigator.plugins.namedItem) +
+    ' refresh=' + nativeFunctionShape(navigator.plugins.refresh));
+  t('plugin0_shape', () => 'proto=' + Object.getPrototypeOf(navigator.plugins[0]).constructor.name +
+    ' own=' + (Object.getOwnPropertyNames(navigator.plugins[0]).join(',') || '(none)') +
+    ' item=' + nativeFunctionShape(navigator.plugins[0].item));
+  t('mimetypes_shape', () => 'proto=' + Object.getPrototypeOf(navigator.mimeTypes).constructor.name +
+    ' own=' + (Object.getOwnPropertyNames(navigator.mimeTypes).join(',') || '(none)') +
+    ' item=' + nativeFunctionShape(navigator.mimeTypes.item));
+  t('mimetype0_shape', () => 'proto=' + Object.getPrototypeOf(navigator.mimeTypes[0]).constructor.name +
+    ' own=' + (Object.getOwnPropertyNames(navigator.mimeTypes[0]).join(',') || '(none)'));
+  t('plugins_prototype_methods', () => Object.getOwnPropertyNames(PluginArray.prototype).join(','));
+  t('plugin_prototype_accessors', () => Object.getOwnPropertyNames(Plugin.prototype).join(','));
+  t('mimetype_prototype_accessors', () => Object.getOwnPropertyNames(MimeType.prototype).join(','));
+  t('plugins_intermediate_layer', () => Object.getPrototypeOf(navigator.plugins) !== PluginArray.prototype &&
+    Object.getPrototypeOf(Object.getPrototypeOf(navigator.plugins)) === PluginArray.prototype);
+  t('plugin_identity_consistency', () => navigator.plugins.item(0) === navigator.plugins[0] &&
+    navigator.plugins.namedItem('PDF Viewer') === navigator.plugins[0] &&
+    navigator.plugins[0].item(1) === navigator.plugins[0]['text/pdf'] &&
+    navigator.mimeTypes.item(0) === navigator.mimeTypes['application/pdf'] &&
+    navigator.mimeTypes.length === 2 && navigator.mimeTypes[0] !== navigator.mimeTypes[1]);
   t('webdriver', () => navigator.webdriver);
   // A-13: the WORKER scope must be shielded too. The probe below is async
   // (a worker answers through a message event), so it is collected with a
@@ -131,6 +171,32 @@ PROBE = r"""() => {
   // a real UAData instance.
   t('ch_platform', () => navigator.userAgentData ? navigator.userAgentData.platform : 'none');
   t('ch_proto', () => navigator.userAgentData ? Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.userAgentData)).join(',') : 'none');
+  // A-46: a hand-written function only LOOKS native through String(fn).  It
+  // still has an own prototype and can be constructed; native Web API methods
+  // have neither property.  Proxy-over-native keeps the original shape.
+  t('ch_high_entropy_shape', () => nativeFunctionShape(navigator.userAgentData.getHighEntropyValues));
+  t('ch_tojson_shape', () => nativeFunctionShape(navigator.userAgentData.toJSON));
+  t('performance_now_shape', () => nativeFunctionShape(performance.now));
+  t('performance_now_owner', () => Object.prototype.hasOwnProperty.call(performance, 'now') +
+    '/' + (Performance.prototype.now === performance.now));
+  t('performance_now_monotonic', () => {
+    let monotonic = true;
+    let previous = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      const current = performance.now();
+      if (current < previous) monotonic = false;
+      previous = current;
+    }
+    return monotonic;
+  });
+  t('ch_tojson_bad_receiver', () => {
+    try {
+      navigator.userAgentData.toJSON.call({});
+      return 'NO ERROR';
+    } catch (error) {
+      return error.name + ': ' + error.message;
+    }
+  });
   // A-24: the UNMASKED_* parameters answer null until the extension is
   // requested (the native semantics), on BOTH the WebGL1 and WebGL2 context.
   t('webgl_unmasked_before', () => {
@@ -198,7 +264,8 @@ PROBE = r"""() => {
     // prototype and NO own properties (the values live on the prototype).
     (typeof navigator.getBattery === 'function'
       ? navigator.getBattery().then((b) => 'proto=' + Object.getPrototypeOf(b).constructor.name +
-          ' own=' + (Object.getOwnPropertyNames(b).join(',') || '(none)'))
+          ' own=' + (Object.getOwnPropertyNames(b).join(',') || '(none)') +
+          ' getter=' + nativeFunctionShape(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(b), 'level').get))
       : Promise.resolve('no-battery-api')),
     (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices
       ? navigator.mediaDevices.enumerateDevices().then((d) => (!d.length ? 'no-devices' :
@@ -208,8 +275,18 @@ PROBE = r"""() => {
     (navigator.gpu && navigator.gpu.requestAdapter
       ? navigator.gpu.requestAdapter().then((a) => (!a || !a.info ? 'no-adapter' :
           'proto=' + Object.getPrototypeOf(a.info).constructor.name +
-          ' own=' + (Object.getOwnPropertyNames(a.info).join(',') || '(none)')))
-      : Promise.resolve('no-gpu'))
+          ' own=' + (Object.getOwnPropertyNames(a.info).join(',') || '(none)') +
+          ' getter=' + nativeFunctionShape(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(a.info), 'vendor').get) +
+          ' infoGetter=' + nativeFunctionShape(Object.getOwnPropertyDescriptor(a, 'info').get)))
+      : Promise.resolve('no-gpu')),
+    navigator.userAgentData.getHighEntropyValues([]).then(
+      (values) => Object.keys(values).join(',') || '(empty)',
+      (error) => 'ERR ' + error.name + ': ' + error.message
+    ),
+    navigator.userAgentData.getHighEntropyValues.call({}, ['platformVersion']).then(
+      () => 'NO ERROR',
+      (error) => error.name + ': ' + error.message
+    )
   ]).then(async (vals) => {
     out.worker_cores = 'OK ' + vals[0];
     out.worker_dm = 'OK ' + vals[1];
@@ -217,6 +294,8 @@ PROBE = r"""() => {
     out.battery_shape = 'OK ' + vals[3];
     out.mediadev_shape = 'OK ' + vals[4];
     out.gpuinfo_shape = 'OK ' + vals[5];
+    out.ch_empty_hints = 'OK ' + vals[6];
+    out.ch_bad_receiver = 'OK ' + vals[7];
     // A-34: the voices arrive through the event (the native pattern)
     const voices = await __voiceData;
     if (voices && voices.length) {
@@ -224,7 +303,8 @@ PROBE = r"""() => {
       out.voice0 = 'OK ' + voices[0].name;
       out.voices_event_fired = 'OK true';
       out.voice_shape = 'OK proto=' + Object.getPrototypeOf(voices[0]).constructor.name +
-        ' own=' + (Object.getOwnPropertyNames(voices[0]).join(',') || '(none)');
+        ' own=' + (Object.getOwnPropertyNames(voices[0]).join(',') || '(none)') +
+        ' getter=' + nativeFunctionShape(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(voices[0]), 'name').get);
     } else {
       out.voices = 'OK 0';
       out.voice0 = 'OK none';
@@ -268,19 +348,42 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         cdp_info = launcher.get_cdp_info(profile.id)
         assert cdp_info is not None
 
+        # UA-CH high-entropy values require a secure context.  data: URLs have
+        # no userAgentData in plain Chrome, so they cannot validate this hook.
+        class AuditPage(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b"<html><body>audit</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), AuditPage)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        audit_url = f"http://127.0.0.1:{server.server_port}/"
+
         async def probe():
             async with async_playwright() as p:
                 browser = await p.chromium.connect_over_cdp(cdp_info["http_endpoint"])
                 ctx = browser.contexts[0] if browser.contexts else await browser.new_context()
                 page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-                await page.goto("data:text/html,<html><body>audit</body></html>")
+                await page.goto(audit_url)
                 await page.wait_for_timeout(1200)
                 res = await page.evaluate(PROBE)
                 await browser.close()
                 return res
 
-        res = asyncio.run(probe())
-
+        try:
+            res = asyncio.run(probe())
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
         broken = {k: v for k, v in res.items() if v.startswith("THROWS")}
         assert not broken, f"shielded APIs throw at runtime (a broken hook is worse than no hook): {broken}"
 
@@ -296,7 +399,7 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert float(dpr_reported) == float(fp.device_pixel_ratio), res["geometry"]
         assert res["tz_offset"].endswith(str(fp.timezone_offset)), res["tz_offset"]
         assert res["intl_dtf_tz"].endswith(fp.timezone), res["intl_dtf_tz"]
-        assert res["languages"].endswith(",".join(fp.languages[:2])), res["languages"]
+        assert res["languages"].endswith(",".join(fp.languages)), res["languages"]
         assert res["webgl_vendor"].endswith(fp.webgl_vendor), res["webgl_vendor"]
         assert res["webgl_renderer"].endswith(fp.webgl_renderer), res["webgl_renderer"]
         assert res["webdriver"].endswith("false"), res["webdriver"]
@@ -320,7 +423,8 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         # SpeechSynthesisVoice keeps its values on the prototype).
         if res["voice_shape"] not in ("OK no-voices-yet", "OK deferred"):
             assert "proto=SpeechSynthesisVoice" in res["voice_shape"], res["voice_shape"]
-            assert "own=(none)" in res["voice_shape"], (
+            assert "own=(none)" in res["voice_shape"], res["voice_shape"]
+            assert "constructible=true" not in res["voice_shape"], (
                 f"the voice objects carry own properties (A-28): {res['voice_shape']}"
             )
 
@@ -389,13 +493,13 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         # prototype class and NO own properties.
         if res["battery_shape"] != "OK no-battery-api":
             assert res["battery_shape"].startswith("OK proto=BatteryManager"), res["battery_shape"]
-            assert res["battery_shape"].endswith("own=(none)"), res["battery_shape"]
+            assert "own=(none)" in res["battery_shape"], res["battery_shape"]
         if res["mediadev_shape"] != "OK no-mediaDevices":
             assert res["mediadev_shape"].startswith("OK proto=InputDeviceInfo"), res["mediadev_shape"]
             assert res["mediadev_shape"].endswith("own=(none)"), res["mediadev_shape"]
         if res["gpuinfo_shape"] != "OK no-gpu":
             assert res["gpuinfo_shape"].startswith("OK proto=GPUAdapterInfo"), res["gpuinfo_shape"]
-            assert res["gpuinfo_shape"].endswith("own=(none)"), res["gpuinfo_shape"]
+            assert "own=(none)" in res["gpuinfo_shape"], res["gpuinfo_shape"]
 
         # A-27: the font aliases must not be visible in the FontFaceSet
         assert "size=0" in res["fontset"], f"the font aliases are visible (A-27): {res['fontset']}"
@@ -421,6 +525,63 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert "getHighEntropyValues" in res["ch_proto"], (
             f"the userAgentData object must be a real UAData instance (A-18): {res['ch_proto']}"
         )
+
+        # A-48: the generated Plugin layer must actually install (the old
+        # strict-mode assignment threw and silently exposed the host objects).
+        assert res["plugins_intermediate_layer"].endswith("true"), res["plugins_intermediate_layer"]
+        assert res["plugin_identity_consistency"].endswith("true"), res["plugin_identity_consistency"]
+        assert res["mimetype0_shape"].endswith("own=(none)"), res["mimetype0_shape"]
+        for key in ("plugins_shape", "plugin0_shape", "mimetypes_shape"):
+            assert "keys=length,name,prototype" not in res[key], res[key]
+            assert "constructible=true" not in res[key], res[key]
+
+        for shape_key in ("battery_shape", "voice_shape", "gpuinfo_shape"):
+            if "no-" not in res[shape_key]:
+                assert "constructible=true" not in res[shape_key], res[shape_key]
+                assert "keys=length,name,prototype" not in res[shape_key], res[shape_key]
+
+        # A-49: Intl constructors are constructible (unlike Web API methods),
+        # but their static supportedLocalesOf methods and audio getters are
+        # not.  Bound/plain stand-ins must not expose an extra prototype.
+        for shape_key, expected_name, expected_length, constructible in (
+            ("intl_nf_constructor_shape", "NumberFormat", 0, "true"),
+            ("intl_dtf_constructor_shape", "DateTimeFormat", 0, "true"),
+        ):
+            assert res[shape_key].startswith("OK keys=length,name,prototype,supportedLocalesOf "), res[shape_key]
+            assert (
+                f"name={expected_name} length={expected_length} constructible={constructible} native=true"
+                in res[shape_key]
+            ), f"non-native Intl constructor shape (A-49): {res[shape_key]}"
+        for shape_key, expected_name, expected_length in (
+            ("intl_nf_static_shape", "supportedLocalesOf", 1),
+            ("intl_dtf_static_shape", "supportedLocalesOf", 1),
+            ("audio_sample_getter_shape", "get sampleRate", 0),
+            ("audio_channels_getter_shape", "get numberOfChannels", 0),
+        ):
+            assert res[shape_key].startswith("OK keys=length,name "), res[shape_key]
+            assert f"name={expected_name} length={expected_length} constructible=false native=true" in res[shape_key], (
+                f"non-native Intl/audio function shape (A-49): {res[shape_key]}"
+            )
+
+        assert res["ch_empty_hints"].endswith("(empty)"), res["ch_empty_hints"]
+        assert res["ch_bad_receiver"].startswith("OK TypeError:"), res["ch_bad_receiver"]
+        assert res["ch_tojson_bad_receiver"].startswith("OK TypeError:"), res["ch_tojson_bad_receiver"]
+        assert res["performance_now_owner"].endswith("false/true"), res["performance_now_owner"]
+        assert res["performance_now_monotonic"].endswith("true"), res["performance_now_monotonic"]
+        assert res["intl_nf_own"].endswith("length,name,prototype,supportedLocalesOf"), res["intl_nf_own"]
+        assert res["intl_nf_without_new"].startswith("OK"), res["intl_nf_without_new"]
+
+        # A-46: native methods have only length/name own properties and are
+        # not constructible.  String(fn) alone is not enough evidence.
+        for shape_key, expected_name, expected_length in (
+            ("ch_high_entropy_shape", "getHighEntropyValues", 1),
+            ("ch_tojson_shape", "toJSON", 0),
+            ("performance_now_shape", "now", 0),
+        ):
+            assert res[shape_key].startswith("OK keys=length,name "), res[shape_key]
+            assert f"name={expected_name} length={expected_length} constructible=false native=true" in res[shape_key], (
+                f"non-native function shape (A-46): {res[shape_key]}"
+            )
 
         # A-24: the UNMASKED_* parameters follow the native semantics — null
         # before the extension is requested, the profile's vendor after.

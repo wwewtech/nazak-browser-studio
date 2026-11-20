@@ -351,16 +351,38 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // detector reads the prototype chain and the own-property list.
     //
     // The helper builds an instance whose values live on an INTERMEDIATE
-    // prototype layer: the instance itself has no own properties, the
-    // getters look like native ones, and the native prototypes are never
-    // touched (so the host's own objects keep working).
+    // prototype layer: the instance itself has no own properties, and the
+    // native prototypes are never touched (so host objects keep working).
+    // A-50: use the corresponding NATIVE getter as the Proxy target.  The old
+    // makeNative(function...) left a constructible getter named "get name"
+    // with an own prototype even though String(fn) looked native.
     const __makeNativeLike = function(baseProto, values, methods) {{
         const layer = Object.create(baseProto || Object.prototype);
         Object.keys(values).forEach(function(k) {{
             try {{
+                const desc = baseProto && Object.getOwnPropertyDescriptor(baseProto, k);
+                const nativeGet = desc && desc.get;
+                const valueFor = function(object) {{
+                    return typeof values[k] === 'function' ? values[k](object) : values[k];
+                }};
+                let getter;
+                if (nativeGet) {{
+                    getter = new Proxy(nativeGet, __stripProxyFromErrors({{
+                        apply: function(target, thisArg, args) {{
+                            if (Object.getPrototypeOf(thisArg) !== layer) {{
+                                return __nativeCache.reflectApply(target, thisArg, args);
+                            }}
+                            return valueFor(thisArg);
+                        }}
+                    }}));
+                    __proxyTargets.set(getter, nativeGet);
+                    __proxyOfTarget.set(nativeGet, getter);
+                    __redirectToString(getter, nativeGet);
+                }} else {{
+                    getter = makeNative(function() {{ return valueFor(this); }}, 'get ' + k);
+                }}
                 Object.defineProperty(layer, k, {{
-                    get: makeNative(function() {{ return values[k]; }}, 'get ' + k),
-                    configurable: true, enumerable: true
+                    get: getter, configurable: true, enumerable: true
                 }});
             }} catch(e) {{}}
         }});
@@ -735,6 +757,11 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         const uaDataProto = (typeof NavigatorUAData !== 'undefined' && NavigatorUAData.prototype)
             ? NavigatorUAData.prototype
             : Object.prototype;
+        const nativeUaData = navigator.userAgentData || null;
+        // Keep the native interface prototype as the immediate prototype, as
+        // Chrome does.  The real instance is retained separately solely for
+        // native receiver/argument validation; synthetic instances have no
+        // NavigatorUAData internal slots of their own (A-46).
         const uaData = Object.create(uaDataProto);
         Object.defineProperty(uaData, 'brands', {{
             value: brandsData, configurable: true, enumerable: true
@@ -745,42 +772,63 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         Object.defineProperty(uaData, 'platform', {{
             value: {ch_platform_json}, configurable: true, enumerable: true
         }});
-        Object.defineProperty(uaData, 'getHighEntropyValues', {{
-            value: makeNative(function(hints) {{
-                // Hunt A-35: the native API returns EXACTLY the requested
-                // hints — nothing more (measured: the host's answer to
-                // ['architecture','bitness',...] contains no brands/mobile/
-                // platform; our old hook answered a fixed set, so
-                // 'fullVersionList' came back undefined for any page that
-                // requested it — a one-line detector — and the extra fields
-                // leaked a non-native response shape).
-                const all = {{
-                    architecture: {architecture_json},
-                    bitness: {bitness_json},
-                    model: {model_json},
-                    platformVersion: {platform_version_json},
-                    uaFullVersion: {ua_full_version_json},
-                    fullVersionList: {full_version_list_json},
-                    fullVersion: {ua_full_version_json},
-                    wow64: false,
-                    formFactors: ['Desktop'],
-                    brands: brandsData,
-                    mobile: {str(fp.mobile).lower()},
-                    platform: {ch_platform_json}
-                }};
-                const req = (hints && hints.length) ? hints : Object.keys(all);
-                const out = {{}};
-                req.forEach(function(h) {{ if (h in all) out[h] = all[h]; }});
-                return Promise.resolve(out);
-            }}, 'getHighEntropyValues'),
-            configurable: true, enumerable: false, writable: true
-        }});
-        Object.defineProperty(uaData, 'toJSON', {{
-            value: makeNative(function() {{
-                return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {ch_platform_json} }};
-            }}, 'toJSON'),
-            configurable: true, enumerable: false, writable: true
-        }});
+        // A-46: a synthetic UAData object has no native internal slots.  Use
+        // the real receiver to preserve argument validation and illegal-
+        // invocation semantics, then replace only the successful result.
+        // Proxy-over-native also preserves ownKeys, length/name and the fact
+        // that these Web API methods are not constructible.
+        const nativeHighEntropy = uaDataProto.getHighEntropyValues;
+        const nativeUaToJSON = uaDataProto.toJSON;
+        if (nativeUaData && typeof nativeHighEntropy === 'function') {{
+            Object.defineProperty(uaData, 'getHighEntropyValues', {{
+                value: nativeHighEntropy,
+                configurable: true, enumerable: false, writable: true
+            }});
+            __replaceWithProxy(uaData, 'getHighEntropyValues', {{
+                apply: function(target, thisArg, args) {{
+                    if (thisArg !== uaData) {{
+                        return __nativeCache.reflectApply(target, thisArg, args);
+                    }}
+                    return __nativeCache.reflectApply(target, nativeUaData, args).then(function() {{
+                        // Hunt A-35: return exactly the requested hints, with
+                        // full versions in fullVersionList (never the host's).
+                        const all = {{
+                            architecture: {architecture_json},
+                            bitness: {bitness_json},
+                            model: {model_json},
+                            platformVersion: {platform_version_json},
+                            uaFullVersion: {ua_full_version_json},
+                            fullVersionList: {full_version_list_json},
+                            fullVersion: {ua_full_version_json},
+                            wow64: false,
+                            formFactors: ['Desktop'],
+                            brands: brandsData,
+                            mobile: {str(fp.mobile).lower()},
+                            platform: {ch_platform_json}
+                        }};
+                        const req = args[0] || [];
+                        const out = {{}};
+                        req.forEach(function(h) {{ if (h in all) out[h] = all[h]; }});
+                        return out;
+                    }});
+                }}
+            }});
+        }}
+        if (nativeUaData && typeof nativeUaToJSON === 'function') {{
+            Object.defineProperty(uaData, 'toJSON', {{
+                value: nativeUaToJSON,
+                configurable: true, enumerable: false, writable: true
+            }});
+            __replaceWithProxy(uaData, 'toJSON', {{
+                apply: function(target, thisArg, args) {{
+                    if (thisArg !== uaData) {{
+                        return __nativeCache.reflectApply(target, thisArg, args);
+                    }}
+                    __nativeCache.reflectApply(target, nativeUaData, args);
+                    return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {ch_platform_json} }};
+                }}
+            }});
+        }}
         __defineNav('userAgentData', __navGetter('userAgentData', uaData));
     }} catch(e) {{}}
 
@@ -1019,7 +1067,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         if (__hasDom) {{
     try {{
         if (navigator.gpu && navigator.gpu.requestAdapter) {{
-            const origRequestAdapter = navigator.gpu.requestAdapter;
             // Hunt A-26: the info object was a PLAIN object — a real
             // GPUAdapterInfo has its own prototype and NO own properties
             // (measured: the real Chrome's info has an empty own-property
@@ -1040,7 +1087,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     description: {webgl_renderer_json}
                 }});
             }};
-            const spoofedGpuInfo = buildGpuInfo();
             // Hunt A-14: the override lives on GPU.prototype — a real Chrome
             // keeps requestAdapter there and the navigator.gpu INSTANCE has
             // no own properties (an own property there is a one-line tell).
@@ -1060,11 +1106,23 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                             }});
                         }}
                         try {{
-                            Object.defineProperty(adapter, 'info', {{
-                                get: makeNative(() => buildGpuInfo(), 'get info'),
-                                configurable: true,
-                                enumerable: true
-                            }});
+                            const infoDesc = Object.getOwnPropertyDescriptor(
+                                Object.getPrototypeOf(adapter), 'info');
+                            if (infoDesc && infoDesc.get) {{
+                                const nativeInfoGet = infoDesc.get;
+                                const infoGetter = new Proxy(nativeInfoGet, __stripProxyFromErrors({{
+                                    apply: function(target, thisArg, args) {{
+                                        __nativeCache.reflectApply(target, thisArg, args);
+                                        return buildGpuInfo();
+                                    }}
+                                }}));
+                                __proxyTargets.set(infoGetter, nativeInfoGet);
+                                __redirectToString(infoGetter, nativeInfoGet);
+                                Object.defineProperty(adapter, 'info', {{
+                                    get: infoGetter, configurable: true,
+                                    enumerable: infoDesc.enumerable
+                                }});
+                            }}
                         }} catch(e) {{}}
                         return adapter;
                     }});
@@ -1119,89 +1177,196 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     }} catch(e) {{}}
         }}
 
-    // 9b. Plugin Array & MimeType Consistency (anti-detect audit F-12)
-    // A real desktop Chrome ships exactly 5 PDF plugin entries with 2 mime
-    // types each; `navigator.plugins.length === 0` (the headless signature)
-    // or a mismatched plugins/mimeTypes count is a classic automation tell.
+    // 9b. Plugin Array & MimeType Consistency (anti-detect audit F-12/A-48)
+    // Chrome exposes five PDF Plugin objects sharing TWO MimeType objects.
+    // The previous implementation created ten duplicate MIME objects, plain
+    // data properties and hand-written constructible methods.  In strict mode
+    // its first fake.name assignment hit Plugin.prototype's getter-only
+    // accessor and the empty catch silently abandoned the entire shield.
     try {{
-        const makeMimeType = function(type, suffixes, description) {{
-            return {{
-                type: type, suffixes: suffixes, description: description,
-                enabledPlugin: null,
-                toJSON: function() {{ return this; }}
+        if (__hasDom && typeof Plugin !== 'undefined' && typeof PluginArray !== 'undefined' &&
+            typeof MimeType !== 'undefined' && typeof MimeTypeArray !== 'undefined') {{
+            const pluginSpecs = [
+                'PDF Viewer', 'Chrome PDF Viewer', 'Chromium PDF Viewer',
+                'Microsoft Edge PDF Viewer', 'WebKit built-in PDF'
+            ];
+            const nativePluginArray = navigator.plugins;
+            const nativeMimeTypeArray = navigator.mimeTypes;
+            const makeLayer = function(base, descriptors) {{
+                const layer = Object.create(base);
+                Object.defineProperties(layer, descriptors);
+                return layer;
             }};
-        }};
-        const pluginSpecs = [
-            {{ name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
-              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
-            {{ name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
-              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
-            {{ name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
-              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
-            {{ name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
-              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
-            {{ name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
-              file: 'internal-pdf-viewer', mimes: ['application/pdf', 'text/pdf'] }},
-        ];
-        const mimeObjs = pluginSpecs.flatMap(function(spec, idx) {{
-            return spec.mimes.map(function(mt) {{
-                const m = makeMimeType(mt, 'pdf', 'Portable Document Format');
-                const fake = Object.create(Plugin.prototype || Object.prototype);
-                fake.name = spec.name;
-                fake.filename = spec.filename;
-                fake.description = spec.description;
-                fake.length = spec.mimes.length;
-                fake.item = makeNative(function(i) {{ return spec.mimes[i] ? m : null; }}, 'item');
-                fake.namedItem = makeNative(function(n) {{ return n === 'application/pdf' || n === 'text/pdf' ? m : null; }}, 'namedItem');
-                fake.toJSON = function() {{ return this; }};
-                m.enabledPlugin = fake;
-                return m;
+            const installValue = function(object, name, value) {{
+                Object.defineProperty(object, name, {{value: value, configurable: true}});
+            }};
+            const proxyLayerGetter = function(layer, name, value, nativeReceiver) {{
+                // Do not read layer[name]: PluginArray's named-property
+                // visibility can hide an inherited accessor.  Copy the native
+                // descriptor directly, then install its Proxy as the getter.
+                const desc = Object.getOwnPropertyDescriptor(
+                    name === 'length' && layer === pluginsLayer ? PluginArray.prototype : MimeTypeArray.prototype,
+                    name
+                );
+                const nativeGet = desc && desc.get;
+                if (!nativeGet) return;
+                const wrapped = new Proxy(nativeGet, __stripProxyFromErrors({{
+                    apply: function(target, thisArg, args) {{
+                        const valid = Object.getPrototypeOf(thisArg) === layer;
+                        if (!valid) return __nativeCache.reflectApply(target, thisArg, args);
+                        __nativeCache.reflectApply(target, nativeReceiver, args);
+                        return value;
+                    }}
+                }}));
+                __proxyTargets.set(wrapped, nativeGet);
+                __redirectToString(wrapped, nativeGet);
+                Object.defineProperty(layer, name, {{
+                    get: wrapped, configurable: true, enumerable: true
+                }});
+            }};
+
+            // Methods use native functions as Proxy targets.  The trap calls
+            // the original on a real receiver for brand/argument validation,
+            // then returns only our synthetic collection's result.
+            const installCollectionMethod = function(layer, name, nativeReceiver, collection) {{
+                const base = collection === pluginArray ? PluginArray.prototype : MimeTypeArray.prototype;
+                Object.defineProperty(layer, name, {{
+                    value: base[name], configurable: true, writable: true, enumerable: true
+                }});
+                __replaceWithProxy(layer, name, {{
+                    apply: function(target, thisArg, args) {{
+                        const valid = Object.getPrototypeOf(thisArg) === layer;
+                        if (!valid) return __nativeCache.reflectApply(target, thisArg, args);
+                        const index = args.length ? Math.max(0, Math.trunc(Number(args[0]) || 0)) : 0;
+                        if (name === 'item') return collection[index] || null;
+                        if (name === 'namedItem') {{
+                            return collection.find(function(entry) {{
+                                return entry.name === String(args[0]) || entry.type === String(args[0]);
+                            }}) || null;
+                        }}
+                        __nativeCache.reflectApply(target, nativeReceiver, args);
+                        return undefined;
+                    }}
+                }});
+            }};
+
+            const mimeLayer = makeLayer(MimeType.prototype, {{}});
+            const mimeValues = new WeakMap();
+            ['type', 'suffixes', 'description', 'enabledPlugin'].forEach(function(name) {{
+                Object.defineProperty(mimeLayer, name, {{
+                    get: Object.getOwnPropertyDescriptor(MimeType.prototype, name).get,
+                    configurable: true, enumerable: true
+                }});
+                const desc = Object.getOwnPropertyDescriptor(mimeLayer, name);
+                const nativeGet = desc.get;
+                const wrapped = new Proxy(nativeGet, __stripProxyFromErrors({{
+                    apply: function(target, thisArg, args) {{
+                        if (!mimeValues.has(thisArg)) return __nativeCache.reflectApply(target, thisArg, args);
+                        return mimeValues.get(thisArg)[name];
+                    }}
+                }}));
+                __proxyTargets.set(wrapped, nativeGet);
+                __redirectToString(wrapped, nativeGet);
+                Object.defineProperty(mimeLayer, name, {{
+                    get: wrapped, configurable: true, enumerable: true
+                }});
             }});
-        }});
-        const pluginArray = pluginSpecs.map(function(spec, idx) {{
-            const mimes = spec.mimes.map(function(mt) {{
-                return mimeObjs.find(function(m) {{ return m.type === mt && m.enabledPlugin && m.enabledPlugin.name === spec.name; }}) || makeMimeType(mt, 'pdf', '');
+
+            const pluginLayer = makeLayer(Plugin.prototype, {{}});
+            const pluginValues = new WeakMap();
+            ['name', 'filename', 'description', 'length'].forEach(function(name) {{
+                Object.defineProperty(pluginLayer, name, {{
+                    get: Object.getOwnPropertyDescriptor(Plugin.prototype, name).get,
+                    configurable: true, enumerable: true
+                }});
+                const nativeGet = Object.getOwnPropertyDescriptor(pluginLayer, name).get;
+                const wrapped = new Proxy(nativeGet, __stripProxyFromErrors({{
+                    apply: function(target, thisArg, args) {{
+                        if (!pluginValues.has(thisArg)) return __nativeCache.reflectApply(target, thisArg, args);
+                        return pluginValues.get(thisArg)[name];
+                    }}
+                }}));
+                __proxyTargets.set(wrapped, nativeGet);
+                __redirectToString(wrapped, nativeGet);
+                Object.defineProperty(pluginLayer, name, {{
+                    get: wrapped, configurable: true, enumerable: true
+                }});
             }});
-            const fake = Object.create(Plugin.prototype || Object.prototype);
-            fake.name = spec.name;
-            fake.filename = spec.filename;
-            fake.description = spec.description;
-            fake.length = mimes.length;
-            fake.item = makeNative(function(i) {{ return mimes[i] || null; }}, 'item');
-            fake.namedItem = makeNative(function(n) {{ return mimes.find(function(m) {{ return m.type === n; }}) || null; }}, 'namedItem');
-            fake.toJSON = function() {{ return this; }};
-            mimes.forEach(function(m, i) {{
-                Object.defineProperty(fake, String(i), {{value: m, enumerable: true}});
+            const pluginMimes = new WeakMap();
+            ['item', 'namedItem'].forEach(function(name) {{
+                Object.defineProperty(pluginLayer, name, {{
+                    value: Plugin.prototype[name], configurable: true, writable: true, enumerable: true
+                }});
+                __replaceWithProxy(pluginLayer, name, {{
+                    apply: function(target, thisArg, args) {{
+                        const mimes = pluginMimes.get(thisArg);
+                        if (!mimes) return __nativeCache.reflectApply(target, thisArg, args);
+                        if (name === 'item') return mimes[Math.max(0, Math.trunc(Number(args[0]) || 0))] || null;
+                        return mimes.find(function(m) {{ return m.type === String(args[0]); }}) || null;
+                    }}
+                }});
             }});
-            mimes.forEach(function(m) {{
-                Object.defineProperty(fake, m.type, {{value: m, enumerable: true}});
+
+            const pluginArray = pluginSpecs.map(function(name) {{
+                const plugin = Object.create(pluginLayer);
+                pluginValues.set(plugin, {{
+                    name: name, filename: 'internal-pdf-viewer',
+                    description: 'Portable Document Format', length: 2
+                }});
+                return plugin;
             }});
-            return fake;
-        }});
-        const pluginsFake = Object.create(PluginArray.prototype || Object.prototype);
-        pluginsFake.length = pluginArray.length;
-        pluginsFake.item = makeNative(function(i) {{ return pluginArray[i] || null; }}, 'item');
-        pluginsFake.namedItem = makeNative(function(n) {{ return pluginArray.find(function(p) {{ return p.name === n; }}) || null; }}, 'namedItem');
-        pluginsFake.refresh = makeNative(function() {{}}, 'refresh');
-        pluginsFake.toJSON = function() {{ return this; }};
-        pluginArray.forEach(function(p, i) {{
-            Object.defineProperty(pluginsFake, String(i), {{value: p, enumerable: true}});
-            Object.defineProperty(pluginsFake, p.name, {{value: p, enumerable: true}});
-        }});
-        const mimeTypesFake = Object.create(MimeTypeArray.prototype || Object.prototype);
-        mimeTypesFake.length = mimeObjs.length;
-        mimeTypesFake.item = makeNative(function(i) {{ return mimeObjs[i] || null; }}, 'item');
-        mimeTypesFake.namedItem = makeNative(function(n) {{ return mimeObjs.find(function(m) {{ return m.type === n; }}) || null; }}, 'namedItem');
-        mimeTypesFake.toJSON = function() {{ return this; }};
-        mimeObjs.forEach(function(m, i) {{
-            Object.defineProperty(mimeTypesFake, String(i), {{value: m, enumerable: true}});
-            Object.defineProperty(mimeTypesFake, m.type, {{value: m, enumerable: true}});
-        }});
-        // Class 1 fix: the plugins/mimeTypes getters are Proxies over the
-        // NATIVE getters (native getters throw the illegal-invocation
-        // TypeError when accessed through the prototype without a receiver).
-        __replaceGetterWithProxy(Navigator.prototype, 'plugins', pluginsFake);
-        __replaceGetterWithProxy(Navigator.prototype, 'mimeTypes', mimeTypesFake);
+            const mimeObjs = ['application/pdf', 'text/pdf'].map(function(type) {{
+                const mime = Object.create(mimeLayer);
+                mimeValues.set(mime, {{
+                    type: type, suffixes: 'pdf', description: 'Portable Document Format',
+                    enabledPlugin: pluginArray[0]
+                }});
+                installValue(pluginArray[0], type, mime);
+                return mime;
+            }});
+            installValue(pluginArray[0], '0', mimeObjs[0]);
+            installValue(pluginArray[0], '1', mimeObjs[1]);
+            pluginMimes.set(pluginArray[0], mimeObjs);
+            pluginArray.slice(1).forEach(function(plugin) {{
+                const mimes = mimeObjs.map(function(mime) {{
+                    const perPluginMime = Object.create(mimeLayer);
+                    mimeValues.set(perPluginMime, {{
+                        type: mime.type, suffixes: 'pdf', description: 'Portable Document Format',
+                        enabledPlugin: plugin
+                    }});
+                    return perPluginMime;
+                }});
+                pluginMimes.set(plugin, mimes);
+                mimes.forEach(function(mime, index) {{
+                    installValue(plugin, String(index), mime);
+                    installValue(plugin, mime.type, mime);
+                }});
+            }});
+
+            const pluginsLayer = makeLayer(PluginArray.prototype, {{}});
+            proxyLayerGetter(pluginsLayer, 'length', pluginArray.length, nativePluginArray);
+            ['item', 'namedItem', 'refresh'].forEach(function(name) {{
+                installCollectionMethod(pluginsLayer, name, nativePluginArray, pluginArray);
+            }});
+            const pluginsFake = Object.create(pluginsLayer);
+            pluginArray.forEach(function(plugin, index) {{
+                installValue(pluginsFake, String(index), plugin);
+                installValue(pluginsFake, plugin.name, plugin);
+            }});
+
+            const mimeTypesLayer = makeLayer(MimeTypeArray.prototype, {{}});
+            proxyLayerGetter(mimeTypesLayer, 'length', mimeObjs.length, nativeMimeTypeArray);
+            ['item', 'namedItem'].forEach(function(name) {{
+                installCollectionMethod(mimeTypesLayer, name, nativeMimeTypeArray, mimeObjs);
+            }});
+            const mimeTypesFake = Object.create(mimeTypesLayer);
+            mimeObjs.forEach(function(mime, index) {{
+                installValue(mimeTypesFake, String(index), mime);
+                installValue(mimeTypesFake, mime.type, mime);
+            }});
+            __replaceGetterWithProxy(Navigator.prototype, 'plugins', pluginsFake);
+            __replaceGetterWithProxy(Navigator.prototype, 'mimeTypes', mimeTypesFake);
+        }}
     }} catch(e) {{}}
 
     // 10. Battery API Shield
@@ -1219,7 +1384,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             : navigator;
         if (__batteryHost.getBattery) {{
             const batData = {battery_json};
-            const origGetBattery = __batteryHost.getBattery;
             // Hunt A-26: the battery object was a PLAIN object — a real
             // Chrome returns a BatteryManager instance whose values live on
             // the prototype (measured: the real one has NO own properties,
@@ -1940,28 +2104,44 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         const fpSampleRate = {int(getattr(fp, "audio_sample_rate", 0) or 48000) or 48000};
         const fpBaseLatency = {_js_number(getattr(fp, "audio_base_latency", 0.005) or 0.005)};
         const fpMaxChannels = {int(getattr(fp, "audio_max_channels", 0) or 2) or 2};
+        const replaceAudioGetter = function(proto, name, getValue) {{
+            // sampleRate/baseLatency live on BaseAudioContext.prototype in
+            // current Chrome, not as own properties of AudioContext.  Patch
+            // the descriptor's actual owner instead of adding a shadowing
+            // getter to every subclass (A-49).
+            let owner = proto;
+            let desc = null;
+            while (owner && !desc) {{
+                desc = Object.getOwnPropertyDescriptor(owner, name);
+                if (!desc) owner = Object.getPrototypeOf(owner);
+            }}
+            if (!desc || !desc.get) return;
+            const nativeGet = desc.get;
+            const wrapped = new Proxy(nativeGet, __stripProxyFromErrors({{
+                apply: function(target, thisArg, args) {{
+                    // Preserve native receiver validation before substituting
+                    // the profile value (A-46/A-49).
+                    __nativeCache.reflectApply(target, thisArg, args);
+                    return getValue.call(thisArg);
+                }}
+            }}));
+            __proxyTargets.set(wrapped, nativeGet);
+            __proxyOfTarget.set(nativeGet, wrapped);
+            __redirectToString(wrapped, nativeGet);
+            Object.defineProperty(owner, name, {{
+                get: wrapped, configurable: true, enumerable: desc.enumerable
+            }});
+        }};
         const patchAudioCtor = function(Ctor) {{
             if (!Ctor) return;
-            const orig = Ctor.prototype.constructor;
-            Object.defineProperty(Ctor.prototype, 'sampleRate', {{
-                get: makeNative(() => fpSampleRate, 'get sampleRate'),
-                configurable: true, enumerable: true
-            }});
-            if ('baseLatency' in Ctor.prototype) {{
-                Object.defineProperty(Ctor.prototype, 'baseLatency', {{
-                    get: makeNative(() => fpBaseLatency, 'get baseLatency'),
-                    configurable: true, enumerable: true
-                }});
-            }}
+            replaceAudioGetter(Ctor.prototype, 'sampleRate', function() {{ return fpSampleRate; }});
+            replaceAudioGetter(Ctor.prototype, 'baseLatency', function() {{ return fpBaseLatency; }});
         }};
         patchAudioCtor(window.AudioContext);
         patchAudioCtor(window.OfflineAudioContext);
         patchAudioCtor(window.webkitAudioContext);
         if (window.AudioBuffer) {{
-            Object.defineProperty(AudioBuffer.prototype, 'sampleRate', {{
-                get: makeNative(() => fpSampleRate, 'get sampleRate'),
-                configurable: true, enumerable: true
-            }});
+            replaceAudioGetter(AudioBuffer.prototype, 'sampleRate', function() {{ return fpSampleRate; }});
             // Hunt A-05: the numberOfChannels getter used to read
             // Object.getOwnPropertyDescriptor(AudioBuffer.prototype,
             // 'numberOfChannels') AT CALL TIME — but by then the descriptor
@@ -1972,12 +2152,10 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
             // section reads buffer.numberOfChannels). The original
             // descriptor is now captured BEFORE the override.
             const origChannelsDesc = Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels');
-            Object.defineProperty(AudioBuffer.prototype, 'numberOfChannels', {{
-                get: makeNative(function() {{
-                    const v = origChannelsDesc && origChannelsDesc.get ? origChannelsDesc.get.call(this) : fpMaxChannels;
-                    return Math.min(v, fpMaxChannels);
-                }}, 'get numberOfChannels'),
-                configurable: true, enumerable: true
+            replaceAudioGetter(AudioBuffer.prototype, 'numberOfChannels', function() {{
+                const v = origChannelsDesc && origChannelsDesc.get
+                    ? __nativeCache.reflectApply(origChannelsDesc.get, this, []) : fpMaxChannels;
+                return Math.min(v, fpMaxChannels);
             }});
         }}
     }} catch(e) {{}}
@@ -2051,27 +2229,26 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // function" — a hard TypeError in any site that calls them (and a
         // blatant sign of a tampered Intl). The static side is copied over
         // from the originals, and the constructor keeps the native shape
-        // (prototype + toString) instead of a hand-rolled function.
+        // (prototype + toString). A-49 completes this with a native Proxy.
         const origNFF = Intl.NumberFormat;
         const origDTF = Intl.DateTimeFormat;
         const wrapIntl = function(orig, label) {{
-            const wrapped = makeNative(function() {{
-                const args = Array.prototype.slice.call(arguments);
-                if (typeof args[0] === 'undefined') args[0] = fpLocale;
-                return new (Function.prototype.bind.apply(orig, [null].concat(args)))();
-            }}, label);
-            wrapped.prototype = orig.prototype;
-            // keep the static side (supportedLocalesOf, etc.) and the native
-            // reflection of the constructor itself
-            try {{
-                Object.defineProperty(wrapped, 'supportedLocalesOf', {{
-                    value: makeNative(orig.supportedLocalesOf.bind(orig), 'supportedLocalesOf'),
-                    configurable: true, writable: true
-                }});
-            }} catch(e) {{}}
-            try {{
-                Object.setPrototypeOf(wrapped, Object.getPrototypeOf(orig));
-            }} catch(e) {{}}
+            // A-49: Proxy the actual constructor.  A plain replacement added
+            // own supportedLocalesOf and changed ownKeys/toString; a bound
+            // static stand-in was also constructible.  Native static methods
+            // remain inherited from orig through the Proxy's target.
+            const build = function(args) {{
+                const actual = args.slice();
+                if (typeof actual[0] === 'undefined') actual[0] = fpLocale;
+                return new (Function.prototype.bind.apply(orig, [null].concat(actual)))();
+            }};
+            const wrapped = new Proxy(orig, __stripProxyFromErrors({{
+                apply: function(target, thisArg, args) {{ return build(args); }},
+                construct: function(target, args, newTarget) {{ return build(args); }}
+            }}));
+            __proxyTargets.set(wrapped, orig);
+            __proxyOfTarget.set(orig, wrapped);
+            __redirectToString(wrapped, orig);
             return wrapped;
         }};
         Intl.NumberFormat = wrapIntl(origNFF, 'NumberFormat');
@@ -2087,22 +2264,23 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     try {{
         const perfSeedBase = ({fp.canvas_noise_seed} >>> 0) || 1;
         let perfCallCount = 0;
-        const origNow = PerformancePrototype = (window.performance && performance.now) ? performance.now.bind(performance) : null;
-        if (origNow) {{
-            Object.defineProperty(performance, 'now', {{
-                value: makeNative(function() {{
-                    const native = origNow();
-                    perfCallCount = (perfCallCount + 1) >>> 0;
-                    let s = (perfSeedBase ^ (perfCallCount * 2654435761)) >>> 0;
-                    s = (s * 1664525 + 1013904223) >>> 0;
-                    // jitter in [-0.04, +0.04] ms: well below any visible
-                    // threshold, but decorrelates the host scheduler signature.
-                    const jitter = (((s >>> 8) % 1000) / 1000 - 0.5) * 0.08;
-                    return native + jitter;
-                }}, 'now'),
-                configurable: true, writable: true, enumerable: true
-            }});
-        }}
+        let lastSpoofedNow = -1;
+        // A-46: keep now() on Performance.prototype.  The old hand-written
+        // own-instance function was constructible, exposed a prototype, and
+        // moved a native prototype method onto navigator.performance.
+        // Its independent +/- jitter could also make successive readings go
+        // backwards despite the monotonicity claim above.
+        __replaceWithProxy(Performance.prototype, 'now', {{
+            apply: function(target, thisArg, args) {{
+                const native = __nativeCache.reflectApply(target, thisArg, args);
+                perfCallCount = (perfCallCount + 1) >>> 0;
+                let s = (perfSeedBase ^ (perfCallCount * 2654435761)) >>> 0;
+                s = (s * 1664525 + 1013904223) >>> 0;
+                const jitter = (((s >>> 8) % 1000) / 1000 - 0.5) * 0.08;
+                lastSpoofedNow = Math.max(native + jitter, lastSpoofedNow);
+                return lastSpoofedNow;
+            }}
+        }});
     }} catch(e) {{}}
 
     // 16. ClientRects & Font Measurement Jitter (Sub-pixel noise)

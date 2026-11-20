@@ -2,16 +2,21 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — A-44/A-45/A-47 audit closure
+## Unreleased — A-44…A-50 empirical anti-detect audit
 
-Suite: **1115 passed, 6 deselected** (1121 collected; 0 `xfail`). Real-Chrome probes now cover error-stack state, worker double application, synchronizer listener disposal and restoration after navigation.
+Suite: **1118 passed, 6 deselected** (1124 collected; 0 `xfail`). Real-Chrome probes now cover error-stack state, worker double application, synchronizer listener disposal/restoration, native function shapes, secure-origin Client Hints, Plugin/MimeType installation, Intl/audio accessors and monotonic timing.
 
 - **A-44 — traps mutated the page's global error state.** Every successful Proxy trap raised `Error.stackTraceLimit` by eight and never restored it; a real-Chrome run started at 906 instead of 10 and each getter added eight more. The deeper capture is now scoped with `try/finally`, including the throwing path. Custom `Error.prepareStackTrace` keeps its native `CallSite[]` result (trap frames are filtered) instead of being coerced to a string. The native and shielded probes now agree byte-for-byte on the ordinary error stack, both return a four-frame CallSite array without trap frames, and the limit remains 10 throughout.
 - **A-44 — worker injection nested `Function.prototype.toString` proxies.** The worker exemption skipped the idempotency guard, so a second source evaluation added another `Object.apply` frame. Every realm now participates in the guard, and the toString proxy redirects its own stringification to the pristine native; repeated worker application no longer nests proxies.
 - **A-45 — the synchronizer's fixed `window.__nse_c` guard was enumerable by reflection.** It is gone. Idempotency state lives under a per-session Symbol on the already-installed binding; it adds no new window global, supports listener disposal/reinstall, and survives the binding-hiding wrapper because its state is transferred to the replacement function.
 - **A-47 — the real synchronizer transport was broken in three independent ways.** `set_event_sink()` only affected future launches, so enabling sync after launch installed no binding. Random binding names could begin with a digit and then fail as `window.<name>` JavaScript identifiers; they are now accessed with a JSON-quoted property key. Finally, auto-attach plus explicit attach exposed the same page on two CDP sessions and delivered one gesture twice; one session per target now owns the binding. The injector keeps the active client source and restores it after navigation. The live test now proves one delivery per real DOM click, no delivery after dispose, one after reinstall, and one in the newly navigated document.
 
-Remaining measured audit work: A-46 — `makeNative()` still leaves an ordinary JS `prototype` and constructibility on some hand-built Web API functions; they must be Proxy-wrapped native methods rather than have their `prototype` deleted. V8 also names a Proxy-created eval frame `Proxy.eval` instead of `toString.eval`; this known limitation is not hidden with a misleading string replacement.
+- **A-46 — native-looking Client Hints and timer functions were constructible.** Real Chrome measured `getHighEntropyValues`/`toJSON`/`performance.now` with own keys `length,name` and `new fn()` throwing, while the hand-built versions exposed `prototype` and constructed successfully. They are now Proxies over the native functions. Client Hints uses the real UAData receiver for native argument/receiver validation, and an empty hint list returns `{}` instead of every field. `performance.now` remains on `Performance.prototype`, no longer leaks the accidental `PerformancePrototype` global, and clamps jitter to keep 1000 measured successive readings monotonic.
+- **A-48 — the entire Plugin/MimeType shield silently failed.** In strict mode `fake.name = …` hit `Plugin.prototype`'s getter-only accessor and threw; the empty catch left the host objects in place. The old live assertion accepted that fallback because it only checked the host's native counts. The replacement installs native-backed intermediate layers, native-method/getter Proxies, five Plugin entries and two unique top-level MIME objects. Live identity assertions now prove the intermediate layer is installed and indexed/named lookups agree.
+- **A-49 — Intl and audio reflection did not match the native constructors/accessors.** `Intl.NumberFormat` and `Intl.DateTimeFormat` now use native constructor Proxies with separate call/construct traps; static `supportedLocalesOf` remains the native method rather than a constructible bound stand-in. Audio getters use their native accessor targets and patch the descriptor's real owner (`BaseAudioContext.prototype` for `sampleRate`/`baseLatency` in current Chrome), not a shadowing own property on every subclass.
+- **A-50 — native-like objects still had plain-JS getters.** Battery, speech voices and GPU info had no own value properties, but their prototype getters were constructible and exposed `prototype`. The shared native-like builder and GPU `adapter.info` now wrap the corresponding native getters. Live checks cover the getter functions themselves, not merely `String(fn)` and the containing object's prototype.
+
+Remaining measured work: the fallback branches of `makeNative()` and the FontFaceSet filtering functions still need native-target conversion where a corresponding native function exists. V8 also names a Proxy-created eval frame `Proxy.eval` instead of `toString.eval`; this known limitation is not hidden with a misleading string replacement.
 
 ## v1.15.3 — Anti-Detect Shield Audit (Empirical, Real Chrome) (2026-10-21)
 
@@ -37,7 +42,7 @@ windows/mac/linux profiles (now a test contract); CI green on all 12 jobs.
   Intl constructors with a plain function dropped their static side, so any site calling
   `supportedLocalesOf` (a common i18n feature probe) got a hard `TypeError` — and the
   missing static method is a blatant "tampered Intl" signal. The wrapper now re-attaches
-  the static side and keeps the native constructor shape.
+  the static side; the later A-49 fix replaces the hand-built constructor with a Proxy over the native constructor so reflection stays native.
 - **The profile's voice pool was never installed (A-03).** `SpeechSynthesisVoice.prototype.name`
   is a getter-only accessor, so the `Object.assign` that built the voice objects threw and
   aborted the whole section: the page kept the HOST's voices (21 on the audit machine vs

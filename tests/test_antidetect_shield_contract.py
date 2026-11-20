@@ -78,10 +78,13 @@ def test_a02_intl_constructors_keep_their_static_side():
         "the Intl constructor replacement must keep the static side (supportedLocalesOf) — "
         "dropping it broke every caller (A-02)"
     )
-    # the static method must be re-attached to the wrapper, not only called
-    assert re.search(r"Object\.defineProperty\(wrapped,\s*'supportedLocalesOf'", src), (
-        "the wrapped Intl constructors must re-attach supportedLocalesOf (A-02)"
-    )
+    # A-49: native static methods stay on the native constructor target and
+    # are inherited by its Proxy.  Copying them created an extra own key and
+    # a constructible bound-function stand-in.
+    intl_block = src[src.find("const wrapIntl") : src.find("// 12e.")]
+    assert "const wrapped = new Proxy(orig" in intl_block
+    assert "Object.defineProperty(wrapped, 'supportedLocalesOf'" not in intl_block
+    assert "orig.supportedLocalesOf.bind" not in intl_block
 
 
 def test_a03_voices_use_defineproperty_not_assign():
@@ -172,7 +175,9 @@ def test_a05_audio_channels_descriptor_is_captured_before_the_override():
     assert "Object.getOwnPropertyDescriptor(AudioBuffer.prototype, 'numberOfChannels')" in block, (
         "the original descriptor must be read once, outside the getter (A-05)"
     )
-    getter_start = src.find("get: makeNative(function() {", src.find("origChannelsDesc"))
+    getter_start = src.find(
+        "replaceAudioGetter(AudioBuffer.prototype, 'numberOfChannels'", src.find("origChannelsDesc")
+    )
     getter = src[getter_start : getter_start + 400]
     assert "Object.getOwnPropertyDescriptor(AudioBuffer.prototype" not in getter, (
         "the getter must use the captured descriptor, not look it up again (A-05)"
@@ -438,10 +443,14 @@ def test_a26_spoofed_objects_have_native_shapes():
     assert "__makeNativeLike" in src, "the spoofed objects must be built on the native prototype (A-26)"
     for cls in ("BatteryManager", "InputDeviceInfo", "GPUAdapterInfo"):
         assert cls in src, f"the spoofed object must use the native {cls} prototype (A-26)"
-    helper = src[src.find("const __makeNativeLike") : src.find("const __makeNativeLike") + 1400]
+    helper = src[src.find("const __makeNativeLike") : src.find("// 0. Native Function")]
     assert "return Object.create(layer);" in helper, (
         "the instance must be empty — the values live on the prototype layer (A-26)"
     )
+    assert "getter = new Proxy(nativeGet" in helper, (
+        "A-50: native-like values must not be exposed by constructible plain-JS getters"
+    )
+    assert "__redirectToString(getter, nativeGet)" in helper
 
 
 def test_a27_font_aliases_are_hidden_from_the_font_set():
@@ -566,6 +575,65 @@ def test_a35_high_entropy_hints_answer_exactly_the_request():
     assert "full_version_list_json" in py, (
         "the generator must derive fullVersionList from the profile brands with full versions (A-35)"
     )
+
+
+def test_a46_client_hints_and_performance_use_native_function_targets():
+    """A-46: String(fn) cloaking alone left constructible JS functions with
+    an own prototype.  The measured Web API methods must wrap their native
+    targets instead, and performance.now must remain on its prototype."""
+    src = _generated_js()
+    ua_block = src[src.find("const nativeUaData =") : src.find("// 4. Languages")]
+    assert "value: nativeHighEntropy" in ua_block
+    assert "value: nativeUaToJSON" in ua_block
+    assert "__replaceWithProxy(uaData, 'getHighEntropyValues'" in ua_block
+    assert "__replaceWithProxy(uaData, 'toJSON'" in ua_block
+    assert "__nativeCache.reflectApply(target, nativeUaData, args)" in ua_block
+    assert "const req = args[0] || [];" in ua_block, (
+        "an empty/missing hint list must not fabricate all high-entropy fields"
+    )
+    perf_block = src[src.find("// 12e.") : src.find("// 16. ClientRects")]
+    assert "__replaceWithProxy(Performance.prototype, 'now'" in perf_block
+    assert "Object.defineProperty(performance, 'now'" not in perf_block
+    assert "lastSpoofedNow = Math.max(native + jitter, lastSpoofedNow)" in perf_block
+    assert "PerformancePrototype =" not in perf_block, (
+        "the old timer hook accidentally leaked a PerformancePrototype global"
+    )
+
+
+def test_a48_plugin_shield_installs_native_backed_collections():
+    """A-48: strict-mode writes to Plugin.prototype's getter-only accessors
+    aborted the old block, silently leaving host plugins.  Collections must
+    use native-backed intermediate layers and two unique MIME entries."""
+    src = _generated_js()
+    block = src[src.find("// 9b. Plugin") : src.find("// 10. Battery")]
+    assert "pluginSpecs = [" in block
+    assert "['application/pdf', 'text/pdf'].map" in block
+    assert "const pluginsLayer = makeLayer(PluginArray.prototype" in block
+    assert "const mimeTypesLayer = makeLayer(MimeTypeArray.prototype" in block
+    assert "Object.getPrototypeOf(navigator.plugins)" not in block, (
+        "source contracts must not mistake a host fallback for an installed shield"
+    )
+    assert "fake.name = spec.name" not in block
+    assert "pluginsFake.length =" not in block
+    assert "layer === pluginsLayer ? PluginArray.prototype : MimeTypeArray.prototype" in block, (
+        "A-48: the measured PluginArray length descriptor lookup is load-bearing; "
+        "generic baseProto lookup regressed to Illegal invocation in live Chrome"
+    )
+    assert "pluginsFake.item = makeNative" not in block
+    assert "__replaceGetterWithProxy(Navigator.prototype, 'plugins', pluginsFake)" in block
+
+
+def test_a49_intl_and_audio_keep_native_targets_and_descriptor_owners():
+    src = _generated_js()
+    intl = src[src.find("const wrapIntl") : src.find("// 12e.")]
+    assert "const wrapped = new Proxy(orig" in intl
+    assert "construct: function(target, args, newTarget)" in intl
+    audio = src[src.find("// 12b.") : src.find("// 12c.")]
+    assert "let owner = proto;" in audio
+    assert "owner = Object.getPrototypeOf(owner)" in audio
+    assert "Object.defineProperty(owner, name" in audio
+    assert "get: makeNative(() => fpSampleRate" not in audio
+    assert "get: makeNative(() => fpBaseLatency" not in audio
 
 
 def test_a36_languages_follow_the_timezone_not_a_farm_constant():
