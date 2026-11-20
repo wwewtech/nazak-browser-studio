@@ -564,10 +564,10 @@ def test_a35_high_entropy_hints_answer_exactly_the_request():
     fullVersionList came back undefined for any page that requested it — a
     one-line detector."""
     src = _generated_js()
-    anchor = "Object.defineProperty(uaData, 'getHighEntropyValues'"
+    anchor = "Object.defineProperty(uaDataLayer, 'getHighEntropyValues'"
     start = src.find(anchor)
     assert start >= 0, "the getHighEntropyValues hook was not found in the shield"
-    end = src.find("Object.defineProperty(uaData, 'toJSON'", start)
+    end = src.find("Object.defineProperty(uaDataLayer, 'toJSON'", start)
     if end < 0:
         end = start + 2600
     hook = src[start:end]
@@ -589,14 +589,28 @@ def test_a46_client_hints_and_performance_use_native_function_targets():
     an own prototype.  The measured Web API methods must wrap their native
     targets instead, and performance.now must remain on its prototype."""
     src = _generated_js()
-    ua_block = src[src.find("const nativeUaData =") : src.find("// 4. Languages")]
+    ua_block = src[src.find("const nativeUaNdata =") : src.find("// 4. Languages")]
     assert "value: nativeHighEntropy" in ua_block
     assert "value: nativeUaToJSON" in ua_block
-    assert "__replaceWithProxy(uaData, 'getHighEntropyValues'" in ua_block
-    assert "__replaceWithProxy(uaData, 'toJSON'" in ua_block
-    assert "__nativeCache.reflectApply(target, nativeUaData, args)" in ua_block
+    assert "__replaceWithProxy(uaDataLayer, 'getHighEntropyValues'" in ua_block
+    assert "__replaceWithProxy(uaDataLayer, 'toJSON'" in ua_block
+    assert "__nativeCache.reflectApply(target, nativeUaNdata, args)" in ua_block
     assert "const req = args[0] || [];" in ua_block, (
         "an empty/missing hint list must not fabricate all high-entropy fields"
+    )
+    # A-54: the methods live on the intermediate prototype layer, not on the
+    # instance, so the instance keeps zero own properties.
+    assert "Object.defineProperty(uaDataLayer, 'getHighEntropyValues'" in ua_block, (
+        "A-54: getHighEntropyValues must be installed on uaDataLayer, not on the instance"
+    )
+    assert "Object.defineProperty(uaDataLayer, 'toJSON'" in ua_block, (
+        "A-54: toJSON must be installed on uaDataLayer, not on the instance"
+    )
+    assert "Object.defineProperty(uaData, 'getHighEntropyValues'" not in ua_block, (
+        "A-54: the instance must not carry getHighEntropyValues as an own property"
+    )
+    assert "Object.defineProperty(uaData, 'toJSON'" not in ua_block, (
+        "A-54: the instance must not carry toJSON as an own property"
     )
     perf_block = src[src.find("// 12e.") : src.find("// 16. ClientRects")]
     assert "__replaceWithProxy(Performance.prototype, 'now'" in perf_block
@@ -604,6 +618,42 @@ def test_a46_client_hints_and_performance_use_native_function_targets():
     assert "lastSpoofedNow = Math.max(native + jitter, lastSpoofedNow)" in perf_block
     assert "PerformancePrototype =" not in perf_block, (
         "the old timer hook accidentally leaked a PerformancePrototype global"
+    )
+
+
+def test_a54_useragentdata_instance_has_no_own_properties():
+    """A-54: the synthetic navigator.userAgentData instance must carry NO own
+    properties.  brands/mobile/platform/getHighEntropyValues/toJSON are all
+    Web IDL accessors/functions on an intermediate prototype layer between the
+    instance and NavigatorUAData.prototype."""
+    src = _generated_js()
+    ua_block = src[src.find("const nativeUaNdata =") : src.find("// 4. Languages")]
+    assert "const uaDataLayer = Object.create(uaDataProto)" in ua_block, (
+        "A-54: an intermediate prototype layer must exist"
+    )
+    assert "const uaData = Object.create(uaDataLayer)" in ua_block, (
+        "A-54: the instance must be created from the layer, not from Object.prototype"
+    )
+    assert "__defineUADataGetter('brands'" in ua_block, "A-54: brands must be installed via the getter helper"
+    assert "__defineUADataGetter('mobile'" in ua_block, "A-54: mobile must be installed via the getter helper"
+    assert "__defineUADataGetter('platform'" in ua_block, "A-54: platform must be installed via the getter helper"
+    # The methods live on the layer, not on the instance.
+    assert "Object.defineProperty(uaDataLayer, 'getHighEntropyValues'" in ua_block, (
+        "A-54: getHighEntropyValues must be installed on uaDataLayer, not on the instance"
+    )
+    assert "Object.defineProperty(uaDataLayer, 'toJSON'" in ua_block, (
+        "A-54: toJSON must be installed on uaDataLayer, not on the instance"
+    )
+    assert "Object.defineProperty(uaData, 'getHighEntropyValues'" not in ua_block, (
+        "A-54: the instance must not carry getHighEntropyValues as an own property"
+    )
+    assert "Object.defineProperty(uaData, 'toJSON'" not in ua_block, (
+        "A-54: the instance must not carry toJSON as an own property"
+    )
+    # The accessors on the layer must not invoke the native getter with the
+    # synthetic receiver (that would throw "Illegal invocation").
+    assert "if (thisArg !== uaData)" in ua_block, (
+        "A-54: the accessor apply trap must guard against the synthetic receiver"
     )
 
 

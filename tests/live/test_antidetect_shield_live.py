@@ -171,6 +171,24 @@ PROBE = r"""() => {
   // a real UAData instance.
   t('ch_platform', () => navigator.userAgentData ? navigator.userAgentData.platform : 'none');
   t('ch_proto', () => navigator.userAgentData ? Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.userAgentData)).join(',') : 'none');
+  // A-54: a real NavigatorUAData instance has no own properties. Values and
+  // methods are Web IDL accessors/functions on its prototype chain.
+  t('ch_own_props', () => Object.getOwnPropertyNames(navigator.userAgentData).join(',') || '(none)');
+  t('ch_layer_descriptors', () => {
+    const layer = Object.getPrototypeOf(navigator.userAgentData);
+    return ['brands', 'mobile', 'platform', 'getHighEntropyValues', 'toJSON'].map((name) => {
+      const descriptor = Object.getOwnPropertyDescriptor(layer, name);
+      return name + '=' + (descriptor ? (descriptor.get ? 'getter' : typeof descriptor.value) : 'missing');
+    }).join(',');
+  });
+  t('ch_native_proto_chain', () => {
+    let current = navigator.userAgentData;
+    while (current) {
+      if (current === NavigatorUAData.prototype) return true;
+      current = Object.getPrototypeOf(current);
+    }
+    return false;
+  });
   // A-46: a hand-written function only LOOKS native through String(fn).  It
   // still has an own prototype and can be constructed; native Web API methods
   // have neither property.  Proxy-over-native keeps the original shape.
@@ -329,7 +347,11 @@ PROBE = r"""() => {
           ' infoGetter=' + nativeFunctionShape(Object.getOwnPropertyDescriptor(a, 'info').get)))
       : Promise.resolve('no-gpu')),
     navigator.userAgentData.getHighEntropyValues([]).then(
-      (values) => Object.keys(values).join(',') || '(empty)',
+      (values) => 'keys=' + Object.keys(values).join(',') + ' json=' + JSON.stringify(values).slice(0, 200),
+      (error) => 'ERR ' + error.name + ': ' + error.message
+    ),
+    navigator.userAgentData.getHighEntropyValues(['architecture']).then(
+      (values) => 'keys=' + Object.keys(values).join(',') + ' arch=' + (values.architecture || '-'),
       (error) => 'ERR ' + error.name + ': ' + error.message
     ),
     navigator.userAgentData.getHighEntropyValues.call({}, ['platformVersion']).then(
@@ -344,7 +366,8 @@ PROBE = r"""() => {
     out.mediadev_shape = 'OK ' + vals[4];
     out.gpuinfo_shape = 'OK ' + vals[5];
     out.ch_empty_hints = 'OK ' + vals[6];
-    out.ch_bad_receiver = 'OK ' + vals[7];
+    out.ch_arch_hint = 'OK ' + vals[7];
+    out.ch_bad_receiver = 'OK ' + vals[8];
     // A-34: the voices arrive through the event (the native pattern)
     const voices = await __voiceData;
     if (voices && voices.length) {
@@ -615,7 +638,8 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
                 f"non-native Intl/audio function shape (A-49): {res[shape_key]}"
             )
 
-        assert res["ch_empty_hints"].endswith("(empty)"), res["ch_empty_hints"]
+        assert res["ch_empty_hints"].startswith("OK keys= json={}"), res["ch_empty_hints"]
+        assert res["ch_arch_hint"].startswith("OK keys=architecture arch="), res["ch_arch_hint"]
         assert res["ch_bad_receiver"].startswith("OK TypeError:"), res["ch_bad_receiver"]
         assert res["ch_tojson_bad_receiver"].startswith("OK TypeError:"), res["ch_tojson_bad_receiver"]
         assert res["performance_now_owner"].endswith("false/true"), res["performance_now_owner"]
@@ -657,6 +681,14 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert "size=0 values=0 keys=0 entries=0 callbacks=0" in res["fontset_iterator_consistency"], res[
             "fontset_iterator_consistency"
         ]
+
+        # A-54: UAData itself must not carry five synthetic own data/method
+        # properties. Its native interface prototype remains in the chain.
+        assert res["ch_own_props"].endswith("(none)"), res["ch_own_props"]
+        assert res["ch_layer_descriptors"].endswith(
+            "brands=getter,mobile=getter,platform=getter,getHighEntropyValues=function,toJSON=function"
+        ), res["ch_layer_descriptors"]
+        assert res["ch_native_proto_chain"].endswith("true"), res["ch_native_proto_chain"]
 
         # A-46: native methods have only length/name own properties and are
         # not constructible.  String(fn) alone is not enough evidence.

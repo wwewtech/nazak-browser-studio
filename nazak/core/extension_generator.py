@@ -745,21 +745,57 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         const uaDataProto = (typeof NavigatorUAData !== 'undefined' && NavigatorUAData.prototype)
             ? NavigatorUAData.prototype
             : Object.prototype;
-        const nativeUaData = navigator.userAgentData || null;
-        // Keep the native interface prototype as the immediate prototype, as
-        // Chrome does.  The real instance is retained separately solely for
-        // native receiver/argument validation; synthetic instances have no
-        // NavigatorUAData internal slots of their own (A-46).
-        const uaData = Object.create(uaDataProto);
-        Object.defineProperty(uaData, 'brands', {{
-            value: brandsData, configurable: true, enumerable: true
-        }});
-        Object.defineProperty(uaData, 'mobile', {{
-            value: {str(fp.mobile).lower()}, configurable: true, enumerable: true
-        }});
-        Object.defineProperty(uaData, 'platform', {{
-            value: {ch_platform_json}, configurable: true, enumerable: true
-        }});
+        const nativeUaNdata = navigator.userAgentData || null;
+        // Hunt A-54: the synthetic values used to live as OWN properties of
+        // the instance (measured: Object.getOwnPropertyNames(uaData) listed
+        // brands,mobile,platform,getHighEntropyValues,toJSON while a real
+        // NavigatorUAData carries none — its values are Web IDL accessors on
+        // the prototype). A detector reading the own-property list sees the
+        // patch in one line. The values now live on an INTERMEDIATE prototype
+        // layer between the instance and NavigatorUAData.prototype: the
+        // instance itself has no own properties, the native interface
+        // prototype stays in the chain, and the accessors keep their native
+        // shape (Proxy over the native getter where one exists).
+        const uaDataLayer = Object.create(uaDataProto);
+        const __defineUADataGetter = function(name, value) {{
+            const desc = Object.getOwnPropertyDescriptor(uaDataProto, name);
+            const nativeGet = desc && desc.get;
+            if (nativeGet) {{
+                const proxyGet = new Proxy(nativeGet, __stripProxyFromErrors({{
+                    apply: function(target, thisArg, args) {{
+                        // A-54: uaData is a plain object (no native internal slots),
+                        // so calling the real getter with it would throw
+                        // "Illegal invocation".  Legitimate access returns our
+                        // value; a bad receiver falls through to the native
+                        // getter and throws the native TypeError, exactly like a
+                        // real Web IDL accessor.
+                        if (thisArg !== uaData) {{
+                            __nativeCache.reflectApply(target, thisArg, args);
+                        }}
+                        return value;
+                    }}
+                }}));
+                __proxyTargets.set(proxyGet, nativeGet);
+                __proxyOfTarget.set(nativeGet, proxyGet);
+                Object.defineProperty(uaDataLayer, name, {{
+                    get: proxyGet, configurable: true, enumerable: true
+                }});
+                __redirectToString(proxyGet, nativeGet);
+            }} else {{
+                const g = makeNative(function() {{
+                    if (this == null) throw new TypeError('Illegal invocation');
+                    return value;
+                }}, 'get ' + name);
+                Object.defineProperty(uaDataLayer, name, {{
+                    get: g, configurable: true, enumerable: true
+                }});
+            }}
+        }};
+        __defineUADataGetter('brands', brandsData);
+        __defineUADataGetter('mobile', {str(fp.mobile).lower()});
+        __defineUADataGetter('platform', {ch_platform_json});
+        // The instance itself carries NO own properties (A-54).
+        const uaData = Object.create(uaDataLayer);
         // A-46: a synthetic UAData object has no native internal slots.  Use
         // the real receiver to preserve argument validation and illegal-
         // invocation semantics, then replace only the successful result.
@@ -767,17 +803,19 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
         // that these Web API methods are not constructible.
         const nativeHighEntropy = uaDataProto.getHighEntropyValues;
         const nativeUaToJSON = uaDataProto.toJSON;
-        if (nativeUaData && typeof nativeHighEntropy === 'function') {{
-            Object.defineProperty(uaData, 'getHighEntropyValues', {{
+        if (nativeUaNdata && typeof nativeHighEntropy === 'function') {{
+            // A-54: the methods live on the intermediate prototype layer, not
+            // on the instance, so the instance keeps zero own properties.
+            Object.defineProperty(uaDataLayer, 'getHighEntropyValues', {{
                 value: nativeHighEntropy,
                 configurable: true, enumerable: false, writable: true
             }});
-            __replaceWithProxy(uaData, 'getHighEntropyValues', {{
+            __replaceWithProxy(uaDataLayer, 'getHighEntropyValues', {{
                 apply: function(target, thisArg, args) {{
                     if (thisArg !== uaData) {{
                         return __nativeCache.reflectApply(target, thisArg, args);
                     }}
-                    return __nativeCache.reflectApply(target, nativeUaData, args).then(function() {{
+                    return __nativeCache.reflectApply(target, nativeUaNdata, args).then(function() {{
                         // Hunt A-35: return exactly the requested hints, with
                         // full versions in fullVersionList (never the host's).
                         const all = {{
@@ -802,17 +840,17 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 }}
             }});
         }}
-        if (nativeUaData && typeof nativeUaToJSON === 'function') {{
-            Object.defineProperty(uaData, 'toJSON', {{
+        if (nativeUaNdata && typeof nativeUaToJSON === 'function') {{
+            Object.defineProperty(uaDataLayer, 'toJSON', {{
                 value: nativeUaToJSON,
                 configurable: true, enumerable: false, writable: true
             }});
-            __replaceWithProxy(uaData, 'toJSON', {{
+            __replaceWithProxy(uaDataLayer, 'toJSON', {{
                 apply: function(target, thisArg, args) {{
                     if (thisArg !== uaData) {{
                         return __nativeCache.reflectApply(target, thisArg, args);
                     }}
-                    __nativeCache.reflectApply(target, nativeUaData, args);
+                    __nativeCache.reflectApply(target, nativeUaNdata, args);
                     return {{ brands: brandsData, mobile: {str(fp.mobile).lower()}, platform: {ch_platform_json} }};
                 }}
             }});
