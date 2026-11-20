@@ -661,6 +661,16 @@ def test_a51_font_aliases_install_transactionally_with_native_filters():
     for method in ("forEach", "entries", "values", "keys"):
         assert f"'{method}'" in block
     assert "const sizeGetter = new Proxy(nativeSizeGet" in block
+    # A-53: do not regress to an eager Array Iterator or let @@iterator expose
+    # the raw native iterator and bypass filtering in Array.from/for-of.
+    assert "return new Proxy(nativeIterator" not in block, "iteratorProxy must retain a stable next closure"
+    assert "iteratorProxy = new Proxy(nativeIterator" in block
+    assert "if (property === 'next') return filteredNext;" in block
+    assert "if (property === Symbol.iterator)" in block
+    assert "return function() { return receiver; };" in block
+    assert "visible[Symbol.iterator]()" not in block
+    assert "nativeIterable.value === nativeValuesMethod" in block
+    assert "value: fontSetProto.values" in block
 
 
 def test_a36_languages_follow_the_timezone_not_a_farm_constant():

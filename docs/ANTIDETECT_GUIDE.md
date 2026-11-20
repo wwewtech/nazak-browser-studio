@@ -3,7 +3,7 @@
 > **Read this before you run a farm.** This page documents the anti-detect layer as it
 > actually is — what it defends against, what it cannot defend against, and what is left
 > to you as the operator. It reflects the state after the v1.15.x anti-detect audit
-> (findings A-01…A-52 plus the proxy-shape and error-stack hunts), and every
+> (findings A-01…A-53 plus the proxy-shape and error-stack hunts), and every
 > claim marked *measured* below was verified against a real Chrome launched through the
 > product's own start path, with a plain Chrome as the control in the same run.
 
@@ -93,7 +93,7 @@ Detectors like CreepJS do not read your values first; they interrogate the **fun
 themselves** (~20 structural checks per API: `'prototype' in fn`, own keys, illegal
 invocation, error-stack shapes…).
 
-Measured Web API hooks use a **Proxy over the native function** rather than a plain replacement. The A-46…A-51 follow-up removed hand-built Client Hints, Plugin/MimeType, Intl, audio, timer, native-like getters and FontFaceSet filters after real Chrome exposed their extra `prototype`/constructibility. Only documented fallback branches without corresponding native functions remain:
+Measured Web API hooks use a **Proxy over the native function** rather than a plain replacement. The A-46…A-53 follow-up removed hand-built Client Hints, Plugin/MimeType, Intl, audio, timer, native-like getters and FontFaceSet filters after real Chrome exposed their extra `prototype`/constructibility. Only documented fallback branches without corresponding native functions remain:
 
 - native receiver/argument validation runs before substitution where a real branded receiver
   is required (Client Hints and Plugin collection length/refresh). Ordinary prototype hooks

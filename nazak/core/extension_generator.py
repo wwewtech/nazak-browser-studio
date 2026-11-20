@@ -1638,6 +1638,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                             }};
                             const fontSetProto = Object.getPrototypeOf(document.fonts);
                             const __nativeSize = Object.getOwnPropertyDescriptor(fontSetProto, 'size');
+                            const nativeValuesMethod = Object.getOwnPropertyDescriptor(fontSetProto, 'values').value;
                             const __countVisible = function() {{
                                 let n = 0;
                                 try {{
@@ -1681,19 +1682,64 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                                 __replaceWithProxy(fontSetProto, name, {{
                                     apply: function(target, thisArg, args) {{
                                         const nativeIterator = __nativeCache.reflectApply(target, thisArg, args);
-                                        // Return a native Array iterator over
-                                        // the filtered entries, not a hand-
-                                        // written generator method.  The method
-                                        // itself remains a native Proxy.
-                                        const visible = [];
-                                        for (const entry of nativeIterator) {{
-                                            const face = (entry && entry[1]) ? entry[1] : entry;
-                                            if (!__isAlias(face)) visible.push(entry);
-                                        }}
-                                        return visible[Symbol.iterator]();
+                                        // A-53: preserve the native iterator
+                                        // object and lazily skip aliases in
+                                        // next().  Materializing an array
+                                        // changed [object FontFaceSet Iterator]
+                                        // into [object Array Iterator].
+                                        const nativeNext = nativeIterator.next;
+                                        let iteratorProxy;
+                                        const filteredNext = new Proxy(nativeNext, __stripProxyFromErrors({{
+                                            apply: function(nextTarget, thisArg, args) {{
+                                                if (thisArg !== iteratorProxy) {{
+                                                    return __nativeCache.reflectApply(nextTarget, thisArg, args);
+                                                }}
+                                                let result;
+                                                do {{
+                                                    result = __nativeCache.reflectApply(nextTarget, nativeIterator, args);
+                                                    if (result.done) return result;
+                                                    const entry = result.value;
+                                                    const face = (entry && entry[1]) ? entry[1] : entry;
+                                                    if (!__isAlias(face)) return result;
+                                                }} while (true);
+                                            }}
+                                        }}));
+                                        __proxyTargets.set(filteredNext, nativeNext);
+                                        __redirectToString(filteredNext, nativeNext);
+                                        iteratorProxy = new Proxy(nativeIterator, __stripProxyFromErrors({{
+                                            get: function(target, property, receiver) {{
+                                                if (property === 'next') return filteredNext;
+                                                const value = Reflect.get(target, property, target);
+                                                if (property === Symbol.iterator) {{
+                                                    // Array.from/for-of calls
+                                                    // the returned object's
+                                                    // next(), so @@iterator
+                                                    // must yield the Proxy,
+                                                    // not the raw native iterator.
+                                                    return function() {{ return receiver; }};
+                                                }}
+                                                // Native iterator helpers must
+                                                // retain the iterator's brand.
+                                                return typeof value === 'function' ? value.bind(target) : value;
+                                            }}
+                                        }}));
+                                        return iteratorProxy;
                                     }}
                                 }});
                             }});
+                            // Native @@iterator is exactly values, including
+                            // function identity.  Point it at the installed
+                            // Proxy rather than creating a second wrapper.
+                            const nativeIterable = Object.getOwnPropertyDescriptor(
+                                fontSetProto, Symbol.iterator);
+                            if (nativeIterable && nativeIterable.value === nativeValuesMethod) {{
+                                Object.defineProperty(fontSetProto, Symbol.iterator, {{
+                                    value: fontSetProto.values,
+                                    configurable: nativeIterable.configurable,
+                                    enumerable: nativeIterable.enumerable,
+                                    writable: nativeIterable.writable
+                                }});
+                            }}
                         }}
                     }} catch(e) {{}}
                 }}

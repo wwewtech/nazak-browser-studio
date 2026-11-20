@@ -267,6 +267,33 @@ PROBE = r"""() => {
   t('fontset_size_getter_shape', () => nativeFunctionShape(
     Object.getOwnPropertyDescriptor(Object.getPrototypeOf(document.fonts), 'size').get
   ));
+  t('fontset_iterator_shapes', () => ['entries', 'values', 'keys'].map((name) => {
+    const iterator = document.fonts[name]();
+    return name + ':' + Object.prototype.toString.call(iterator) +
+      ' next=' + nativeFunctionShape(iterator.next) +
+      ' stableNext=' + (iterator.next === iterator.next) +
+      ' iterableSelf=' + (iterator[Symbol.iterator]() === iterator) +
+      ' proto=' + Object.getPrototypeOf(iterator).constructor.name;
+  }).join(' | '));
+  t('fontset_symbol_iterator_identity', () => {
+    const symbolMethod = Object.getPrototypeOf(document.fonts)[Symbol.iterator];
+    return 'same=' + (symbolMethod === document.fonts.values) +
+      ' shape=' + nativeFunctionShape(symbolMethod);
+  });
+  t('fontset_iterator_for_of', () => {
+    let count = 0;
+    for (const face of document.fonts) count++;
+    return count;
+  });
+  t('fontset_iterator_receiver', () => {
+    const iterator = document.fonts.values();
+    try {
+      iterator.next.call({});
+      return 'NO ERROR';
+    } catch (error) {
+      return error.name + ': ' + error.message;
+    }
+  });
   t('fontset_iterator_consistency', () => {
     const values = Array.from(document.fonts.values());
     const keys = Array.from(document.fonts.keys());
@@ -275,7 +302,8 @@ PROBE = r"""() => {
     document.fonts.forEach(() => callbacks++);
     return 'size=' + document.fonts.size + ' values=' + values.length +
       ' keys=' + keys.length + ' entries=' + entries.length + ' callbacks=' + callbacks +
-      ' entryPairs=' + entries.every((entry, index) => entry[0] === entry[1] && entry[0] === values[index]);
+      ' entryPairs=' + entries.every((entry, index) => entry[0] === entry[1] && entry[0] === values[index]) +
+      ' faces=' + values.map((face) => face.family).join(',');
   });
   return Promise.all([
     __workerProbe('self.postMessage(String(navigator.hardwareConcurrency));'),
@@ -595,6 +623,23 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["intl_nf_own"].endswith("length,name,prototype,supportedLocalesOf"), res["intl_nf_own"]
         assert res["intl_nf_without_new"].startswith("OK"), res["intl_nf_without_new"]
 
+        # A-53: the filtering method must return the browser's FontFaceSet
+        # iterator, not an eagerly materialized Array Iterator.
+        assert res["fontset_iterator_shapes"].count("[object FontFaceSet Iterator]") == 3, res[
+            "fontset_iterator_shapes"
+        ]
+        assert "Array Iterator" not in res["fontset_iterator_shapes"], res["fontset_iterator_shapes"]
+        assert res["fontset_iterator_shapes"].count("stableNext=true") == 3, res["fontset_iterator_shapes"]
+        assert res["fontset_iterator_shapes"].count("iterableSelf=true") == 3, res["fontset_iterator_shapes"]
+        assert res["fontset_iterator_receiver"].startswith("OK TypeError:"), res["fontset_iterator_receiver"]
+        assert res["fontset_iterator_for_of"].endswith("0"), res["fontset_iterator_for_of"]
+        assert res["fontset_symbol_iterator_identity"].startswith("OK same=true"), res[
+            "fontset_symbol_iterator_identity"
+        ]
+        assert "constructible=false native=true" in res["fontset_symbol_iterator_identity"], res[
+            "fontset_symbol_iterator_identity"
+        ]
+
         # A-51: FontFaceSet filtering must not replace native methods with
         # constructible/generically-named JavaScript functions.
         for shape_key, expected_name in (
@@ -608,7 +653,7 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
             assert f"name={expected_name}" in res[shape_key], res[shape_key]
             assert "constructible=false native=true" in res[shape_key], res[shape_key]
         assert res["fontset_own_methods"].endswith("(none)"), res["fontset_own_methods"]
-        assert res["fontset_iterator_consistency"].endswith("entryPairs=true"), res["fontset_iterator_consistency"]
+        assert "entryPairs=true" in res["fontset_iterator_consistency"], res["fontset_iterator_consistency"]
         assert "size=0 values=0 keys=0 entries=0 callbacks=0" in res["fontset_iterator_consistency"], res[
             "fontset_iterator_consistency"
         ]

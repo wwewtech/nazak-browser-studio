@@ -2,7 +2,7 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — A-44…A-52 empirical anti-detect audit
+## Unreleased — A-44…A-53 empirical anti-detect audit
 
 Suite: **1120 passed, 6 deselected** (1126 collected; 0 `xfail`). Real-Chrome probes now cover error-stack state, synchronizer listener disposal/restoration and session-colliding context IDs, native function shapes, secure-origin Client Hints, Plugin/MimeType installation, Intl/audio accessors, transactional FontFaceSet filtering and monotonic timing.
 
@@ -19,6 +19,8 @@ Suite: **1120 passed, 6 deselected** (1126 collected; 0 `xfail`). Real-Chrome pr
 - **A-51 — font aliases and FontFaceSet filtering could both be absent despite a successful-looking probe.** At `document_start`, `document.head` and `document.documentElement` could both be null. `appendChild` threw after families were marked aliased, so retries produced no rules and set the installed flag without installing anything. Insertion now waits for a real style host, marks families only after a successful append, and schedules a retry for late CDP injection after `DOMContentLoaded`/`fonts.ready`. Filtering moved to native Proxy targets on `FontFaceSet.prototype`: `forEach`, `entries`, `values`, `keys` and `size` keep their native names/shape and `document.fonts` has no own replacement methods. A guaranteed missing test font now forces the live path, proving zero visible aliases and agreement across size/callbacks/all three iterators. The branded `[NAZAK-DBG]` console marker was removed.
 
 - **A-52 — CDP execution context IDs were incorrectly treated as globally unique.** Real Chrome used `executionContextId=1` simultaneously for extension service workers (no `auxData`, non-default) and the page main world (`isDefault=true`). A global `dict[int, …]` let a worker overwrite the page context, so real synchronizer clicks were rejected as `isolated-world` (`accepted=0`, `rejected=1`). Context storage and clearing are now scoped by `(sessionId, executionContextId)`. The unit regression reproduces colliding worker/page IDs; the real-Chrome synchronizer lifecycle passes again.
+
+- **A-53 — filtered FontFaceSet methods returned Array iterators and leaked aliases through iteration.** `entries()/values()/keys()` eagerly materialized an Array, changing the native `[object FontFaceSet Iterator]` into `[object Array Iterator]`. Filtering now wraps the real iterator and skips aliases lazily in a stable Proxy `next()`. `@@iterator` returns the filtered Proxy (otherwise `Array.from` used the raw iterator), and `FontFaceSet.prototype[Symbol.iterator]` preserves the native identity invariant `Symbol.iterator === values` by pointing to the same filtered Proxy. Live checks cover native tag/prototype/next shape, wrong-receiver TypeError, stable identity, `Array.from`, direct `for…of document.fonts`, and zero aliases on every path.
 
 Remaining measured work: only fallback `makeNative()` branches without a corresponding native function remain in the generated helper; the active navigator fallback did not execute in the current Chrome audit. V8 also names a Proxy-created eval frame `Proxy.eval` instead of `toString.eval`; this known limitation is not hidden with a misleading string replacement.
 
