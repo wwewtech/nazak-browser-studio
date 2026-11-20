@@ -78,7 +78,33 @@ def test_synchronizer_replicates_navigation_and_events_between_profiles():
 
                 await page.evaluate(client)
                 await page.evaluate(dispatch)
-                assert await accepted(1) == 1
+                first = await accepted(1)
+                if first != 1:
+                    print(
+                        "SYNC_DEBUG",
+                        {
+                            "accepted": injector.binding_events_accepted,
+                            "rejected": injector.binding_events_rejected,
+                            "throttled": injector.binding_events_throttled,
+                            "session_active": session.active,
+                            "binding_name": binding_name,
+                            "injector_name": injector._binding_name,
+                            "client_source": bool(injector.sync_client_source),
+                            "sink": bool(injector.opts.event_sink),
+                            "session_map": dict(injector._session_is_page),
+                            "contexts": {str(key): value for key, value in injector._contexts.items()},
+                            "main_frames": dict(injector._main_frame),
+                            "state": await page.evaluate(
+                                """(args) => {
+                          const binding = window[args.name];
+                          const state = binding && binding[Symbol.for(args.key)];
+                          return {bindingType: typeof binding, state: state ? {disposed: state.disposed, same: state.binding === binding} : null};
+                        }""",
+                                {"name": binding_name, "key": session.sync_guard_key},
+                            ),
+                        },
+                    )
+                assert first == 1
                 await page.evaluate(client)
                 await page.evaluate(dispatch)
                 assert await accepted(2) == 2

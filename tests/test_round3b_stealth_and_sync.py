@@ -179,9 +179,9 @@ def test_r3b_binding_requires_main_frame_default_context():
     inj = _injector()
     inj._session_is_page["sess1"] = True
     inj._main_frame["sess1"] = "F1"
-    inj._contexts[10] = ("F1", True)  # main world главного фрейма
-    inj._contexts[11] = ("F2", True)  # main world субфрейма
-    inj._contexts[12] = ("F1", False)  # изолированный мир
+    inj._contexts[("sess1", 10)] = ("F1", True)  # main world главного фрейма
+    inj._contexts[("sess1", 11)] = ("F2", True)  # main world субфрейма
+    inj._contexts[("sess1", 12)] = ("F1", False)  # изолированный мир
     payload = json.dumps({"type": "click", "x": 1, "y": 2})
     base = {"name": inj._binding_name, "payload": payload}
 
@@ -192,12 +192,41 @@ def test_r3b_binding_requires_main_frame_default_context():
     # OOPIF/iframe-таргет не является top-level страницей
     inj._session_is_page["sess2"] = False
     inj._main_frame["sess2"] = "F9"
-    inj._contexts[20] = ("F9", True)
+    inj._contexts[("sess2", 20)] = ("F9", True)
     assert inj.binding_event_allowed({**base, "executionContextId": 20}, "sess2")[0] is False
     # чужой binding
     assert (
         inj.binding_event_allowed({"name": "other", "payload": payload, "executionContextId": 10}, "sess1")[0] is False
     )
+
+
+def test_a52_context_ids_are_scoped_to_their_cdp_session():
+    """A-52: extension workers and pages both use executionContextId=1. A
+    global int map let the worker overwrite the page and reject real clicks."""
+    inj = _injector()
+    inj._session_is_page["page-session"] = True
+    inj._session_is_page["worker-session"] = False
+    inj._main_frame["page-session"] = "FRAME"
+    page_context = {
+        "context": {
+            "id": 1,
+            "origin": "http://127.0.0.1/",
+            "auxData": {"isDefault": True, "type": "default", "frameId": "FRAME"},
+        }
+    }
+    worker_context = {
+        "context": {
+            "id": 1,
+            "origin": "chrome-extension://example/background.js",
+        }
+    }
+    inj._on_context_created(worker_context, "worker-session")
+    inj._on_context_created(page_context, "page-session")
+    params = {"name": inj._binding_name, "payload": "{}", "executionContextId": 1}
+    assert inj.binding_event_allowed(params, "page-session") == (True, "")
+    assert inj.binding_event_allowed(params, "worker-session") == (False, "not-a-top-level-page")
+    assert inj._contexts[("worker-session", 1)] == (None, False)
+    assert inj._contexts[("page-session", 1)] == ("FRAME", True)
 
 
 def test_a47_duplicate_page_session_cannot_deliver_twice():
@@ -207,7 +236,8 @@ def test_a47_duplicate_page_session_cannot_deliver_twice():
         inj._page_target_by_session[session_id] = "same-target"
         inj._main_frame[session_id] = "F1"
     inj._sync_session_by_target["same-target"] = "first"
-    inj._contexts[10] = ("F1", True)
+    inj._contexts[("first", 10)] = ("F1", True)
+    inj._contexts[("duplicate", 10)] = ("F1", True)
     params = {"name": inj._binding_name, "payload": "{}", "executionContextId": 10}
     assert inj.binding_event_allowed(params, "first") == (True, "")
     assert inj.binding_event_allowed(params, "duplicate") == (False, "duplicate-page-session")
@@ -217,7 +247,7 @@ def test_r3b_binding_rejects_oversized_payload_and_sinkless_injector():
     inj = _injector()
     inj._session_is_page["s"] = True
     inj._main_frame["s"] = "F"
-    inj._contexts[1] = ("F", True)
+    inj._contexts[("s", 1)] = ("F", True)
     big = json.dumps({"type": "click", "value": "x" * (ci.MAX_BINDING_PAYLOAD_BYTES + 10)})
     assert (
         inj.binding_event_allowed({"name": inj._binding_name, "payload": big, "executionContextId": 1}, "s")[0] is False
@@ -225,7 +255,7 @@ def test_r3b_binding_rejects_oversized_payload_and_sinkless_injector():
     no_sink = _injector(event_sink=None)
     no_sink._session_is_page["s"] = True
     no_sink._main_frame["s"] = "F"
-    no_sink._contexts[1] = ("F", True)
+    no_sink._contexts[("s", 1)] = ("F", True)
     assert (
         no_sink.binding_event_allowed({"name": no_sink._binding_name, "payload": "{}", "executionContextId": 1}, "s")[0]
         is False
@@ -239,7 +269,7 @@ def test_r3b_binding_rate_limit_and_acceptance_counters():
     inj = _injector(event_sink=lambda pid, ev: seen.append(ev))
     inj._session_is_page["s"] = True
     inj._main_frame["s"] = "F"
-    inj._contexts[1] = ("F", True)
+    inj._contexts[("s", 1)] = ("F", True)
     # Детерминированный лимитер: без пополнения, чтобы тест не зависел от времени.
     inj._binding_bucket = ci._TokenBucket(rate_per_sec=0.0, burst=3.0)
     params = {

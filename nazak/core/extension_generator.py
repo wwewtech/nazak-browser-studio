@@ -356,7 +356,7 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
     // A-50: use the corresponding NATIVE getter as the Proxy target.  The old
     // makeNative(function...) left a constructible getter named "get name"
     // with an own prototype even though String(fn) looked native.
-    const __makeNativeLike = function(baseProto, values, methods) {{
+    const __makeNativeLike = function(baseProto, values) {{
         const layer = Object.create(baseProto || Object.prototype);
         Object.keys(values).forEach(function(k) {{
             try {{
@@ -386,18 +386,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 }});
             }} catch(e) {{}}
         }});
-        // the METHODS also live on the layer, so the instance itself stays
-        // free of own properties (exactly like the native objects)
-        if (methods) {{
-            Object.keys(methods).forEach(function(k) {{
-                try {{
-                    Object.defineProperty(layer, k, {{
-                        value: makeNative(methods[k], k),
-                        configurable: true, enumerable: true
-                    }});
-                }} catch(e) {{}}
-            }});
-        }}
         return Object.create(layer);
     }};
 
@@ -1601,7 +1589,6 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 const __missing = fontList
                     .map(function(f) {{ return f.family; }})
                     .filter(function(f) {{ return __isMissing(f); }});
-                try {{ console.log('[NAZAK-DBG] real=' + __realFamilies.length + ' missing=' + __missing.length); }} catch(e) {{}}
                 if (!__missing.length) {{
                     __aliasesInstalled = true;
                     return;
@@ -1620,14 +1607,20 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                     const __safeFamily = family.replace(/"/g, '');
                     const __safeDonor = donor.replace(/"/g, '');
                     __aliasFamilies.push(__safeFamily);
-                    __aliasedFamilies.push(family);
                     __rules.push('@font-face {{ font-family: "' + __safeFamily + '";'
                         + ' src: local("' + __safeDonor + '");'
                         + ' font-weight: normal; font-style: normal; }}');
                 }});
                 if (__rules.length) {{
+                    // A-51: at document_start both head and documentElement
+                    // may still be null.  The old appendChild threw after the
+                    // families were marked aliased, so retries produced zero
+                    // rules and never installed either aliases or filters.
+                    const styleHost = document.head || document.documentElement;
+                    if (!styleHost) return;
                     __style.textContent = __rules.join('\\n');
-                    (document.head || document.documentElement).appendChild(__style);
+                    styleHost.appendChild(__style);
+                    __aliasFamilies.forEach(function(family) {{ __aliasedFamilies.push(family); }});
                     // Hunt A-27: the @font-face aliases land in the
                     // document's FontFaceSet, so a page can read them:
                     // `document.fonts.size` was 1 instead of 0 and
@@ -1643,60 +1636,68 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                                 if (!face || !face.family) return false;
                                 return __aliasFamilies.indexOf(face.family) !== -1;
                             }};
-                            const __nativeSize = Object.getOwnPropertyDescriptor(
-                                Object.getPrototypeOf(document.fonts), 'size');
-                            const __nativeForEach = Object.getOwnPropertyDescriptor(
-                                Object.getPrototypeOf(document.fonts), 'forEach');
-                            const __nativeEntries = Object.getOwnPropertyDescriptor(
-                                Object.getPrototypeOf(document.fonts), 'entries');
-                            const __nativeValues = Object.getOwnPropertyDescriptor(
-                                Object.getPrototypeOf(document.fonts), 'values');
-                            const __nativeKeys = Object.getOwnPropertyDescriptor(
-                                Object.getPrototypeOf(document.fonts), 'keys');
+                            const fontSetProto = Object.getPrototypeOf(document.fonts);
+                            const __nativeSize = Object.getOwnPropertyDescriptor(fontSetProto, 'size');
                             const __countVisible = function() {{
                                 let n = 0;
                                 try {{
-                                    document.fonts.forEach(function(f) {{ if (!__isAlias(f)) n++; }});
+                                    const nativeValues = Object.getOwnPropertyDescriptor(fontSetProto, 'values').value;
+                                    for (const face of nativeValues.call(document.fonts)) {{
+                                        if (!__isAlias(face)) n++;
+                                    }}
                                 }} catch(e) {{}}
                                 return n;
                             }};
+                            // A-51: filter on the prototype with native Proxy
+                            // targets.  Own-instance plain functions exposed
+                            // prototype/constructibility, and every generator
+                            // was misleadingly named "iterator".
                             if (__nativeSize && __nativeSize.get) {{
-                                Object.defineProperty(document.fonts, 'size', {{
-                                    get: makeNative(function() {{ return __countVisible(); }}, 'get size'),
-                                    configurable: true, enumerable: true
+                                const nativeSizeGet = __nativeSize.get;
+                                const sizeGetter = new Proxy(nativeSizeGet, __stripProxyFromErrors({{
+                                    apply: function(target, thisArg, args) {{
+                                        __nativeCache.reflectApply(target, thisArg, args);
+                                        return __countVisible();
+                                    }}
+                                }}));
+                                __proxyTargets.set(sizeGetter, nativeSizeGet);
+                                __redirectToString(sizeGetter, nativeSizeGet);
+                                Object.defineProperty(fontSetProto, 'size', {{
+                                    get: sizeGetter, configurable: true,
+                                    enumerable: __nativeSize.enumerable
                                 }});
                             }}
-                            if (__nativeForEach && __nativeForEach.value) {{
-                                Object.defineProperty(document.fonts, 'forEach', {{
-                                    value: makeNative(function(cb, thisArg) {{
-                                        return __nativeForEach.value.call(document.fonts, function(f) {{
-                                            if (__isAlias(f)) return;
-                                            cb.call(thisArg, f, f, document.fonts);
-                                        }}, thisArg);
-                                    }}, 'forEach'),
-                                    configurable: true, writable: true, enumerable: true
-                                }});
-                            }}
-                            const __filterIterator = function(method) {{
-                                if (!method || !method.value) return;
-                                Object.defineProperty(document.fonts, method === __nativeValues ? 'values' : (method === __nativeKeys ? 'keys' : 'entries'), {{
-                                    value: makeNative(function* () {{
-                                        for (const entry of method.value.call(document.fonts)) {{
+                            __replaceWithProxy(fontSetProto, 'forEach', {{
+                                apply: function(target, thisArg, args) {{
+                                    const cb = args[0];
+                                    const thisArg2 = args[1];
+                                    return __nativeCache.reflectApply(target, thisArg, [function(face) {{
+                                        if (__isAlias(face)) return;
+                                        cb.call(thisArg2, face, face, thisArg);
+                                    }}, thisArg2]);
+                                }}
+                            }});
+                            ['entries', 'values', 'keys'].forEach(function(name) {{
+                                __replaceWithProxy(fontSetProto, name, {{
+                                    apply: function(target, thisArg, args) {{
+                                        const nativeIterator = __nativeCache.reflectApply(target, thisArg, args);
+                                        // Return a native Array iterator over
+                                        // the filtered entries, not a hand-
+                                        // written generator method.  The method
+                                        // itself remains a native Proxy.
+                                        const visible = [];
+                                        for (const entry of nativeIterator) {{
                                             const face = (entry && entry[1]) ? entry[1] : entry;
-                                            if (__isAlias(face)) continue;
-                                            yield entry;
+                                            if (!__isAlias(face)) visible.push(entry);
                                         }}
-                                    }}, 'iterator'),
-                                    configurable: true, writable: true, enumerable: true
+                                        return visible[Symbol.iterator]();
+                                    }}
                                 }});
-                            }};
-                            __filterIterator(__nativeEntries);
-                            __filterIterator(__nativeValues);
-                            __filterIterator(__nativeKeys);
+                            }});
                         }}
                     }} catch(e) {{}}
                 }}
-                __aliasesInstalled = true;
+                if (__rules.length) __aliasesInstalled = true;
             }};
             try {{ __installFontAliases(); }} catch(e) {{}}
             // Re-run once the fonts are ready (the first measurement at
@@ -1712,6 +1713,17 @@ Object.defineProperty(__global, __nsiKey, {{value: true, configurable: false, en
                 document.addEventListener('DOMContentLoaded', function() {{
                     try {{ __installFontAliases(); }} catch(e) {{}}
                 }}, {{once: true}});
+                document.addEventListener('readystatechange', function() {{
+                    try {{ __installFontAliases(); }} catch(e) {{}}
+                }}, {{once: true}});
+                // The CDP injector can run after DOMContentLoaded and after
+                // fonts.ready has already resolved.  Schedule one concrete
+                // retry after the parser has created the document root.
+                if (typeof requestAnimationFrame === 'function') {{
+                    requestAnimationFrame(function() {{
+                        try {{ __installFontAliases(); }} catch(e) {{}}
+                    }});
+                }}
             }} catch(e) {{}}
         }} catch(e) {{}}
     }} catch(e) {{}}

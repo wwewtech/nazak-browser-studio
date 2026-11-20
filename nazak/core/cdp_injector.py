@@ -347,8 +347,12 @@ class StealthInjector:
         self.sync_client_provider: Callable[[], str] | None = None
         # sessionId -> id of this session's main frame
         self._main_frame: dict[str, str | None] = {}
-        # executionContextId -> (frameId, isDefault)
-        self._contexts: dict[int, tuple[str | None, bool]] = {}
+        # (sessionId, executionContextId) -> (frameId, isDefault).
+        # Context IDs are only unique inside one CDP session.  A-52 measured
+        # id=1 simultaneously in an extension worker and the main page; a
+        # global int map let the worker overwrite the page and reject clicks
+        # as isolated-world.
+        self._contexts: dict[tuple[str, int], tuple[str | None, bool]] = {}
         # documents already applied: (sessionId, loaderId)
         self._injected_docs: set[tuple[str, str]] = set()
         # Hunt A-31: loaderIds of main-frame documents awaiting their load event
@@ -473,9 +477,11 @@ class StealthInjector:
                         self._binding_tasks.add(task)
                         task.add_done_callback(self._binding_tasks.discard)
                     elif method == "Runtime.executionContextCreated":
-                        self._on_context_created(params)
+                        self._on_context_created(params, sid)
                     elif method == "Runtime.executionContextsCleared":
-                        self._contexts.clear()
+                        if sid:
+                            for key in [key for key in self._contexts if key[0] == sid]:
+                                self._contexts.pop(key, None)
                     elif method == "Page.frameNavigated":
                         self._on_frame_navigated(params, sid)
                     elif method == "Page.loadEventFired":
@@ -759,12 +765,14 @@ class StealthInjector:
         except Exception as exc:
             logger.debug("continueRequest failed: %s", exc)
 
-    def _on_context_created(self, params: dict[str, Any]) -> None:
+    def _on_context_created(self, params: dict[str, Any], session_id: str | None = None) -> None:
+        if not session_id:
+            return
         ctx = params.get("context", {})
         ctx_id = ctx.get("id")
         aux = ctx.get("auxData", {}) or {}
         if isinstance(ctx_id, int):
-            self._contexts[ctx_id] = (aux.get("frameId"), bool(aux.get("isDefault", False)))
+            self._contexts[(session_id, ctx_id)] = (aux.get("frameId"), bool(aux.get("isDefault", False)))
 
     def _on_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
         frame = params.get("frame", {}) or {}
@@ -852,7 +860,7 @@ class StealthInjector:
         if target_id and self._sync_session_by_target.get(target_id) != session_id:
             return False, "duplicate-page-session"
         ctx_id = params.get("executionContextId")
-        ctx = self._contexts.get(ctx_id) if isinstance(ctx_id, int) else None
+        ctx = self._contexts.get((session_id, ctx_id)) if isinstance(ctx_id, int) else None
         if ctx is None:
             # Context unknown (executionContextCreated never arrived) — reject.
             return False, "unknown-context"

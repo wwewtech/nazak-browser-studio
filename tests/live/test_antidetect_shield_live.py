@@ -256,6 +256,27 @@ PROBE = r"""() => {
     try { document.fonts.forEach((f) => faces.push(f.family)); } catch (e) { faces.push('ERR'); }
     return 'size=' + document.fonts.size + ' faces=' + (faces.join(',') || '(none)');
   });
+  // A-51: filtering must preserve the native FontFaceSet methods, not only
+  // hide aliases. Plain replacements were constructible and all iterators
+  // were misleadingly named "iterator".
+  t('fontset_own_methods', () => Object.getOwnPropertyNames(document.fonts).join(',') || '(none)');
+  t('fontset_forEach_shape', () => nativeFunctionShape(document.fonts.forEach));
+  t('fontset_entries_shape', () => nativeFunctionShape(document.fonts.entries));
+  t('fontset_values_shape', () => nativeFunctionShape(document.fonts.values));
+  t('fontset_keys_shape', () => nativeFunctionShape(document.fonts.keys));
+  t('fontset_size_getter_shape', () => nativeFunctionShape(
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(document.fonts), 'size').get
+  ));
+  t('fontset_iterator_consistency', () => {
+    const values = Array.from(document.fonts.values());
+    const keys = Array.from(document.fonts.keys());
+    const entries = Array.from(document.fonts.entries());
+    let callbacks = 0;
+    document.fonts.forEach(() => callbacks++);
+    return 'size=' + document.fonts.size + ' values=' + values.length +
+      ' keys=' + keys.length + ' entries=' + entries.length + ' callbacks=' + callbacks +
+      ' entryPairs=' + entries.every((entry, index) => entry[0] === entry[1] && entry[0] === values[index]);
+  });
   return Promise.all([
     __workerProbe('self.postMessage(String(navigator.hardwareConcurrency));'),
     __workerProbe('self.postMessage(String(navigator.deviceMemory));'),
@@ -324,6 +345,9 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         pytest.skip("Chrome/Chromium executable not found on host")
 
     fp = generate_random_fingerprint("windows")
+    # Guarantee at least one local-font alias on every host so the A-51
+    # FontFaceSet filtering hooks are exercised rather than silently skipped.
+    fp.fonts = [*list(fp.fonts), "Nazak Audit Missing Font 51"]
     profile = BrowserProfile(
         id="live_shield_audit",
         name="Live Shield Audit",
@@ -570,6 +594,24 @@ def test_generated_shield_applies_and_never_throws(tmp_path):
         assert res["performance_now_monotonic"].endswith("true"), res["performance_now_monotonic"]
         assert res["intl_nf_own"].endswith("length,name,prototype,supportedLocalesOf"), res["intl_nf_own"]
         assert res["intl_nf_without_new"].startswith("OK"), res["intl_nf_without_new"]
+
+        # A-51: FontFaceSet filtering must not replace native methods with
+        # constructible/generically-named JavaScript functions.
+        for shape_key, expected_name in (
+            ("fontset_forEach_shape", "forEach"),
+            ("fontset_entries_shape", "entries"),
+            ("fontset_values_shape", "values"),
+            ("fontset_keys_shape", "keys"),
+            ("fontset_size_getter_shape", "get size"),
+        ):
+            assert res[shape_key].startswith("OK keys=length,name "), res[shape_key]
+            assert f"name={expected_name}" in res[shape_key], res[shape_key]
+            assert "constructible=false native=true" in res[shape_key], res[shape_key]
+        assert res["fontset_own_methods"].endswith("(none)"), res["fontset_own_methods"]
+        assert res["fontset_iterator_consistency"].endswith("entryPairs=true"), res["fontset_iterator_consistency"]
+        assert "size=0 values=0 keys=0 entries=0 callbacks=0" in res["fontset_iterator_consistency"], res[
+            "fontset_iterator_consistency"
+        ]
 
         # A-46: native methods have only length/name own properties and are
         # not constructible.  String(fn) alone is not enough evidence.

@@ -460,7 +460,14 @@ def test_a27_font_aliases_are_hidden_from_the_font_set():
     src = _generated_js()
     assert "__aliasFamilies" in src, "the alias families must be tracked so they can be hidden (A-27)"
     assert "forEach" in src, "the FontFaceSet enumeration must skip the aliases (A-27)"
-    assert "get size" in src, "the FontFaceSet size must exclude the aliases (A-27)"
+    assert "__replaceWithProxy(fontSetProto, 'forEach'" in src, (
+        "A-51: filtering must wrap the native prototype method, not add a plain own function"
+    )
+    assert "const sizeGetter = new Proxy(nativeSizeGet" in src, (
+        "A-51: the size getter must keep its native accessor target"
+    )
+    assert "const styleHost = document.head || document.documentElement;" in src
+    assert "if (!styleHost) return;" in src
 
 
 def test_a28_voices_have_the_native_shape():
@@ -634,6 +641,26 @@ def test_a49_intl_and_audio_keep_native_targets_and_descriptor_owners():
     assert "Object.defineProperty(owner, name" in audio
     assert "get: makeNative(() => fpSampleRate" not in audio
     assert "get: makeNative(() => fpBaseLatency" not in audio
+
+
+def test_a51_font_aliases_install_transactionally_with_native_filters():
+    """A-51: document_start had no style host, but families were marked as
+    installed before appendChild threw. Retries then skipped all native hooks."""
+    src = _generated_js()
+    block = src[src.find("const __installFontAliases") : src.find("// 10.2 SpeechSynthesis")]
+    assert "const styleHost = document.head || document.documentElement;" in block
+    assert "if (!styleHost) return;" in block
+    push = block.find("__aliasedFamilies.push(family)")
+    assert push > block.find("styleHost.appendChild(__style)"), (
+        "families must be committed only after successful style insertion"
+    )
+    assert "if (__rules.length) __aliasesInstalled = true;" in block
+    assert "Object.defineProperty(document.fonts, 'forEach'" not in block
+    assert "Object.defineProperty(document.fonts, 'size'" not in block
+    assert "makeNative(function* ()" not in block
+    for method in ("forEach", "entries", "values", "keys"):
+        assert f"'{method}'" in block
+    assert "const sizeGetter = new Proxy(nativeSizeGet" in block
 
 
 def test_a36_languages_follow_the_timezone_not_a_farm_constant():
