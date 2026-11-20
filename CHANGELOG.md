@@ -2,7 +2,7 @@
 
 All notable changes to Nazak Browser Studio are documented here. For the full feature set see [README.md](README.md), the [REST API reference](docs/API_REFERENCE.md) and the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Unreleased — A-44…A-54 empirical anti-detect audit
+## v1.15.4 — Anti-Detect Shield Audit (A-44…A-54, Empirical) (2026-11-21)
 
 Suite: **1121 passed, 6 deselected** (1127 collected; 0 `xfail`). Real-Chrome probes now cover error-stack state, synchronizer listener disposal/restoration and session-colliding context IDs, native function shapes, secure-origin Client Hints, Plugin/MimeType installation, Intl/audio accessors, transactional FontFaceSet filtering and monotonic timing, and `NavigatorUAData` own-property fidelity.
 
